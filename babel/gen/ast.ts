@@ -6,6 +6,7 @@ export const protobufPackage = "nessie.ast";
 
 export interface NullLiteral {}
 
+/** Literals. */
 export interface Literal {
   stringLiteral: string | undefined;
   /** must be under 2^53 */
@@ -33,17 +34,30 @@ export interface Statement {
   whileStatement: WhileStatement | undefined;
 }
 
-/** Whenever BlockStatement is used as an element, it is expanded as a list of statements. */
+/**
+ * Whenever BlockStatement is used as an element, it is expanded as a list of statements to save space.
+ * { doSomething() }
+ */
 export interface BlockStatement {
   body: Statement[];
 }
 
-/** BreakStatement omits label */
+/**
+ * BreakStatement omits label
+ * break
+ */
 export interface BreakStatement {}
 
-/** ContinuseStatement omits label */
+/**
+ * ContinuseStatement omits label
+ * continue
+ */
 export interface ContinueStatement {}
 
+/**
+ * ForStatement has optional initializer, optional test, optional update.
+ * for (let x = 0; x < 5; x++) { doSomething() }
+ */
 export interface ForStatement {
   initDeclaration: VariableDeclaration | undefined;
   initExpression: Expression | undefined;
@@ -52,6 +66,7 @@ export interface ForStatement {
   body: Statement | undefined;
 }
 
+/** for (let x of y) { doSomething() } */
 export interface ForOfStatement {
   leftDeclaration: VariableDeclaration | undefined;
   leftLval: LVal | undefined;
@@ -59,6 +74,12 @@ export interface ForOfStatement {
   body: Statement | undefined;
 }
 
+/**
+ * x = 3
+ * { key: value } = obj
+ * [x, y] = arr
+ * hello.world = true
+ */
 export interface AssignmentPattern {
   leftIdentifier: Identifier | undefined;
   leftObject: ObjectPattern | undefined;
@@ -67,14 +88,25 @@ export interface AssignmentPattern {
   right: Expression | undefined;
 }
 
+/** destructuring array pattern */
 export interface ArrayPattern {
   elements: PatternLike[];
 }
 
+/** destructuring object pattern */
 export interface ObjectPattern {
   properties: ObjectProperty[];
 }
 
+/**
+ * {
+ *   id, // keyIdentifier = "id", valuePattern.Identifier = "id"
+ *   g = 3, // keyIdentifier = "g", valuePattern.Assignment = 3
+ *   "stringkey": 3,
+ *   1234: "string",
+ *   expressionKey():
+ * }
+ */
 export interface ObjectProperty {
   keyIdentifier: Identifier | undefined;
   keyStringLiteral: string | undefined;
@@ -225,21 +257,7 @@ export interface Expression {
 }
 
 export interface MaybeSpreadExpression {
-  literal: Literal | undefined;
-  array: ArrayExpression | undefined;
-  assignment: AssignmentExpression | undefined;
-  binary: BinaryExpression | undefined;
-  call: CallExpression | undefined;
-  conditional: ConditionalExpression | undefined;
-  function: FunctionExpression | undefined;
-  identifier: Identifier | undefined;
-  logical: LogicalExpression | undefined;
-  member: MemberExpression | undefined;
-  object: ObjectExpression | undefined;
-  unary: UnaryExpression | undefined;
-  update: UpdateExpression | undefined;
-  arrowFunction: ArrowFunctionExpression | undefined;
-  isSpread?: boolean | undefined;
+  expression?: Expression | undefined;
 }
 
 export interface ArrayExpression {
@@ -3788,23 +3806,7 @@ export const Expression = {
 };
 
 function createBaseMaybeSpreadExpression(): MaybeSpreadExpression {
-  return {
-    literal: undefined,
-    array: undefined,
-    assignment: undefined,
-    binary: undefined,
-    call: undefined,
-    conditional: undefined,
-    function: undefined,
-    identifier: undefined,
-    logical: undefined,
-    member: undefined,
-    object: undefined,
-    unary: undefined,
-    update: undefined,
-    arrowFunction: undefined,
-    isSpread: undefined,
-  };
+  return { expression: undefined };
 }
 
 export const MaybeSpreadExpression = {
@@ -3812,77 +3814,8 @@ export const MaybeSpreadExpression = {
     message: MaybeSpreadExpression,
     writer: _m0.Writer = _m0.Writer.create()
   ): _m0.Writer {
-    if (message.literal !== undefined) {
-      Literal.encode(message.literal, writer.uint32(10).fork()).ldelim();
-    }
-    if (message.array !== undefined) {
-      ArrayExpression.encode(message.array, writer.uint32(18).fork()).ldelim();
-    }
-    if (message.assignment !== undefined) {
-      AssignmentExpression.encode(
-        message.assignment,
-        writer.uint32(26).fork()
-      ).ldelim();
-    }
-    if (message.binary !== undefined) {
-      BinaryExpression.encode(
-        message.binary,
-        writer.uint32(34).fork()
-      ).ldelim();
-    }
-    if (message.call !== undefined) {
-      CallExpression.encode(message.call, writer.uint32(42).fork()).ldelim();
-    }
-    if (message.conditional !== undefined) {
-      ConditionalExpression.encode(
-        message.conditional,
-        writer.uint32(50).fork()
-      ).ldelim();
-    }
-    if (message.function !== undefined) {
-      FunctionExpression.encode(
-        message.function,
-        writer.uint32(58).fork()
-      ).ldelim();
-    }
-    if (message.identifier !== undefined) {
-      Identifier.encode(message.identifier, writer.uint32(66).fork()).ldelim();
-    }
-    if (message.logical !== undefined) {
-      LogicalExpression.encode(
-        message.logical,
-        writer.uint32(74).fork()
-      ).ldelim();
-    }
-    if (message.member !== undefined) {
-      MemberExpression.encode(
-        message.member,
-        writer.uint32(82).fork()
-      ).ldelim();
-    }
-    if (message.object !== undefined) {
-      ObjectExpression.encode(
-        message.object,
-        writer.uint32(90).fork()
-      ).ldelim();
-    }
-    if (message.unary !== undefined) {
-      UnaryExpression.encode(message.unary, writer.uint32(98).fork()).ldelim();
-    }
-    if (message.update !== undefined) {
-      UpdateExpression.encode(
-        message.update,
-        writer.uint32(106).fork()
-      ).ldelim();
-    }
-    if (message.arrowFunction !== undefined) {
-      ArrowFunctionExpression.encode(
-        message.arrowFunction,
-        writer.uint32(114).fork()
-      ).ldelim();
-    }
-    if (message.isSpread !== undefined) {
-      writer.uint32(120).bool(message.isSpread);
+    if (message.expression !== undefined) {
+      Expression.encode(message.expression, writer.uint32(10).fork()).ldelim();
     }
     return writer;
   },
@@ -3898,58 +3831,7 @@ export const MaybeSpreadExpression = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.literal = Literal.decode(reader, reader.uint32());
-          break;
-        case 2:
-          message.array = ArrayExpression.decode(reader, reader.uint32());
-          break;
-        case 3:
-          message.assignment = AssignmentExpression.decode(
-            reader,
-            reader.uint32()
-          );
-          break;
-        case 4:
-          message.binary = BinaryExpression.decode(reader, reader.uint32());
-          break;
-        case 5:
-          message.call = CallExpression.decode(reader, reader.uint32());
-          break;
-        case 6:
-          message.conditional = ConditionalExpression.decode(
-            reader,
-            reader.uint32()
-          );
-          break;
-        case 7:
-          message.function = FunctionExpression.decode(reader, reader.uint32());
-          break;
-        case 8:
-          message.identifier = Identifier.decode(reader, reader.uint32());
-          break;
-        case 9:
-          message.logical = LogicalExpression.decode(reader, reader.uint32());
-          break;
-        case 10:
-          message.member = MemberExpression.decode(reader, reader.uint32());
-          break;
-        case 11:
-          message.object = ObjectExpression.decode(reader, reader.uint32());
-          break;
-        case 12:
-          message.unary = UnaryExpression.decode(reader, reader.uint32());
-          break;
-        case 13:
-          message.update = UpdateExpression.decode(reader, reader.uint32());
-          break;
-        case 14:
-          message.arrowFunction = ArrowFunctionExpression.decode(
-            reader,
-            reader.uint32()
-          );
-          break;
-        case 15:
-          message.isSpread = reader.bool();
+          message.expression = Expression.decode(reader, reader.uint32());
           break;
         default:
           reader.skipType(tag & 7);
@@ -3961,111 +3843,18 @@ export const MaybeSpreadExpression = {
 
   fromJSON(object: any): MaybeSpreadExpression {
     return {
-      literal: isSet(object.literal)
-        ? Literal.fromJSON(object.literal)
+      expression: isSet(object.expression)
+        ? Expression.fromJSON(object.expression)
         : undefined,
-      array: isSet(object.array)
-        ? ArrayExpression.fromJSON(object.array)
-        : undefined,
-      assignment: isSet(object.assignment)
-        ? AssignmentExpression.fromJSON(object.assignment)
-        : undefined,
-      binary: isSet(object.binary)
-        ? BinaryExpression.fromJSON(object.binary)
-        : undefined,
-      call: isSet(object.call)
-        ? CallExpression.fromJSON(object.call)
-        : undefined,
-      conditional: isSet(object.conditional)
-        ? ConditionalExpression.fromJSON(object.conditional)
-        : undefined,
-      function: isSet(object.function)
-        ? FunctionExpression.fromJSON(object.function)
-        : undefined,
-      identifier: isSet(object.identifier)
-        ? Identifier.fromJSON(object.identifier)
-        : undefined,
-      logical: isSet(object.logical)
-        ? LogicalExpression.fromJSON(object.logical)
-        : undefined,
-      member: isSet(object.member)
-        ? MemberExpression.fromJSON(object.member)
-        : undefined,
-      object: isSet(object.object)
-        ? ObjectExpression.fromJSON(object.object)
-        : undefined,
-      unary: isSet(object.unary)
-        ? UnaryExpression.fromJSON(object.unary)
-        : undefined,
-      update: isSet(object.update)
-        ? UpdateExpression.fromJSON(object.update)
-        : undefined,
-      arrowFunction: isSet(object.arrowFunction)
-        ? ArrowFunctionExpression.fromJSON(object.arrowFunction)
-        : undefined,
-      isSpread: isSet(object.isSpread) ? Boolean(object.isSpread) : undefined,
     };
   },
 
   toJSON(message: MaybeSpreadExpression): unknown {
     const obj: any = {};
-    message.literal !== undefined &&
-      (obj.literal = message.literal
-        ? Literal.toJSON(message.literal)
+    message.expression !== undefined &&
+      (obj.expression = message.expression
+        ? Expression.toJSON(message.expression)
         : undefined);
-    message.array !== undefined &&
-      (obj.array = message.array
-        ? ArrayExpression.toJSON(message.array)
-        : undefined);
-    message.assignment !== undefined &&
-      (obj.assignment = message.assignment
-        ? AssignmentExpression.toJSON(message.assignment)
-        : undefined);
-    message.binary !== undefined &&
-      (obj.binary = message.binary
-        ? BinaryExpression.toJSON(message.binary)
-        : undefined);
-    message.call !== undefined &&
-      (obj.call = message.call
-        ? CallExpression.toJSON(message.call)
-        : undefined);
-    message.conditional !== undefined &&
-      (obj.conditional = message.conditional
-        ? ConditionalExpression.toJSON(message.conditional)
-        : undefined);
-    message.function !== undefined &&
-      (obj.function = message.function
-        ? FunctionExpression.toJSON(message.function)
-        : undefined);
-    message.identifier !== undefined &&
-      (obj.identifier = message.identifier
-        ? Identifier.toJSON(message.identifier)
-        : undefined);
-    message.logical !== undefined &&
-      (obj.logical = message.logical
-        ? LogicalExpression.toJSON(message.logical)
-        : undefined);
-    message.member !== undefined &&
-      (obj.member = message.member
-        ? MemberExpression.toJSON(message.member)
-        : undefined);
-    message.object !== undefined &&
-      (obj.object = message.object
-        ? ObjectExpression.toJSON(message.object)
-        : undefined);
-    message.unary !== undefined &&
-      (obj.unary = message.unary
-        ? UnaryExpression.toJSON(message.unary)
-        : undefined);
-    message.update !== undefined &&
-      (obj.update = message.update
-        ? UpdateExpression.toJSON(message.update)
-        : undefined);
-    message.arrowFunction !== undefined &&
-      (obj.arrowFunction = message.arrowFunction
-        ? ArrowFunctionExpression.toJSON(message.arrowFunction)
-        : undefined);
-    message.isSpread !== undefined && (obj.isSpread = message.isSpread);
     return obj;
   },
 
@@ -4073,63 +3862,10 @@ export const MaybeSpreadExpression = {
     object: I
   ): MaybeSpreadExpression {
     const message = createBaseMaybeSpreadExpression();
-    message.literal =
-      object.literal !== undefined && object.literal !== null
-        ? Literal.fromPartial(object.literal)
+    message.expression =
+      object.expression !== undefined && object.expression !== null
+        ? Expression.fromPartial(object.expression)
         : undefined;
-    message.array =
-      object.array !== undefined && object.array !== null
-        ? ArrayExpression.fromPartial(object.array)
-        : undefined;
-    message.assignment =
-      object.assignment !== undefined && object.assignment !== null
-        ? AssignmentExpression.fromPartial(object.assignment)
-        : undefined;
-    message.binary =
-      object.binary !== undefined && object.binary !== null
-        ? BinaryExpression.fromPartial(object.binary)
-        : undefined;
-    message.call =
-      object.call !== undefined && object.call !== null
-        ? CallExpression.fromPartial(object.call)
-        : undefined;
-    message.conditional =
-      object.conditional !== undefined && object.conditional !== null
-        ? ConditionalExpression.fromPartial(object.conditional)
-        : undefined;
-    message.function =
-      object.function !== undefined && object.function !== null
-        ? FunctionExpression.fromPartial(object.function)
-        : undefined;
-    message.identifier =
-      object.identifier !== undefined && object.identifier !== null
-        ? Identifier.fromPartial(object.identifier)
-        : undefined;
-    message.logical =
-      object.logical !== undefined && object.logical !== null
-        ? LogicalExpression.fromPartial(object.logical)
-        : undefined;
-    message.member =
-      object.member !== undefined && object.member !== null
-        ? MemberExpression.fromPartial(object.member)
-        : undefined;
-    message.object =
-      object.object !== undefined && object.object !== null
-        ? ObjectExpression.fromPartial(object.object)
-        : undefined;
-    message.unary =
-      object.unary !== undefined && object.unary !== null
-        ? UnaryExpression.fromPartial(object.unary)
-        : undefined;
-    message.update =
-      object.update !== undefined && object.update !== null
-        ? UpdateExpression.fromPartial(object.update)
-        : undefined;
-    message.arrowFunction =
-      object.arrowFunction !== undefined && object.arrowFunction !== null
-        ? ArrowFunctionExpression.fromPartial(object.arrowFunction)
-        : undefined;
-    message.isSpread = object.isSpread ?? undefined;
     return message;
   },
 };

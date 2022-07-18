@@ -227,23 +227,7 @@ message Expression {
 }
 
 message MaybeSpreadExpression {
-    oneof expression {
-        Literal literal = 1;
-        ArrayExpression array = 2;
-        AssignmentExpression assignment = 3;
-        BinaryExpression binary = 4;
-        CallExpression call = 5;
-        ConditionalExpression conditional = 6;
-        FunctionExpression function = 7;
-        Identifier identifier = 8;
-        LogicalExpression logical = 9;
-        MemberExpression member = 10;
-        ObjectExpression object = 11;
-        UnaryExpression unary = 12;
-        UpdateExpression update = 13;
-        ArrowFunctionExpression arrowFunction = 14;
-    }
-    optional bool isSpread = 15;
+    optional Expression expression = 1;
 }
 
 message ArrayExpression {
