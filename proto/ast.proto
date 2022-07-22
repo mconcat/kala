@@ -1,43 +1,252 @@
 syntax="proto3";
 package nessie.ast;
 
+///////////////////////////////////////////////////////////////////////////////
+// Global types
+enum DeclarationKind {
+    UNKNOWN = 0;
+    LET = 1;
+    CONST = 2;
+}
+
+message Identifier {
+    string name = 1;
+    optional bool option = 2;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Literals
+
 message NullLiteral {}
 
-// Literals. 
+message UndefinedLiteral {}
+
 message Literal {
     oneof literal {
         string stringLiteral = 1;
         int64 numberLiteral = 2; // must be under 2^53
         bool booleanLiteral = 3;
         NullLiteral nullLiteral = 4;
-        string bigintLiteral = 5; // must be stringified big integer
+        UndefinedLiteral undefinedLiteral = 5;
+        string bigintLiteral = 6; // must be stringified big integer
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Patterns
+
+// defVar EQUALS assignExpr
+// optional parameter
+message OptionalPattern {
+    Identifier identifier = 1;
+    Expression expression = 2;
+}
+
+// list of patterns with rest or optional
+message ParameterPattern {
+    oneof body {
+        Pattern pattern = 1;
+        OptionalPattern optional = 2;
+    }
+}
+
+// destructuring array pattern
+message ArrayPattern {
+    repeated ParameterPattern elements = 1;
+}
+
+message PropName {
+    oneof name {
+        string stringLiteral = 1;
+        Identifier identifier = 2;
+        uint64 numberLiteral = 3;
+    }
+}
+
+
+
+
+ // destructuring object pattern
+message ObjectPattern {
+    message Property {
+        PropName name = 1;
+        Pattern pattern = 2;
+    }
+
+    // {
+    //   id, // keyIdentifier = "id", valuePattern.Identifier = "id"
+    //   g = 3, // keyIdentifier = "g", valuePattern.Assignment = 3
+    //   "stringkey": 3, 
+    //   1234: "string",
+    // }
+    message Element {
+        oneof element {
+            Property property = 1;
+            Identifier shorthand = 2;
+            OptionalPattern optional = 3;
+            Pattern restPattern = 4;
+        }
+    }
+
+    repeated Element elements = 1;
+}
+
+// destructuring pattern
+message BindingPattern {
+    oneof pattern {
+        ArrayPattern array = 1;
+        ObjectPattern object = 2;
+    }
+}
+
+message Hole {}
+
+// pattern
+message Pattern {
+    oneof pattern {
+        Identifier identifier = 1; // Variable access
+        Literal literal = 2; // literal value
+        Hole hole = 3; // hole
+        BindingPattern binding = 4; // destructuring pattern
+    }
+
+    bool isRest = 15; // ...pattern
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Statements
+
+// With no label statements, statement and statementitem are equivalent.
 message Statement {
     oneof statement {
-        BlockStatement blockStatement = 1;
-        BreakStatement breakStatement = 2;
-        ContinueStatement continueStatement = 3;
-        Expression expressionStatement = 4;
+        // Declarations
+        VariableDeclaration variableDeclaration = 1;
+        FunctionDeclaration functionDeclaration = 2;
+
+        // Block
+        BlockStatement blockStatement = 3;
+
+        // If
+        IfStatement ifStatement = 4;
+
+        // Breakable Statements
         ForStatement forStatement = 5;
         ForOfStatement forOfStatement = 6;
-        FunctionDeclaration functionDeclaration = 7;
-        IfStatement ifStatement = 8;
-        ReturnStatement returnStatement = 9;
-        SwitchStatement switchStatement = 10;
-        ThrowStatement throwStatement = 11;
-        TryStatement tryStatement = 12;
-        VariableDeclaration variableDeclaration = 13;
-        WhileStatement whileStatement = 14;
+        WhileStatement whileStatement = 7;
+        SwitchStatement switchStatement = 8;
+
+        // Try-catch
+        TryStatement tryStatement = 9;
+
+        // Terminators
+        BreakStatement breakStatement = 10;
+        ContinueStatement continueStatement = 11;
+        ReturnStatement returnStatement = 12;
+        ThrowStatement throwStatement = 13;
+
+        // Expression
+        ExpressionStatement expressionStatement = 14;
     }
 }
 
-// Whenever BlockStatement is used as an element, it is expanded as a list of statements to save space.
+///////////////////////////////////////////////////////////////////////////////
+// Declaration statements
+
+// binding
+message VariableDeclarator {
+    message NormalDeclarator {
+        Identifier identifier = 1;
+        optional Expression value = 2; // empty if declared without initialization
+    }
+    
+    message BindingDeclarator {
+        BindingPattern pattern = 1;
+        Expression value = 2;
+    }
+
+    oneof declarator {
+        NormalDeclarator normal = 1;
+        BindingDeclarator binding = 2;
+    }
+}
+
+message VariableDeclaration {
+    DeclarationKind kind = 1; 
+    repeated VariableDeclarator declarators = 2;
+}
+
+message FunctionDeclaration {
+    FunctionExpression function = 1; // function.identifier should not be empty
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Control flow statements
+
 // { doSomething() }
 message BlockStatement {
     repeated Statement body = 1;
 }
+
+message IfStatement {
+    Expression test = 1;
+    Statement consequent = 2;
+    optional Statement alternate = 3;
+}
+
+// ForStatement has optional initializer, optional test, optional update.
+// for (let x = 0; x < 5; x++) { doSomething() }
+message ForStatement {
+    DeclarationKind kind = 1;
+    VariableDeclarator init = 2;
+    optional Expression test = 3;
+    optional Expression update = 4;
+    BlockStatement body = 5;
+}
+
+// for (let x of y) { doSomething() }
+// for (const [x, y] of z) { doSomething() }
+message ForOfStatement {
+    DeclarationKind kind = 1;
+    VariableDeclarator declarator = 2;
+    Statement body = 3;
+}
+
+message WhileStatement {
+    Expression test = 1;
+    Statement body = 2;
+}
+
+message SwitchStatement {
+    message CaseLabel {
+        message Default {}
+        oneof label {
+            Expression test = 1;
+            Default default = 2;
+        }
+    }
+
+    message Case {
+        repeated CaseLabel labels = 1;
+        BlockStatement consequent = 2; // CONTRACT: should end with oneof terminators
+    }
+
+    Expression discriminant = 1;
+    repeated Case cases = 2;
+}
+
+message TryStatement {
+    message CatchClause {
+        Pattern pattern = 1;
+        BlockStatement body = 2;
+    }
+
+    BlockStatement block = 1;
+    optional CatchClause handler = 2;
+    optional BlockStatement finalizer = 3;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Terminators
 
 // BreakStatement omits label
 // break
@@ -47,194 +256,214 @@ message BreakStatement {}
 // continue
 message ContinueStatement {}
 
-// ForStatement has optional initializer, optional test, optional update.
-// for (let x = 0; x < 5; x++) { doSomething() }
-message ForStatement {
-    oneof init {
-        VariableDeclaration initDeclaration = 1;
-        Expression initExpression = 2;
-    }
-    optional Expression test = 3;
-    optional Expression update = 4;
-    Statement body = 5;
-}
-
-// for (let x of y) { doSomething() }
-message ForOfStatement {
-    oneof left {
-        VariableDeclaration leftDeclaration = 1;
-        LVal leftLval = 2;
-    }
-    Expression right = 3;
-    Statement body = 4;
-}
-
-// x = 3
-// { key: value } = obj
-// [x, y] = arr
-// hello.world = true
-message AssignmentPattern {
-    oneof left {
-        Identifier leftIdentifier = 1;
-        ObjectPattern leftObject = 2;
-        ArrayPattern leftArray = 3;
-        MemberExpression leftMember = 4;
-    }
-    Expression right = 5;
-}
-
-// destructuring array pattern
-message ArrayPattern {
-    repeated PatternLike elements = 1;
-}
-
- // destructuring object pattern
-message ObjectPattern {
-    repeated ObjectProperty properties = 1;
-}
-
-// {
-//   id, // keyIdentifier = "id", valuePattern.Identifier = "id"
-//   g = 3, // keyIdentifier = "g", valuePattern.Assignment = 3
-//   "stringkey": 3, 
-//   1234: "string",
-//   expressionKey(): 
-// }
-message ObjectProperty {
-    oneof key {
-        Identifier keyIdentifier = 1;
-        string keyStringLiteral = 2;
-        uint64 keyNumericLiteral = 3;
-        string keyBigintLiteral = 4;
-        Expression keyExpression = 5;
-    }
-    oneof value {
-        Expression valueExpression = 6;
-        PatternLike valuePattern = 7;
-    }
-    bool computed = 8;
-    bool shorthand = 9;
-
-    // xor
-
-    optional LVal rest = 10;
-}
-
-message PatternLike {
-    oneof pattern {
-        Identifier identifier = 1;
-        AssignmentPattern assignment = 2;
-        ArrayPattern array = 3;
-        ObjectPattern object = 4;
-        LVal restElement = 5;
-    }
-}
-
-message LVal {
-    oneof lval {
-        Identifier identifier = 1;
-        MemberExpression member = 2;
-        AssignmentPattern assignment = 3;
-        ArrayPattern array = 4;
-        ObjectPattern object = 5;
-    }
-    optional bool isRest = 6;
-}
-
-message FunctionDeclaration {
-    Identifier id = 1;
-    repeated PatternLike params = 2;
-    optional LVal rest = 3;
-    repeated Statement body = 4;
-}
-
-message IfStatement {
-    Expression test = 1;
-    Statement consequent = 2;
-    optional Statement alternate = 3;
-}
-
 message ReturnStatement {
     optional Expression argument = 1;
-}
-
-message SwitchStatement {
-    Expression discriminant = 1;
-    repeated SwitchCase cases = 2;
-}
-
-message SwitchCase {
-    optional Expression test = 1;
-    repeated Statement consequent = 2;
 }
 
 message ThrowStatement {
     Expression argument = 1;
 }
 
-message TryStatement {
-    Statement block = 1;
-    optional CatchClause handler = 2;
-    optional BlockStatement finalizer = 3;
+///////////////////////////////////////////////////////////////////////////////
+// Expression statements
+
+message ExpressionStatement {
+    Expression expression = 1;
 }
 
-message CatchClause {
-    oneof param {
-        Identifier paramIdentifier = 1;
-        ArrayPattern paramArray = 2;
-        ObjectPattern paramObject = 3;
-    }
-    BlockStatement body = 4;
-}
-
-message VariableDeclaration {
-    enum Kind {
-        UNKNOWN = 0;
-        LET = 1;
-        CONST = 2;
-    }
-    Kind kind = 1;
-    repeated VariableDeclarator declarators = 2;
-}
-
-message VariableDeclarator {
-    LVal id = 1;
-    optional Expression init = 2;
-}
-
-message WhileStatement {
-    Expression test = 1;
-    Statement body = 2;
-}
+///////////////////////////////////////////////////////////////////////////////
+// Expressions
 
 message Expression {
     oneof expression {
-        Literal literal = 1;
+        // Literal expressions
+        LiteralExpression literal = 1;
         ArrayExpression array = 2;
-        AssignmentExpression assignment = 3;
-        BinaryExpression binary = 4;
-        CallExpression call = 5;
-        ConditionalExpression conditional = 6;
-        FunctionExpression function = 7;
-        Identifier identifier = 8;
+        ObjectExpression object = 3;
+        FunctionExpression function = 4;
+        ArrowFunctionExpression arrowFunction = 5;
+
+        // Operator expressions
+        BinaryExpression binary = 6;
+        UnaryExpression unary = 7;
+        ConditionalExpression conditional = 8;
         LogicalExpression logical = 9;
-        MemberExpression member = 10;
-        ObjectExpression object = 11;
-        UnaryExpression unary = 12;
-        UpdateExpression update = 13;
-        ArrowFunctionExpression arrowFunction = 14;
+        UpdateExpression update = 10; 
+        
+        // Variable accessing expressions
+        VariableExpression variable = 11;
+        AssignmentExpression assignment = 12;
+        MemberExpression member = 13;     
+  
+        // Function call expression
+        CallExpression call = 14;
     }
 }
 
-message MaybeSpreadExpression {
-    optional Expression expression = 1;
+///////////////////////////////////////////////////////////////////////////////
+// Literal expressions
+
+message ParameterElement {
+    oneof body {
+        Expression element = 1;
+        Expression spreadElement = 2;
+    }
+}
+
+message LiteralExpression {
+    Literal literal = 1;
 }
 
 message ArrayExpression {
-    repeated MaybeSpreadExpression elements = 1;
+    repeated ParameterElement elements = 1;
+}
+
+message ObjectExpression {
+    message Property {
+        PropName name = 1;
+        Expression value = 2;
+    }
+
+    message Method {
+        message Getter {
+            PropName name = 1;
+            BlockStatement body = 2;
+        }
+
+        message Setter {
+            PropName name = 1;
+            ParameterPattern param = 2;
+            BlockStatement body = 3;
+        }
+
+        oneof body {
+            FunctionExpression method = 1;
+            Getter getter = 2;
+            Setter setter = 3;
+        }
+    }
+
+    message Element {
+        oneof element {
+            Property property = 1;
+            Identifier shorthand = 2;
+            Method method = 3;
+            Expression spread = 4;
+        }
+    }
+
+    repeated Element elements = 1;
+}
+
+message FunctionExpression {
+    optional Identifier identifier = 1;
+    repeated ParameterPattern parameters = 2;
+    BlockStatement body = 3;
+}
+
+message ArrowFunctionExpression {
+    repeated ParameterPattern params = 1;
+    oneof body {
+        BlockStatement statement = 2;
+        Expression expression = 3;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Operator expressions
+
+message BinaryExpression {
+    enum ArithmeticOperator {
+        ARITHMETIC_UNKNOWN = 0;
+        ADD = 1; // | "+"
+        SUB = 2; // | "-"
+        DIV = 3; // | "/"
+        MOD = 4; // | "%"
+        MUL = 5; // | "*"
+        POW = 6; // | "**"
+        BITAND = 7; // | "&"
+        BITOR = 8; // | "|"
+        RSHIFT = 9; // | ">>"
+        URSHIFT = 10; // | ">>>"
+        LSHIFT = 11; // | "<<"
+        BITXOR = 12; // | "^"
+    }
+    enum ComparisonOperator {
+        COMPARISON_UNKNOWN = 0;
+        EQ = 13; // | "==="
+        NEQ = 14; // | "!=="
+        GT = 15; // | ">"
+        LT = 16; // | "<"
+        GTE = 17; // | ">="
+        LTE = 18; // | "<="
+    }
+    oneof operator {
+        ArithmeticOperator arithmetic = 1;
+        ComparisonOperator comparison = 2;
+    }
+    Expression left = 3;
+    Expression right = 4;
+}
+
+message UnaryExpression {
+    enum Operator {
+        UNKNOWN = 0;
+        VOID = 1; // | "void"
+        NOT = 2; // | "!"
+        POS = 3; // | "+"
+        NEG = 4; // | "-"
+        BITNOT = 5; // | "~"
+        TYPEOF = 6; // | "typeof"
+    }
+    Operator operator = 1;
+    Expression argument = 2;
+    bool prefix = 3;
+}
+
+message ConditionalExpression {
+    Expression test = 1;
+    Expression consequent = 2;
+    Expression alternate = 3;
+}
+
+message LogicalExpression {
+    enum Operator {
+        UNKNOWN = 0;
+        AND = 1; // | "&&"
+        OR = 2; // | "||"
+        COALESCE = 3; // | "??"
+    }
+    Operator operator = 1;
+    Expression left = 2;
+    Expression right = 3;
+}
+
+message UpdateExpression {
+    enum Operator {
+        UNKNOWN = 0;
+        INC = 1; // | "++"
+        DEC = 2; // | "--"
+    }
+    Operator operator = 1;
+    Expression argument = 2;
+    bool prefix = 3;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Variable accessing expressions
+
+message VariableExpression {
+    Identifier name = 1;
 }
 
 message AssignmentExpression {
+    message LValue {
+        oneof lvalue {
+            Identifier identifier = 1;
+            MemberExpression member = 2;
+        }
+    }
+
     enum Operator {
         UNKNOWN = 0;
         ASSIGN = 1; // =
@@ -252,146 +481,41 @@ message AssignmentExpression {
         POW = 13; // **=
     }
     Operator operator = 1;
-    LVal left = 2;
-    Expression right = 3;
-}
-
-message BinaryExpression {
-    enum Operator {
-        UNKNOWN = 0;
-        ADD = 1; // | "+"
-        SUB = 2; // | "-"
-        DIV = 3; // | "/"
-        MOD = 4; // | "%"
-        MUL = 5; // | "*"
-        POW = 6; // | "**"
-        BITAND = 7; // | "&"
-        BITOR = 8; // | "|"
-        RSHIFT = 9; // | ">>"
-        URSHIFT = 10; // | ">>>"
-        LSHIFT = 11; // | "<<"
-        BITXOR = 12; // | "^"
-        EQ = 13; // | "==="
-        NEQ = 14; // | "!=="
-        GT = 15; // | ">"
-        LT = 16; // | "<"
-        GTE = 17; // | ">="
-        LTE = 18; // | "<="
-    }
-    Operator operator = 1;
-    Expression left = 2;
-    Expression right = 3;
-}
-
-message CallExpression {
-    Expression callee = 1;
-    repeated MaybeSpreadExpression arguments = 2;
-    optional bool option = 3;
-}
-
-message ConditionalExpression {
-    Expression test = 1;
-    Expression consequent = 2;
-    Expression alternate = 3;
-}
-
-message FunctionExpression {
-    optional Identifier id = 1;
-    repeated PatternLike params = 2;
-    repeated Statement body = 3;
-}
-
-message LogicalExpression {
-    enum Operator {
-        UNKNOWN = 0;
-        AND = 1; // | "&&"
-        OR = 2; // | "||"
-        COALESCE = 3; // | "??"
-    }
-    Operator operator = 1;
-    Expression left = 2;
+    LValue left = 2;
     Expression right = 3;
 }
 
 message MemberExpression {
     Expression object = 1;
-    oneof property {
-        Expression propertyExpression = 2;
-        Identifier propertyIdentifier = 3;
-    }
-    bool computed = 4;
-    optional bool option = 5;
-}
-
-message ObjectExpression {
-    repeated ObjectElement properties = 1;
-}
-
-message ObjectElement {
-    oneof element {
-        ObjectMethod method = 1;
-        ObjectProperty property = 2;
-        Expression spread = 3;
+    oneof member {
+        Expression index = 2;
+        Identifier property = 3;
+        // QuasiQuote propertyQuasi = 4; // TODO
     }
 }
 
-message ObjectMethod {
-    enum Kind {
-        UNKNOWN = 0;
-        METHOD = 1;
-        GET = 2;
-        SET = 3;
-    }
-    Kind kind = 1;
-    oneof key {
-        Expression keyExpression = 2;
-        Identifier keyIdentifier = 3;
-        string keyStringLiteral = 4;
-        uint64 keyNumericLiteral = 5;
-    }
-    repeated PatternLike params = 6;
-    repeated Statement body = 7;
-    bool computed = 8;
-}
-/*
-message ParenthesizedExpression {
-    Expression expression = 1;
-}
-*/
+///////////////////////////////////////////////////////////////////////////////
+// Function call expression
 
-message UnaryExpression {
-    enum Operator {
-        UNKNOWN = 0;
-        VOID = 1; // | "void"
-        NOT = 2; // | "!"
-        POS = 3; // | "+"
-        NEG = 4; // | "-"
-        BITNOT = 5; // | "~"
-        TYPEOF = 6; // | "typeof"
+message CallExpression {
+    message CallElement {
+        oneof body {
+            Expression element = 1;
+            Expression spreadElement = 2;
+        }
     }
-    Operator operator = 1;
-    Expression argument = 2;
-    bool prefix = 3;
+
+    Expression callee = 1;
+    repeated ParameterElement arguments = 2;
 }
 
-message UpdateExpression {
-    enum Operator {
-        UNKNOWN = 0;
-        INC = 1; // | "++"
-        DEC = 2; // | "--"
-    }
-    Operator operator = 1;
-    Expression argument = 2;
-    bool prefix = 3;
-}
 
-message ArrowFunctionExpression {
-    repeated PatternLike params = 1;
-    repeated Statement statement = 2;
-    optional Expression expression = 3;
-}
 
-message Identifier {
-    string name = 1;
-    optional bool option = 2;
-}
+
+
+
+
+
+
+
+

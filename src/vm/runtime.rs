@@ -290,11 +290,14 @@ pub enum Value<
 */
 */
 
+#[path = "../gen/nessie.ast.rs"]
+mod ast;
+
 pub trait Boolean {
     fn to_bool(&self) -> bool;
 }
 
-pub trait Number {
+pub trait Numeric {
     fn add(&mut self, other: &Self) -> Result<&mut Self, str>;
     fn sub(&mut self, other: &Self) -> Result<&mut Self, str>;
     fn mul(&mut self, other: &Self) -> Result<&mut Self, str>;
@@ -316,26 +319,10 @@ pub trait Number {
     fn ge(&self, other: &Self) -> bool;
 }
 
-pub trait Bigint {
-    fn add(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn sub(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn mul(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn div(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn modulo(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn pow(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn bitand(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn bitor(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn bitxor(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn bitnot(&mut self) -> Result<&mut Self, str>;
-    fn lshift(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn rshift(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn urshift(&mut self, other: &Self) -> Result<&mut Self, str>;
-    fn eq(&self, other: &Self) -> bool;
-    fn ne(&self, other: &Self) -> bool;
-    fn lt(&self, other: &Self) -> bool;
-    fn gt(&self, other: &Self) -> bool;
-    fn le(&self, other: &Self) -> bool;
-    fn ge(&self, other: &Self) -> bool;
+pub trait Number: Numeric {
+}
+
+pub trait Bigint: Numeric {
 }
 
 pub trait String {
@@ -364,7 +351,7 @@ pub trait Closure {
 
 pub trait Value {
     type N: Number;
-    type B: Bigint;
+    // type B: Bigint;
     type S: String;
     type R: Reference;
     type C: Closure;
@@ -372,9 +359,15 @@ pub trait Value {
     // Type switch
     fn is_null(&self) -> bool;
     fn is_undefined(&self) -> bool;
+    fn is_boolean(&self) -> bool;
+    fn is_number(&self) -> bool;
+    fn is_string(&self) -> bool;
+    fn is_object(&self) -> bool;
+    fn is_closure(&self) -> bool;
+
     fn as_boolean(&self) -> Option<bool>;
     fn as_number(&self) -> Option<&Self::N>;
-    fn as_bigint(&self) -> Option<&Self::B>;
+    // fn as_bigint(&self) -> Option<&Self::B>;
     fn as_string(&self) -> Option<&Self::S>;
 
     fn as_closure(&self) -> Option<&Self::C>;
@@ -384,20 +377,102 @@ pub trait Value {
     fn to_boolean(&self) -> bool;
     fn to_integer(&self) -> &Self::N;
     fn to_string(&self) -> &Self::S;
-    
+
     fn to_object(&self) -> &Self::R;
+}
+
+enum CompletionSignal<V: Value> {
+    Continue,
+    Break,
+    Return(V),
+    Throw(V),
 }
 
 pub trait Context {
     type V: Value;
 
+    ///////////////////////////////
+    // Statements
+
+    // Block scope.
+    // 1. Holds a reference to the parent scope
+    // 2. Constructs a new scope for the current execution context
+    // 3. Hoist all the function declarations in the current execution context
+    // 4. Recover the parent scope after the execution context has finished
+    fn block_scope(&self, Fn(()) -> ());
+
+    // Variable declaration
+    // Declare a new variable in the current scope
+    fn declare_const_variable(&mut self, kind: ast::DeclarationKind, name: &str, v: &Self::V);
+    fn declare_let_variable(&mut self, kind: ast::DeclarationKind, name: &str, v: &Option<Self::V>);
+    // Function hoisting
+    // Invoked when the current execution context is about to start
+    fn declare_function_hoist(&mut self, name: &str, f: &Self::V);
+    // Function declaration
+    // Declare a new function in the current scope
+    fn declare_function(&mut self, name: &str, args: &[&str], body: &ast::Block);
+
+    // Control flow
+    fn control_if(&mut self, test: &Self::V, consequent: &ast::Block, alternate: &ast::Block);
+    fn control_for(&mut self, init: &Self::V, cond: &Self::V, inc: &Self::V, body: &ast::Block);
+    fn control_for_of(&mut self, init: &Self::V, iter: &Self::V, body: &ast::Block);
+    fn control_while(&mut self, cond: &Self::V, body: &ast::Block);
+    fn control_switch(&mut self, cond: &Self::V, cases: &[(&Self::V, &ast::Block)]);
+    fn control_try(&mut self, body: &ast::Block, catch: &ast::Block, finally: &ast::Block);
+
+    // Terminators
+    fn complete_break(&mut self);
+    fn complete_continue(&mut self);
+    fn complete_return(&mut self, val: &Self::V);
+    fn complete_throw(&mut self, val: &Self::V);
+    fn completion_signal(&self) -> &Option<CompletionSignal<Self::V>>;
+
+    ///////////////////////////////
+    // Expression
+
+    // Literal value creation
+    // XS_CODE_UNDEFINED
     fn new_undefined() -> Self::V;
+    // XS_CODE_NULL
     fn new_null() -> Self::V;
+    // XS_CODE_TRUE
+    // XS_CODE_FALSE
     fn new_boolean(b: bool) -> Self::V;
+    // XS_CODE_NUMBER
     fn new_number(n: i64) -> Self::V;
-    fn new_bigint(n: &[i32]) -> Self::V;
+    // XS_CODE_BIGINT
+    // fn new_bigint(n: &[i32]) -> Self::V;
+    // XS_CODE_STRING
     fn new_string(s: &str) -> Self::V;
 
+    // Array value creation
+    // XS_CODE_ARRAY
     fn new_array(vs: &[Self::V]) -> Self::V;
-    fn new_tuple(vs: &[Self::V]) -> Self::V;
+
+    // Object value creation
+    // XS_CODE_OBJECT
+    fn new_object();
+
+    // Function value creation
+    // the result of new_function is not hoisted
+    fn new_function(f: &mut FnMut(&[Self::V]) -> Self::V);
+    fn new_arrow_function(f: &mut FnMut(&[Self::V]) -> Self::V);
+
+    // operations
+    fn op_arithmetic(&mut self, op: ast::binary_expression::ArithmeticOperator, lhs: &Self::V, rhs: &Self::V) -> Result<Self::V, str>;
+    fn op_comparision(&mut self, op: ast::binary_expression::ComparisonOperator, lhs: &Self::V, rhs: &Self::V) -> bool;
+    fn op_unary(&mut self, op: ast::unary_expression::Operator, v: &Self::V) -> &Self::V;
+    fn op_logical(&mut self, op: ast::binary_expression::Operator, lhs: Fn() -> &Self::V, rhs: Fn() -> &Self::V) -> &Self::V;
+    fn op_update(&mut self, op: ast::update_expression::Operator, lhs: &Self::V, rhs: &Self::V) -> &Self::V;
+
+    // variable access
+    fn initialize_binding(&self, kind: ast::DeclarationKind, name: &str, v: &Self::V);
+    fn resolve_binding(&self, name: &str) -> &Self::V; 
+    fn set_variable(&mut self, name: &str, v: &Self::V);
+
+    fn get_property(&self, o: &Self::V, name: &str) -> Self::V;
+    fn set_property(&mut self, o: &Self::V, name: &str, v: &Self::V);
+
+    // function call
+    fn call_function(&mut self, f: &Self::V, args: &[Self::V]) -> Self::V;
 }
