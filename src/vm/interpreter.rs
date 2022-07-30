@@ -1,357 +1,1133 @@
-#[path = "../gen/nessie.ast.rs"]
-mod ast;
+use core::panic;
+use std::borrow::Borrow;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::rc::Weak;
+use std::collections::HashSet;
 
 #[path="./runtime.rs"]
 mod runtime;
 
-#[path="./mock.rs"]
-mod mock;
+#[path = "../gen/nessie.ast.rs"]
+pub mod ast;
 
-use std::collections::HashSet;
-
-// The eval_ functions in this module evaluate the static semantics of the
-// Jessie AST nodes, and provide additional typing/binding information. The
-// runtime contexts are provided by the runtime module, which is responsible for
-// evaluating the runtime semantics of the program.
-
-use ast::statement::*;
-
-fn eval_statement(ctx: &impl runtime::Context, stmt: &Statement) {
-    match stmt {
-        Statement::VariableDeclaration(stmt) => eval_variable_declaration(ctx, stmt),
-        Statement::FunctionDeclaration(stmt) => eval_function_declaration(ctx, stmt),
-
-        Statement::BlockStatement(stmt) => eval_block(ctx, stmt),
-
-        Statement::IfStatement(stmt) => eval_if_statement(ctx, stmt),
-        Statement::ForStatement(stmt) => eval_for_statement(ctx, stmt),
-        Statement::ForOfStatement(stmt) => eval_for_of_statement(ctx, stmt),
-        Statement::WhileStatement(stmt) => eval_while_statement(ctx, stmt),
-        Statement::SwitchStatement(stmt) => eval_switch_statement(ctx, stmt),
+#[derive(PartialEq, Eq, Debug)]
+pub enum JSValue {
+    Undefined,
+    Null,
+    Boolean(bool),
+    Number(JSNumber),
+    // Bigint(i64, i64), // TODO
+    String(JSString),
     
-        Statement::TryStatement(stmt) => eval_try_statement(ctx, stmt),
+    Reference(JSReference),
+
+//    External(JSExternal),
+}
+
+// JSExternal corresponds to WASM externals, interface for native functions.
+#[derive(PartialEq, Eq, Debug)]
+pub struct JSExternal {
+    pub name: String,
+}
+
+impl JSValue {
+    pub fn new_undefined() -> JSValue {
+        JSValue::Undefined
+    }
+
+    pub fn new_null() -> JSValue {
+        JSValue::Null
+    }
+
+    pub fn new_number(value: i64) -> JSValue {
+        JSValue::Number(JSNumber::Integer(value))
+    }
+
+    pub fn new_string(value: &str) -> JSValue {
+        JSValue::String(JSString::new(value.to_string()))
+    }
 
 
-        Statement::BreakStatement(stmt) => eval_break_statement(ctx, stmt),
-        Statement::ContinueStatement(stmt) => eval_continue_statement(ctx, stmt), 
-        Statement::ReturnStatement(stmt) => eval_return_statement(ctx, stmt),
-        Statement::ThrowStatement(stmt) => eval_throw_statement(ctx, stmt),
-
-        Statement::ExpressionStatement(stmt) => eval_expression(ctx, stmt.expression),
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            JSValue::Undefined => false,
+            JSValue::Null => false,
+            JSValue::Boolean(b) => *b,
+            JSValue::Number(JSNumber::NaN) => false,
+            JSValue::Number(JSNumber::Integer(0)) => false,
+            JSValue::Number(_) => true,
+            JSValue::String(s) => !s.is_empty(),
+            JSValue::Reference(r) => true,
+        }
     }
 }
 
-fn early_error_variable_declaration(stmt: &ast::VariableDeclaration) {
-    for decl in stmt.declarators.iter() {
-        match decl.declarator {
-            ast::variable_declarator::Declarator::Normal(decl) => {
-                if decl.identifier == "let" || decl.identifier == "const" {
-                    panic!("early error: variable declaration cannot be `let` or `const`");
+impl runtime::JSValue for JSValue {
+    type N = JSNumber;
+    // type B = Bigint;
+    type S = JSString;
+    type R = JSReference;
+
+    fn type_match<T>(&self, 
+            if_null: T,
+            if_undefined: T,
+            if_boolean: &dyn Fn(bool) -> T,
+            if_number: &dyn Fn(&Self::N) -> T,
+            // if_bigint: dyn Fn(&Self) -> &'a T,
+            if_string: &dyn Fn(&Self::S) -> T,
+            if_object: &dyn Fn(&Self::R) -> T,
+        ) -> T {
+        match self {
+            JSValue::Null => if_null,
+            JSValue::Undefined => if_undefined,
+            JSValue::Boolean(b) => if_boolean(*b),
+            JSValue::Number(n) => if_number(n),
+            // JSValue::Bigint(n, _) => if_bigint(n),
+            JSValue::String(s) => if_string(s),
+            JSValue::Reference(r) => if_object(r),
+        }
+    }
+
+    fn as_boolean(&self) -> Option<bool> {
+        match self {
+            JSValue::Boolean(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    fn as_number(&self) -> Option<&Self::N> {
+        match self {
+            JSValue::Number(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    fn as_string(&self) -> Option<&Self::S> {
+        match self {
+            JSValue::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn as_reference(&self) -> Option<&Self::R> {
+        match self {
+            JSValue::Reference(r) => Some(r.clone()),
+            _ => None,
+        }
+    }
+
+    fn to_boolean(&self) -> bool {
+        self.is_truthy()
+    }
+
+    fn to_integer(&self) -> &Self::N {
+        match self {
+            JSValue::Undefined => &JSNumber::NaN,
+            JSValue::Null => &JSNumber::Integer(0),
+            JSValue::Boolean(b) => &JSNumber::Integer(if *b { 1 } else { 0 }),
+            JSValue::Number(n) => self,
+            JSValue::String(_) => panic!("Cannot convert to integer"),
+            JSValue::Reference(_) => panic!("Cannot convert to integer"),
+        }
+    }
+
+    fn to_string(&self) -> &Self::S {
+        match self {
+            JSValue::Undefined => &JSString::new("undefined".to_string()),
+            JSValue::Null => &JSString::new_short("null"),
+            JSValue::Boolean(b) => &JSString::new_short(if *b { "true" } else { "false" }),
+            JSValue::Number(n) => &JSString::new(n.to_string()),
+            JSValue::String(s) => s,
+            JSValue::Reference(r) => panic!("Cannot convert to string"),
+        }
+    }
+
+    fn to_object(&self) -> &Self::R {
+        match self {
+            JSValue::Reference(r) => r,
+            _ => unimplemented!("Type conversion to object"),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub enum JSNumber {
+    NaN,
+    Infinity(bool), // true = positive, false = negative
+    Integer(i64),
+}
+
+use JSNumber::NaN;
+use JSNumber::Infinity;
+use JSNumber::Integer;
+
+impl JSNumber {
+    #[inline]
+    fn ok(&mut self, value: ()) -> Result<&mut Self, String> {
+        Ok(self)
+    }
+
+    #[inline]
+    fn assign(&mut self, value: Self) -> Result<&mut Self, String> {
+        *self = value;
+        Ok(self)
+    }
+
+    #[inline]
+    fn type_error(&mut self) -> Result<&mut Self, String> {
+        Err("Type error".to_string())
+    }
+
+    #[inline]
+    fn to_int32(&self) -> i32 {
+        match self {
+            &Integer(i) => i as i32, // TODO
+            _ => 0,
+        }
+    }
+
+    #[inline]
+    fn to_string(&self) -> String {
+        match self {
+            &Integer(i) => i.to_string(),
+            &NaN => "NaN".to_string(),
+            &Infinity(true) => "Infinity".to_string(),
+            &Infinity(false) => "-Infinity".to_string(),
+        }
+    }
+}
+
+impl runtime::JSNumeric for JSNumber {
+    #[inline]
+    fn add(&mut self, other: &Self) -> Result<&mut Self, String> {
+        match self {
+            NaN => self.ok(()),
+            Infinity(x) => match other {
+                Infinity(y) => {
+                    if *x == *y {
+                        self.ok(())
+                    } else {
+                        self.assign(Self::NaN)
+                    }
+                }
+                _ => self.ok(()) // ignore other cases
+            }
+            Integer(x) => match other {
+                Infinity(_) => self.assign(*other),
+                Integer(y) => self.ok(*x = *x + *y),
+                NaN => self.assign(NaN),
+            },
+        }
+    }
+
+    #[inline]
+    fn sub(&mut self, other: &Self) -> Result<&mut Self, String> {
+        match self {
+            NaN => self.ok(()),
+            Infinity(x) => match other {
+                Infinity(y) => {
+                    if *x != *y {
+                        self.ok(())
+                    } else {
+                        self.assign(NaN)
+                    }
+                }
+                _ => self.ok(()), // ignore other cases
+            }
+            Integer(x) => match other {
+                Infinity(y) => self.ok(*y = !*y),
+                Integer(y) => self.ok(*x = *x - *y),
+                NaN => self.assign(NaN),
+            },
+        }
+    }
+
+    #[inline]
+    fn mul(&mut self, other: &Self) -> Result<&mut Self, String> {
+        match self {
+            NaN => self.ok(()),
+            Infinity(x) => match other {
+                Infinity(y) => self.ok(*x = *x == *y),
+                Integer(0) => self.assign(NaN),
+                Integer(y) => self.ok(*x = *x == (*y>=0)),
+            }
+            Integer(0) => match other {
+                Infinity(_) => self.assign(NaN),
+                NaN => self.assign(NaN),
+                _ => self.type_error(),
+            },
+            Integer(x) => match other {
+                Infinity(y) => self.assign(Infinity((*x>=0) == *y)),
+                Integer(y) => self.ok(*x = *x * *y),
+                NaN => self.assign(NaN),
+                _ => self.type_error(),
+            },
+        }
+    }
+
+    #[inline]
+    fn div(&mut self, other: &Self) -> Result<&mut Self, String> {
+        match self {
+            NaN => self.ok(()),
+            Infinity(x) => match other {
+                Infinity(y) => self.assign(NaN),
+                Integer(y) => self.ok(*x = *x == (*y>=0)),
+                NaN => self.assign(NaN),
+            }
+            Integer(0) => match other {
+                Integer(0) => self.assign(NaN),
+                NaN => self.assign(NaN),
+                _ => self.ok(()),
+            },
+            Integer(x) => match other {
+                Integer(0) => self.assign(Infinity(*x>=0)),
+                Infinity(y) => self.ok(*x = 0),
+                Integer(y) => self.ok(*x = *x / *y),
+                NaN => self.assign(NaN),
+                _ => self.type_error(),
+            },
+        }
+    }
+
+    #[inline]
+    fn modulo(&mut self, other: &Self) -> Result<&mut Self, String> {
+        match self {
+            NaN => self.ok(()),
+            Infinity(x) => self.assign(NaN),
+            Integer(x) => match other {
+                Infinity(y) => self.ok(()),
+                Integer(0) => self.assign(NaN),
+                Integer(y) => self.ok(*x = *x % *y),
+                NaN => self.assign(NaN),
+                _ => self.type_error(), 
+            },
+        }
+    }
+
+    #[inline]
+    fn pow(&mut self, other: &Self) -> Result<&mut Self, String> {
+        unimplemented!("asdf")
+    } // TODO XXX
+
+    #[inline]
+    fn bitand(&mut self, other: &Self) -> Result<&mut Self, String> {
+        let v = self.to_int32() & other.to_int32();
+        match self {
+            Integer(x) => self.ok(*x = v as i64),
+            _ => self.assign(Integer(v as i64)),
+        }  
+    }
+
+    #[inline]
+    fn bitor(&mut self, other: &Self) -> Result<&mut Self, String> {
+        let v = self.to_int32() | other.to_int32();
+        match self {
+            Integer(x) => self.ok(*x = v as i64),
+            _ => self.assign(Integer(v as i64)),
+        } 
+    }
+
+    #[inline]
+    fn bitxor(&mut self, other: &Self) -> Result<&mut Self, String> {
+        let v = self.to_int32() ^ other.to_int32();
+        match self {
+            Integer(x) => self.ok(*x = v as i64),
+            _ => self.assign(Integer(v as i64)),
+        }    
+    }
+
+    #[inline]
+    fn bitnot(&mut self) -> Result<&mut Self, String> {
+        let v = self.to_int32() ^ 0xFFFFFFFF;
+        match self {
+            Integer(x) => self.ok(*x = v as i64),
+            _ => self.assign(Integer(v as i64)),
+        }
+    }
+
+    #[inline]
+    fn lshift(&mut self, other: &Self) -> Result<&mut Self, String> {
+        let v = self.to_int32() << other.to_int32();
+        match self {
+            Integer(x) => self.ok(*x = v as i64), 
+            _ => self.assign(Integer(v as i64)),
+        } 
+    }
+
+    #[inline]
+    fn rshift(&mut self, other: &Self) -> Result<&mut Self, String> {
+        let v = self.to_int32() >> other.to_int32();
+        match self {
+            Integer(x) => self.ok(*x = v as i64),
+            _ => self.assign(Integer(v as i64)),
+        }   
+    }
+
+    #[inline]
+    fn urshift(&mut self, other: &Self) -> Result<&mut Self, String> {
+        unimplemented!("asdfasdf")
+    }
+
+    #[inline]
+    fn equal(&self, other: &Self) -> bool {
+        match self {
+            NaN => match other {
+                NaN => true,
+                _ => false,
+            },
+            Infinity(x) => match other {
+                Infinity(y) => *x == *y,
+                _ => false,
+            },
+            Integer(x) => match other {
+                Integer(y) => *x == *y,
+                _ => false,
+            },
+        }
+    }
+
+    #[inline]
+    fn not_equal(&self, other: &Self) -> bool {
+        !self.equal(other)
+    }
+
+    // Copilot wrote, need to check
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        match self {
+            NaN => match other {
+                NaN => false,
+                _ => false,
+            },
+            Infinity(x) => match other {
+                Infinity(y) => *x < *y,
+                _ => false,
+            },
+            Integer(x) => match other {
+                Integer(y) => *x < *y,
+                _ => false,
+            },
+        }
+    }
+
+    // Copilot wrote, need to check
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        match self {
+            NaN => match other {
+                NaN => false,
+                _ => false,
+            },
+            Infinity(x) => match other {
+                Infinity(y) => *x <= *y,
+                _ => false,
+            },
+            Integer(x) => match other {
+                Integer(y) => *x <= *y,
+                _ => false,
+            },
+        }
+    }
+
+    // Copilot wrote, need to check
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        match self {
+            NaN => match other {
+                NaN => false,
+                _ => false,
+            },
+            Infinity(x) => match other {
+                Infinity(y) => *x > *y,
+                _ => false,
+            },
+            Integer(x) => match other {
+                Integer(y) => *x > *y,
+                _ => false,
+            },
+        }
+    }
+
+    // Copilot wrote, need to check
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        match self {
+            NaN => match other {
+                NaN => false,
+                _ => false,
+            },
+            Infinity(x) => match other {
+                Infinity(y) => *x >= *y,
+                _ => false,
+            },
+            Integer(x) => match other {
+                Integer(y) => *x >= *y,
+                _ => false,
+            },
+        }
+    }
+}
+
+impl runtime::JSNumber for JSNumber {
+
+}
+/* 
+pub enum Bigint {
+    V128(bool, [u32; 4]),
+}
+
+use Bigint::V128;
+
+impl Bigint {
+    #[inline]
+    fn ok(&self, value: ()) -> Result<&Self, String> {
+        Ok(self)
+    }
+
+    #[inline]
+    fn assign(&mut self, value: Self) -> Result<&Self, String> {
+        *self = value;
+        Ok(self)
+    }
+
+    #[inline]
+    fn type_error(&self) -> Result<&Self, String> {
+        Err("Type error")
+    }
+
+    #[inline]
+    fn to_int32(&self) -> i32 {
+        match self {
+            &Integer(i) => i as i32, // TODO
+            _ => 0,
+        }
+    }
+}
+
+
+impl runtime::Bigint for Bigint {
+    #[inline]
+    fn add(&mut self, other: &Self) -> Result<&mut Self, String> {
+        match self {
+            V128(xsign, x) => match other {
+                V128(ysign, y) => {
+                    let val = x[0] as i64;
+                    let carry = 0;
+                    val += y[0] * ((xsign != ysign) as i32 * -1);
+                    if val < 0 {
+                        carry = -1;
+                        val = u32::MAX - val;
+                    } else if val > u32::MAX {
+                        carry = 1;
+                        val = val - u32::MAX;
+                    }
+                    x[0] = val as u32;
+
+                    let val = x[1] as i64;
+                    let carry = 0;
+                    val += y[0] * ((xsign != ysign) as i32 * -1);
+                    if val < 0 {
+                        carry = -1;
+                        val = u32::MAX - val;
+                    } else if val > u32::MAX {
+                        carry = 1;
+                        val = val - u32::MAX;
+                    }
+                    x[1] = val as u32;
                 }
             },
-            ast::variable_declarator::Declarator::Binding(decl) => {
-                unimplemented!("asdf")
-            },
         }
+        self.ok(())
     }
 }
+*/
 
-#[inline]
-fn eval_variable_declaration<Context: runtime::Context>(ctx: &Context, stmt: &ast::VariableDeclaration) {
-    if ctx.check_early_error() {
-        early_error_variable_declaration(stmt);
+#[derive(PartialEq, Eq, Debug)]
+pub enum JSString {
+    Short(u64), // short ascii String, maximum length is 8 bytes
+    Normal(String), // heap allocated arbitrary length UTF-8 String
+}
+
+impl JSString {
+    #[inline]
+    fn new(s: String) -> Self {
+        JSString::Normal(s)
     }
 
-    for decl in stmt.declarators.iter() {
-        match decl.declarator {
-            ast::variable_declarator::Declarator::Normal(decl) => {
-                // RS: Evaluation
-                let binding = ctx.resolve_binding(decl.identifier);
-                let value = match decl.initializer {
-                    Some(expr) => {
-                        let value = eval_expression(ctx, expr);
-                        if value.is_closure() {
-                            ctx.set_closure_name(value, decl.identifier);
-                        }
-                        value
-                    }
-                    None => runtime::Value::Undefined,
-                };
-                ctx.initialize_binding(stmt.kind, binding, value)
-            },
-            ast::variable_declarator::Declarator::Binding(decl) => {
-                unimplemented!("binding variable declarators")
+    #[inline]
+    fn new_short(s: &str) -> Self {
+        JSString::Short(u64::from_be_bytes(s.as_bytes().try_into().unwrap()))
+    }
+
+    fn to_normal(&mut self) -> &mut Self {
+        match self {
+            &mut JSString::Short(x) => {
+                let bytes: [u8; 8] = x.to_be_bytes();
+                *self = JSString::Normal(std::str::from_utf8(bytes.as_ref())?.to_string());
             }
+            _ => {}
+        }
+        self
+    }
+
+    fn as_normal(&self) -> &Self {
+        match self {
+            JSString::Short(x) => {
+                let bytes: [u8; 8] = x.to_be_bytes();
+                &JSString::Normal(String::from_utf8(bytes.to_vec()).unwrap())
+            }
+            _ => self
+        }
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        match self {
+            JSString::Short(x) => *x == 0,
+            JSString::Normal(x) => x.is_empty(),
+        }
+    }
+
+    #[inline]
+    fn to_string(&self) -> String {
+        let JSString::Normal(s) = self.as_normal();
+        *s
+    }
+
+}
+
+impl runtime::JSString for JSString {
+    #[inline]
+    fn concat(&mut self, other: &Self) -> &mut Self {
+        let JSString::Normal(self_) = self.to_normal();
+        for c in other.to_string().chars() {
+            self_.push(c);
+        }
+        self
+    }
+}
+
+/*
+enum Prototype {
+    ObjectPrototype,
+    FunctionPrototype,
+    ArrayPrototype,
+    StringPrototype,
+    BooleanPrototype,
+    NumberPrototype,
+    DatePrototype,
+    RegExpPrototype,
+    // HostPrototype,
+    ErrorPrototype,
+    RangeErrorPrototype,
+    ReferenceErrorPrototype,
+    SyntaxErrorPrototype,
+    TypeErrorPrototype,
+    // ArrayBufferPrototype,
+    // DataViewPrototype,
+    // TypedArrayPrototype,
+    // MapPrototype,
+    // SetPrototype,
+    // PromisePrototype,
+    // ProxyPrototype,
+}
+*/
+
+#[derive(PartialEq, Eq, Debug)]
+pub enum ErrorType {
+    Error,
+    RangeError,
+    ReferenceError,
+    SyntaxError,
+    TypeError,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+// Jessie does not allow custom prototype definition,
+// so we use a single enum for all predefined prototypes.
+pub enum Prototype {
+    Function(HashMap<String, JSValue>, ast::FunctionExpression), // function object
+    Array(Vec<JSValue>), // object with array storage
+    // TypedArray(Vec<u8>),
+    Error(ErrorType, String), // error object
+    // Primitive(),
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct JSObject {
+    prototype: Option<Prototype>, // none if simple Object
+    properties: BTreeMap<String, JSValue>,
+}
+
+impl JSObject {
+    #[inline]
+    fn new() -> Self {
+        JSObject {
+            prototype: None,
+            properties: BTreeMap::new(),
+        }
+    }
+
+    #[inline]
+    fn new_array(elems: Vec<JSValue>) -> Self {
+        JSObject {
+            prototype: Some(Prototype::Array(elems)),
+            properties: BTreeMap::new(),
+        }
+    }
+
+    #[inline]
+    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: &dyn Fn(&Self) -> Option<JSValue>, captures: Vec<&JSValue>) -> Self {
+        JSObject {
+            prototype: Some(Prototype::Function()),
+            properties: BTreeMap::new(),
         }
     }
 }
 
-#[inline]
-fn early_error_function_declaration(stmt: &ast::FunctionDeclaration) {
-    let decl = stmt.function?;
-    let mut unique_parameter_set = HashSet::with_capacity(decl.parameters.len());
-    for param in decl.parameters.iter() {
-        if param.identifier == "eval" || param.identifier == "arguments" {
-            panic!("early error: function declaration cannot have `eval` or `arguments` as parameters");
-        }
-
-        if !unique_parameter_set.insert(param.identifier) {
-            panic!("early error: function declaration cannot have duplicate parameters");
-        }
-
-        if declared_names(decl.body).contains(&param.identifier) {
-            panic!("early error: function declaration cannot have a parameter that is also declared in the body");
-        }
-
-        // call to 'super' is not allowed anywhere, will be checked in identifier access
-    }
-}
-
-#[inline]
-fn eval_function_declaration<Context: runtime::Context>(ctx: &Context, stmt: &ast::FunctionDeclaration) {
-    if ctx.check_early_error() {
-        early_error_function_declaration(stmt);
-    }
-
-    
-}
-
-// https://tc39.es/ecma262/#sec-block-runtime-semantics-evaluation
-//
-// In Jessie, there are no var declarations, so we only need to scan the
-// function declarations inside the block and hoist them. For variables,
-// we can just evaluate the statements in the block linearly, and add the 
-// declaration to the context when encountered.
-//
-// ctx.block_scope() declares a new scope for the block, and restores the previous
-// scope when the block is finished. TODO: inline closure 
-// Equivalent to NewDeclarativeEnvironment
-fn eval_block(ctx: &impl runtime::Context, stmt: &ast::BlockStatement) {
-    ctx.block_scope(|| {
-        for stmt in &stmt.statements {
-            eval_statement(ctx, stmt);
+impl runtime::JSObject for JSObject {
+    fn call(&self, ctx: &JSContext, parameters: Vec<JSValue>) -> Option<JSValue> {
+        if let Prototype::Function(env, func) = &self.prototype {
             
+        } else {
+            panic!("Type error");
         }
-    })
+
+        lexical::eval_statement(ctx, self.prototype)
+    }
 }
 
-// https://tc39.es/ecma262/#sec-break-statement-runtime-semantics-evaluation
-// 
-// No labeled break implementation.
-//
-// Break statement invokes a termination signal that propagates over the ast
-// and handled by the nearest enclosing loop.
-fn eval_break_statement(ctx: &impl runtime::Context, stmt: &ast::BreakStatement) {
-    // break_loop is a signal that the nearest enclosing loop should break.
-    // it sets the internal flag to true, which is checked by the surrounding
-    // iteration statements(e.g. block, loop, switch)
-    ctx.terminator_break();
+#[derive(PartialEq, Eq, Debug)]
+// Reference is a pointer to a value in the heap.
+pub struct JSReference {
+    value: Rc<RefCell<JSObject>>
 }
 
-// https://tc39.es/ecma262/#sec-continue-statement-runtime-semantics-evaluation
-//
-// No labeled continue implementation.
-//
-// Continue statement invokes a termination signal that propagates over the ast
-// and handled by the nearest enclosing loop.
-fn eval_continue_statement(ctx: &impl runtime::Context, stmt: &ast::ContinueStatement) {
-    // continue_loop is a signal that the nearest enclosing loop should continue.
-    // it sets the internal flag to true, which is checked by the surrounding
-    // iteration statements(e.g. block, loop, switch)
-    ctx.terminator_continue();
-}
-
-// https://262.ecma-international.org/9.0/#sec-for-statement
-// 
-fn eval_for_statement(ctx: &impl runtime::Context, stmt: &ast::ForStatement) {
-    ctx.scope(|| {
-        match stmt.init {
-            Some(init) => eval_expression(ctx, init),
-            None => (),
+impl JSReference {
+    fn new(value: JSObject) -> Self {
+        JSReference {
+            value: Rc::new(RefCell::new(value))
         }
-        loop {
-            match stmt.test {
-                Some(test) => {
-                    let test_val = eval_expression(ctx, test);
-                    if !test_val.truthy() {
-                        break;
-                    }
+    }
+
+    fn new_array(elems: Vec<JSValue>) -> Self {
+        JSReference {
+            value: Rc::new(RefCell::new(JSObject::new_array(elems)))
+        }
+    }
+
+    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: dyn Fn(&Self) -> &JSValue, captures: Vec<&JSValue>) -> Self {
+        JSReference {
+            value: Rc::new(RefCell::new(JSObject::new_function(identifier, parameters, body, captures)))
+        }
+    }
+}
+
+impl runtime::JSReference for JSReference {
+    type V = JSValue;
+    type P = JSProperty;
+    type N = JSPropName;
+//    type Iter = JSObjectIterator;
+
+    fn property(&self, name: &Self::N) -> Self::P {
+        JSProperty::new(self, name.name)
+    }
+}
+
+pub struct JSPropName {
+    name: String,
+}
+
+impl runtime::JSPropName for JSPropName {
+    fn new(name: String) -> Self {
+        JSPropName {
+            name,
+        }
+    }
+}
+
+// JSProperty is meant to be ephemeral
+pub struct JSProperty {
+    value: Weak<RefCell<JSObject>>,
+    propname: String,
+}
+
+impl JSProperty {
+    fn new(refer: JSReference, name: String) -> Self {
+        JSProperty {
+            value: refer.value.downgrade(),
+            propname: name,
+        }
+    }   
+}
+
+impl runtime::JSProperty for JSProperty {
+    type V = JSValue;
+
+    fn get(&self) -> Self::V {
+        match *self.value.value.borrow() {
+            JSObject { prototype, properties } => {
+                *properties.get(&self.propname).unwrap_or(&JSValue::Undefined) 
+            }
+            _ => unimplemented!("ToObject"), // TODO
+        }
+    }
+
+    fn set(&self, value: Self::V) {
+        match *self.value.value.borrow() {
+            JSObject { prototype, properties } => {
+                *properties.get_mut(&self.propname).unwrap() = value;
+            }
+            _ => unimplemented!("TypeError"), // TODO: return TypeError
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct ScopedVariable {
+    value: JSValue,
+    kind: ast::DeclarationKind,
+    depth: i16
+}
+
+impl ScopedVariable {
+    #[inline]
+    pub fn new(value: JSValue, kind: ast::DeclarationKind, depth: i16) -> Self {
+        ScopedVariable {
+            value,
+            kind,
+            depth
+        }
+    }
+}
+
+pub struct Scope {
+    binding: HashMap<String, ScopedVariable>,
+    recovery: Vec<BTreeMap<String, Option<ScopedVariable>>>,
+}
+
+impl Scope {
+    pub fn new() -> Self {
+        Scope {
+            binding: HashMap::new(),
+            recovery: Vec::new(),
+        }
+    }
+
+    #[inline]
+    pub fn depth(&self) -> i16 {
+        self.recovery.len() as i16
+    }
+
+    #[inline]
+    pub fn current_recovery(&self) -> &BTreeMap<String, Option<ScopedVariable>> {
+        self.recovery.last().unwrap()
+    }
+
+    #[inline]
+    pub fn get(&self, name: String) -> Option<JSValue> {
+        match self.binding.get(&name) {
+            Some(var) => Some(var.value),
+            None => None,
+        }
+    }
+    
+    pub fn declare(&mut self, name: String, kind: ast::DeclarationKind, value: Option<JSValue>) {
+        if kind == ast::DeclarationKind::Const && value.is_none() {
+            panic!("const variable must be initialized");
+        }
+
+        match self.binding.get_mut(&name) {
+            Some(existing) => {
+                if existing.depth < self.depth() {
+                    // parent scope had declared the variable,
+                    // shadow it by adding it to the recovery list
+                    self.current_recovery().insert(name, Some(existing.clone()));
+                } else if existing.kind == ast::DeclarationKind::Let {
+                    // TODO: support overriding let variables
+                    panic!("cannot override let variable")
+                } else {
+                    // cannot override const variables
+                    panic!("cannot override const variable")
                 }
-                None => (),
-            }
 
-            for stmt in &stmt.body.statements {
-                eval_statement(ctx, stmt);
-                // When any of the internal statement had set completion signal,
-                // for statement handles them appropriately.
-                if ctx.completion_signal().is_some() {
-                    break
+                *existing = ScopedVariable::new(value.unwrap_or(JSValue::Undefined), kind, self.depth());
+            },
+            None => {
+                self.current_recovery().insert(name, None);
+                self.binding.insert(name, ScopedVariable::new(value.unwrap_or(JSValue::Undefined), kind, self.depth()));
+            }
+        }
+    }
+
+    pub fn set(&mut self, name: String, value: &JSValue) -> Result<(), &str> {
+        match self.binding.get_mut(&name) {
+            Some(existing) => {
+                if existing.depth != self.depth() {
+                    // if self.declare() had been called, this should not happen
+                    return Err("cannot set variable from a different scope")
+                } else if existing.kind != ast::DeclarationKind::Let {
+                    // cannot set to non-let variable
+                    // TODO: throw error instead of panic
+                    return Err("Cannot set to non-let variable");
+                }
+                *existing = ScopedVariable::new(*value, existing.kind, existing.depth);
+                Ok(())
+            }
+            None => {
+                panic!("Cannot set to non-declared variable");
+            }
+        }
+    }
+
+    #[inline]
+    pub fn enter(&mut self) {
+        self.recovery.push(BTreeMap::new());
+    }
+
+    pub fn exit(&mut self) {
+        let Some(recovery) = self.recovery.pop();
+        for (key, entry) in recovery.iter() {
+            match entry {
+                Some(existing) => {
+                    self.binding.insert(key.clone(), *existing.clone());
+                }
+                None => {
+                    self.binding.remove(key);
                 }
             }
+        }
+    }
+}
 
-            match ctx.termination_signal() {
-                None => (),
-                Some(runtime::CompletionSignal::Continue) => continue,
-                Some(runtime::CompletionSignal::Break) => break,
-                Some(runtime::CompletionSignal::Return(val)) => return,
-                Some(runtime::CompletionSignal::Throw(val)) => return,
-            }
+pub struct JSContext {
+    scope: Scope,
+    completion: Option<runtime::Completion<JSValue>>,
+}
 
-            // TODO: binding
+impl JSContext {
+    fn set_completion(&mut self, completion: runtime::Completion<JSValue>) {
+        self.completion = Some(completion);
+    }
+}
 
-            match stmt.update {
-                Some(update) => eval_expression(ctx, &update),
-                None => (),
+impl runtime::JSContext for JSContext {
+    type V = JSValue;
+
+    fn block_scope(&self, body: &dyn Fn()) {
+        self.scope.enter();
+        body();
+        self.scope.exit();
+    }
+
+    fn extract_free_variables(&self, vars: HashSet<String>) -> HashSet<String> {
+        for var in vars.iter() {
+            if self.scope.get(var).is_some() {
+                vars.remove(var);
             }
         }
-    }|)
-}
+        
+        vars
+    }
 
-fn eval_for_of_statement(ctx: &impl Context, stmt: &ast::ForOfStatement) {
-    ctx.scope(|| {
-        let iterable = eval_expression(ctx, &stmt.iterable);
-        let iterator = iterable.iterator();
-        let mut iterator = iterator.unwrap();
-        loop {
-            let next = iterator.next();
-            if next.is_none() {
-                break;
-            }
-            let next = next.unwrap();
-            let next = next.value();
-            let next = runtime::Value::from_js_value(next);
-            ctx.set_variable(stmt.left_identifier.name, next);
-            eval_statement(ctx, &stmt.body);
-            match ctx.completion_signal() {
-                None => (),
-                Some(runtime::CompletionSignal::Continue) => continue,
-                Some(runtime::CompletionSignal::Break) => break,
-                Some(runtime::CompletionSignal::Return(val)) => return,
-                Some(runtime::CompletionSignal::Throw(val)) => return,
-            }
+    #[inline]
+    fn declare_const_variable(&mut self, name: String, v: Self::V) {
+        self.scope.declare(name, ast::DeclarationKind::Const, Some(v))
+    }
+
+    #[inline]
+    fn declare_let_variable(&mut self, name: String, v: Option<Self::V>) {
+        self.scope.declare(name, ast::DeclarationKind::Let, v)
+    }
+
+    #[inline]
+    fn control_loop(&mut self, test: &dyn Fn() -> Self::V, body: &dyn Fn()) {
+        while test().is_truthy() {
+            body();
         }
-    }|)
+    }
+
+    #[inline]
+    fn control_branch(&mut self, test: &dyn Fn() -> Self::V, consequent: &dyn Fn(), alternate: &dyn Fn()) {
+        if test().is_truthy() {
+            consequent();
+        } else {
+            alternate();
+        }
+    }
+
+    #[inline]
+    fn control_branch_value(&mut self, test: &dyn Fn() -> Self::V, consequent: &dyn Fn() -> Self::V, alternate: &dyn Fn() -> Self::V) -> Self::V {
+        if test().is_truthy() {
+            consequent()
+        } else {
+            alternate()
+        }
+    }
+
+    #[inline]
+    fn control_switch(&mut self) {
+        unimplemented!()
+    }
+
+    #[inline]
+    fn control_coalesce(&mut self, left: &dyn Fn() -> Self::V, right: &dyn Fn() -> Self::V) -> Self::V {
+        let result = left();
+        match result {
+            JSValue::Undefined => right(),
+            JSValue::Null => right(),
+            _ => result,
+        }
+    }
+
+    #[inline]
+    fn complete_break(&mut self) {
+        self.set_completion(runtime::Completion::Break);
+    }
+
+    #[inline]
+    fn complete_continue(&mut self) {
+        self.set_completion(runtime::Completion::Continue);
+    }
+
+    #[inline]
+    fn complete_return(&mut self, v: Option<Self::V>) {
+        self.set_completion(runtime::Completion::Return(v));
+    }
+
+    #[inline]
+    fn complete_throw(&mut self, v: Self::V) {
+        self.set_completion(runtime::Completion::Throw(v));
+    }
+
+    #[inline]
+    fn completion(&mut self) -> Option<runtime::Completion<Self::V>> {
+        self.completion
+    }
+
+    #[inline]
+    fn new_undefined() -> Self::V {
+        JSValue::Undefined
+    }
+
+    #[inline]
+    fn new_null() -> Self::V {
+        JSValue::Null
+    }
+
+    #[inline]
+    fn new_boolean(b: bool) -> Self::V {
+        JSValue::Boolean(b)
+    }
+
+    #[inline]
+    fn new_number(n: i64) -> Self::V {
+        JSValue::Number(JSNumber::new(n))
+    }
+
+    #[inline]
+    fn new_string(s: String) -> Self::V {
+        JSValue::String(JSString::new(s))
+    }
+
+    #[inline]
+    fn new_object() -> Self::V {
+        JSValue::Reference(JSReference::new(JSObject::new()))
+    }
+
+    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: ast::FunctionExpression, captures: HashMap<String, Self::V>) -> Self::V {
+        JSValue::Reference(JSReference::new_function(identifier, parameters, body, captures))
+    }
+
+    fn initialize_binding(&mut self, kind: ast::DeclarationKind, name: String, value: Option<Self::V>) {
+        self.scope.declare(name, kind, value);
+    }
+
+    fn resolve_binding(&self, name: String) -> Option<Self::V> {
+       self.scope.get(name) 
+    }
+
+    fn set_binding(&mut self, name: String, v: Self::V) -> Result<(), &str>{
+        self.scope.set(name, &v)        
+    }
 }
 
-use ast::expression::*;
+#[cfg(test)]
+mod tests {
+    use crate::interpreter::Scope;
+    use crate::interpreter::JSValue;
+    use crate::interpreter::ast::DeclarationKind;
+    
+    #[test]
+    fn scope_test_simple() {
+        let scope = Scope::new();
+        /*
+        {
+            let a = 1;
+            const b = 2;
+            a = 3;
+            // b = 4; // Error!
+            let c;
+            c = 4;
+            {
+                const a = 11;
+                let b = 12;
+                let x = 13;
+                c = 14;
+            }
+            a = 5;
+            // b = 6; // Error!
+        }
+        */
 
-fn eval_expression<Context: runtime::Context>(ctx: &Context, expr: &ast::Expression) -> &Context::V {
-    match expr {
-        Expression::Literal(expr) => eval_literal(ctx, expr),
-        Expression::Array(expr) => eval_array(ctx, expr),
-        Expression::Object(expr) => eval_object(ctx, expr),
-        Expression::Function(expr) => eval_function(ctx, expr),
-        Expression::ArrowFunction(expr) => eval_arrow_function(ctx, expr),
+        scope.declare("a".to_string(), DeclarationKind::Let, Some(JSValue::new_number(1)));
+        assert_eq!(scope.get("a".to_string()), Some(JSValue::new_number(1)));
+
+        scope.declare("b".to_string(), DeclarationKind::Const, Some(JSValue::new_number(2)));
+        assert_eq!(scope.get("b".to_string()), Some(JSValue::new_number(2)));
         
-        Expression::Binary(expr) => eval_binary(ctx, expr),
-        Expression::Unary(expr) => eval_unary(ctx, expr),
-        Expression::Conditional(expr) => eval_conditional(ctx, expr),
-        Expression::Logical(expr) => eval_logical(ctx, expr),
-        Expression::Update(expr) => eval_update(ctx, expr),
-        
-        Expression::Variable(expr) => eval_variable(ctx, expr),
-        Expression::Assignment(expr) => eval_assignment(ctx, expr),
-        Expression::Member(expr) => eval_member(ctx, expr),
-        
-        Expression::Call(expr) => eval_call(ctx, expr),
+        scope.set("a".to_string(), &JSValue::new_number(3));
+        assert_eq!(scope.get("a".to_string()), Some(JSValue::new_number(3)));
+
+        assert!(matches!(scope.set("b".to_string(), &JSValue::new_number(4)), Err(_)));
+
+        scope.declare("c".to_string(), DeclarationKind::Let, None);
+        assert_eq!(scope.get("c".to_string()), Some(JSValue::new_undefined()));
+
+        scope.set("c".to_string(), &JSValue::new_number(4));
+        assert_eq!(scope.get("c".to_string()), Some(JSValue::new_number(4)));
+
+        scope.enter();
+
+        assert_eq!(scope.get("a".to_string()), Some(JSValue::new_number(1)));
+        scope.declare("a".to_string(), DeclarationKind::Const, Some(JSValue::new_number(11)));
+        assert_eq!(scope.get("a".to_string()), Some(JSValue::new_number(11)));
+
+        assert_eq!(scope.get("b".to_string()), Some(JSValue::new_number(2)));
+        scope.declare("b".to_string(), DeclarationKind::Let, Some(JSValue::new_number(12)));
+        assert_eq!(scope.get("b".to_string()), Some(JSValue::new_number(12)));
+
+        assert_eq!(scope.get("x".to_string()), None);
+        scope.declare("x".to_string(), DeclarationKind::Let, Some(JSValue::new_number(13)));
+        assert_eq!(scope.get("x".to_string()), Some(JSValue::new_number(13)));
+
+        assert_eq!(scope.get("c".to_string()), Some(JSValue::new_number(4)));
+        scope.set("c".to_string(), &JSValue::new_number(14));
+        assert_eq!(scope.get("c".to_string()), Some(JSValue::new_number(14)));
+
+        scope.exit();
+
+        assert_eq!(scope.get("a".to_string()), Some(JSValue::new_number(1)));
+        assert_eq!(scope.get("b".to_string()), Some(JSValue::new_number(2)));
+        assert_eq!(scope.get("c".to_string()), Some(JSValue::new_number(14)));
+        assert_eq!(scope.get("x".to_string()), None);
+
+        scope.set("a".to_string(), &JSValue::new_number(5));
+        assert_eq!(scope.get("a".to_string()), Some(JSValue::new_number(5)));
+
+        assert!(matches!(scope.set("b".to_string(), &JSValue::new_number(6)), Err(_)));
     }
-}
-
-use ast::literal::*;
-
-#[inline]
-fn eval_literal(ctx: &impl Context, literal: &Literal) -> impl runtime::Value {
-    match literal {
-        Literal::Undefined(_) => ctx.new_undefined(),
-        Literal::Null(_) => ctx.new_null(),
-        Literal::Boolean(literal) => runtime::MockBoolean::new(literal.value),
-        Literal::Number(literal) => eval_number(literal),
-        Literal::String(literal) => eval_string(literal),
-        Literal::Bigint(literal) => eval_bigint(literal),
-    }
-}
-
-#[inline]
-fn eval_number<Context: runtime::Context>(ctx: &Context, literal: i64) -> runtime::Value {
-    // TODO: sanity check on 2^53
-    runtime::MockNumeric::new(literal)
-}
-
-#[inline]
-fn eval_string<Context: runtime::Context>(ctx: &Context, literal: &str) -> runtime::Value {
-    runtime::MockString::new(literal)
-}
-
-#[inline]
-fn eval_bigint<Context: runtime::Context>(ctx: &Context, literal: &str) -> runtime::Value {
-    unimplemented!(); // TODO: parse bigint
-    // ctx.new_bigint(parsed_bigint)
-}
-
-#[inline]
-fn eval_array<Context: runtime::Context>(ctx: &Context, arr: &ast::ArrayExpression) -> runtime::Value {
-   ctx.new_array(arr.elements.iter().map(|e| eval_expression(ctx, e)).collect())
-}
-
-#[inline]
-fn eval_assignment<Context: runtime::Context>(ctx: &Context, expr: &ast::AssignmentExpression) -> runtime::Value {
-    match expr.operator {
-        ast::assignment_expression::Operator::Assign => eval_assign(ctx, expr.left, expr.right),
-        ast::assignment_expression::Operator::Add => eval_lval(ctx, expr.left).as_numeric().add(eval_expression(ctx, &expr.right).as_numeric()),
-    }
-}
-
-
-
-#[inline]
-fn eval_call<Context: runtime::Context>(ctx: &Context, expr: &ast::CallExpression) -> runtime::Value {
-    eval_expression(ctx, expr.callee).as_closure().call(ctx, expr.arguments.iter().map(|e| eval_expression(ctx, e)).collect()))   
-}
-
-#[inline]
-fn eval_conditional<Context: runtime::Context>(ctx: &Context, expr: &ast::ConditionalExpression) -> runtime::Value {
-    if eval_expression(ctx, &expr.test).as_boolean().value {
-        eval_expression(ctx, &expr.consequent)
-    } else {
-        eval_expression(ctx, &expr.alternate)
-    }
-}
-
-#[inline]
-fn eval_function<Context: runtime::Context>(ctx: &Context, expr: &ast::FunctionExpression) -> runtime::Value {
-}
-
-#[inline]
-fn eval_identifier<Context: runtime::Context>(ctx: &Context, expr: &ast::IdentifierExpression) -> runtime::Value {
-    ctx.get_variable(expr.name.as_str())
-}
-
-#[inline]
-fn eval_binary<Context: runtime::Context>(ctx: &Context, expr: &ast::BinaryExpression) -> Context::V {
-    let left = eval_expression(ctx, &expr.left);
-    let right = eval_expression(ctx, &expr.right);
-    match expr.operator {
-        ast::binary_expression::ArithmeticOperator(op) => ctx.op_arithmetic(op, left, right),
-        ast::binary_expression::ComparisonOperator(op) => ctx.new_boolean(ctx.op_comparison(op, left, right)),
-    }
-}
-
-#[inline]
-fn eval_unary<Context: runtime::Context>(ctx: &Context, expr: &ast::UnaryExpression) -> &Context::V {
-    ctx.op_unary(expr.operator, eval_expression(ctx, &expr.argument))
-}
-
-#[inline]
-fn eval_logical<Context: runtime::Context>(ctx: &Context, expr: &ast::LogicalExpression) -> &Context::V {
-    ctx.op_logical(expr.operator, || { expr.left }, || { expr.right })
-}
-
-#[inline]
-fn eval_update<Context: runtime::Context>(ctx: &Context, expr: &ast::UpdateExpression) -> &Context::V {
-    ctx.op_update(expr.operator, eval_expression(ctx, &expr.argument))
-}
-
-#[inline]
-fn eval_variable<Context: runtime::Context>(ctx: &Context, expr: &ast::VariableExpression) -> &Context::V {
-    ctx.get_variable(expr.name.as_str())
 }

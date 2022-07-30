@@ -2,7 +2,10 @@
 mod runtime;
 
 #[path="./vm/interpreter.rs"]
-mod runtime;
+mod lexical;
+
+#[path="./vm/interpreter.rs"]
+mod interpreter;
 
 fn main() {
     println!("Hello, world!");

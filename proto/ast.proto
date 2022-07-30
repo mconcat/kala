@@ -372,22 +372,23 @@ message ArrowFunctionExpression {
 ///////////////////////////////////////////////////////////////////////////////
 // Operator expressions
 
+enum ArithmeticOperator {
+    ARITHMETIC_UNKNOWN = 0;
+    ADD = 1; // | "+"
+    SUB = 2; // | "-"
+    DIV = 3; // | "/"
+    MOD = 4; // | "%"
+    MUL = 5; // | "*"
+    POW = 6; // | "**"
+    BITAND = 7; // | "&"
+    BITOR = 8; // | "|"
+    RSHIFT = 9; // | ">>"
+    URSHIFT = 10; // | ">>>"
+    LSHIFT = 11; // | "<<"
+    BITXOR = 12; // | "^"
+}
+
 message BinaryExpression {
-    enum ArithmeticOperator {
-        ARITHMETIC_UNKNOWN = 0;
-        ADD = 1; // | "+"
-        SUB = 2; // | "-"
-        DIV = 3; // | "/"
-        MOD = 4; // | "%"
-        MUL = 5; // | "*"
-        POW = 6; // | "**"
-        BITAND = 7; // | "&"
-        BITOR = 8; // | "|"
-        RSHIFT = 9; // | ">>"
-        URSHIFT = 10; // | ">>>"
-        LSHIFT = 11; // | "<<"
-        BITXOR = 12; // | "^"
-    }
     enum ComparisonOperator {
         COMPARISON_UNKNOWN = 0;
         EQ = 13; // | "==="
@@ -464,23 +465,7 @@ message AssignmentExpression {
         }
     }
 
-    enum Operator {
-        UNKNOWN = 0;
-        ASSIGN = 1; // =
-        MUL = 2; // *=
-        DIV = 3; // /=
-        MOD = 4; // %=
-        ADD = 5; // +=
-        SUB = 6; // -=
-        LSHIFT = 7; // <<=
-        RSHIFT = 8; // >>=
-        ZRSHIFT = 9; // >>>=
-        BITAND = 10; // &=
-        BITXOR = 11; // ^=
-        BITOR = 12; // |=
-        POW = 13; // **=
-    }
-    Operator operator = 1;
+    optional ArithmeticOperator operator = 1;
     LValue left = 2;
     Expression right = 3;
 }
