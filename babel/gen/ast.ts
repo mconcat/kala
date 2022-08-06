@@ -47,117 +47,6 @@ export function declarationKindToJSON(object: DeclarationKind): string {
   }
 }
 
-export enum ArithmeticOperator {
-  ARITHMETIC_UNKNOWN = 0,
-  /** ADD - | "+" */
-  ADD = 1,
-  /** SUB - | "-" */
-  SUB = 2,
-  /** DIV - | "/" */
-  DIV = 3,
-  /** MOD - | "%" */
-  MOD = 4,
-  /** MUL - | "*" */
-  MUL = 5,
-  /** POW - | "**" */
-  POW = 6,
-  /** BITAND - | "&" */
-  BITAND = 7,
-  /** BITOR - | "|" */
-  BITOR = 8,
-  /** RSHIFT - | ">>" */
-  RSHIFT = 9,
-  /** URSHIFT - | ">>>" */
-  URSHIFT = 10,
-  /** LSHIFT - | "<<" */
-  LSHIFT = 11,
-  /** BITXOR - | "^" */
-  BITXOR = 12,
-  UNRECOGNIZED = -1,
-}
-
-export function arithmeticOperatorFromJSON(object: any): ArithmeticOperator {
-  switch (object) {
-    case 0:
-    case "ARITHMETIC_UNKNOWN":
-      return ArithmeticOperator.ARITHMETIC_UNKNOWN;
-    case 1:
-    case "ADD":
-      return ArithmeticOperator.ADD;
-    case 2:
-    case "SUB":
-      return ArithmeticOperator.SUB;
-    case 3:
-    case "DIV":
-      return ArithmeticOperator.DIV;
-    case 4:
-    case "MOD":
-      return ArithmeticOperator.MOD;
-    case 5:
-    case "MUL":
-      return ArithmeticOperator.MUL;
-    case 6:
-    case "POW":
-      return ArithmeticOperator.POW;
-    case 7:
-    case "BITAND":
-      return ArithmeticOperator.BITAND;
-    case 8:
-    case "BITOR":
-      return ArithmeticOperator.BITOR;
-    case 9:
-    case "RSHIFT":
-      return ArithmeticOperator.RSHIFT;
-    case 10:
-    case "URSHIFT":
-      return ArithmeticOperator.URSHIFT;
-    case 11:
-    case "LSHIFT":
-      return ArithmeticOperator.LSHIFT;
-    case 12:
-    case "BITXOR":
-      return ArithmeticOperator.BITXOR;
-    case -1:
-    case "UNRECOGNIZED":
-    default:
-      return ArithmeticOperator.UNRECOGNIZED;
-  }
-}
-
-export function arithmeticOperatorToJSON(object: ArithmeticOperator): string {
-  switch (object) {
-    case ArithmeticOperator.ARITHMETIC_UNKNOWN:
-      return "ARITHMETIC_UNKNOWN";
-    case ArithmeticOperator.ADD:
-      return "ADD";
-    case ArithmeticOperator.SUB:
-      return "SUB";
-    case ArithmeticOperator.DIV:
-      return "DIV";
-    case ArithmeticOperator.MOD:
-      return "MOD";
-    case ArithmeticOperator.MUL:
-      return "MUL";
-    case ArithmeticOperator.POW:
-      return "POW";
-    case ArithmeticOperator.BITAND:
-      return "BITAND";
-    case ArithmeticOperator.BITOR:
-      return "BITOR";
-    case ArithmeticOperator.RSHIFT:
-      return "RSHIFT";
-    case ArithmeticOperator.URSHIFT:
-      return "URSHIFT";
-    case ArithmeticOperator.LSHIFT:
-      return "LSHIFT";
-    case ArithmeticOperator.BITXOR:
-      return "BITXOR";
-    case ArithmeticOperator.UNRECOGNIZED:
-    default:
-      return "UNRECOGNIZED";
-  }
-}
-
 export interface Identifier {
   name: string;
   option?: boolean | undefined;
@@ -474,14 +363,37 @@ export interface ArrowFunctionExpression {
 }
 
 export interface BinaryExpression {
-  arithmetic: ArithmeticOperator | undefined;
-  comparison: BinaryExpression_ComparisonOperator | undefined;
+  operator: BinaryExpression_Operator;
   left: Expression | undefined;
   right: Expression | undefined;
 }
 
-export enum BinaryExpression_ComparisonOperator {
-  COMPARISON_UNKNOWN = 0,
+export enum BinaryExpression_Operator {
+  UNKNOWN = 0,
+  /** ADD - | "+" */
+  ADD = 1,
+  /** SUB - | "-" */
+  SUB = 2,
+  /** DIV - | "/" */
+  DIV = 3,
+  /** MOD - | "%" */
+  MOD = 4,
+  /** MUL - | "*" */
+  MUL = 5,
+  /** POW - | "**" */
+  POW = 6,
+  /** BITAND - | "&" */
+  BITAND = 7,
+  /** BITOR - | "|" */
+  BITOR = 8,
+  /** RSHIFT - | ">>" */
+  RSHIFT = 9,
+  /** URSHIFT - | ">>>" */
+  URSHIFT = 10,
+  /** LSHIFT - | "<<" */
+  LSHIFT = 11,
+  /** BITXOR - | "^" */
+  BITXOR = 12,
   /** EQ - | "===" */
   EQ = 13,
   /** NEQ - | "!==" */
@@ -497,57 +409,117 @@ export enum BinaryExpression_ComparisonOperator {
   UNRECOGNIZED = -1,
 }
 
-export function binaryExpression_ComparisonOperatorFromJSON(
+export function binaryExpression_OperatorFromJSON(
   object: any
-): BinaryExpression_ComparisonOperator {
+): BinaryExpression_Operator {
   switch (object) {
     case 0:
-    case "COMPARISON_UNKNOWN":
-      return BinaryExpression_ComparisonOperator.COMPARISON_UNKNOWN;
+    case "UNKNOWN":
+      return BinaryExpression_Operator.UNKNOWN;
+    case 1:
+    case "ADD":
+      return BinaryExpression_Operator.ADD;
+    case 2:
+    case "SUB":
+      return BinaryExpression_Operator.SUB;
+    case 3:
+    case "DIV":
+      return BinaryExpression_Operator.DIV;
+    case 4:
+    case "MOD":
+      return BinaryExpression_Operator.MOD;
+    case 5:
+    case "MUL":
+      return BinaryExpression_Operator.MUL;
+    case 6:
+    case "POW":
+      return BinaryExpression_Operator.POW;
+    case 7:
+    case "BITAND":
+      return BinaryExpression_Operator.BITAND;
+    case 8:
+    case "BITOR":
+      return BinaryExpression_Operator.BITOR;
+    case 9:
+    case "RSHIFT":
+      return BinaryExpression_Operator.RSHIFT;
+    case 10:
+    case "URSHIFT":
+      return BinaryExpression_Operator.URSHIFT;
+    case 11:
+    case "LSHIFT":
+      return BinaryExpression_Operator.LSHIFT;
+    case 12:
+    case "BITXOR":
+      return BinaryExpression_Operator.BITXOR;
     case 13:
     case "EQ":
-      return BinaryExpression_ComparisonOperator.EQ;
+      return BinaryExpression_Operator.EQ;
     case 14:
     case "NEQ":
-      return BinaryExpression_ComparisonOperator.NEQ;
+      return BinaryExpression_Operator.NEQ;
     case 15:
     case "GT":
-      return BinaryExpression_ComparisonOperator.GT;
+      return BinaryExpression_Operator.GT;
     case 16:
     case "LT":
-      return BinaryExpression_ComparisonOperator.LT;
+      return BinaryExpression_Operator.LT;
     case 17:
     case "GTE":
-      return BinaryExpression_ComparisonOperator.GTE;
+      return BinaryExpression_Operator.GTE;
     case 18:
     case "LTE":
-      return BinaryExpression_ComparisonOperator.LTE;
+      return BinaryExpression_Operator.LTE;
     case -1:
     case "UNRECOGNIZED":
     default:
-      return BinaryExpression_ComparisonOperator.UNRECOGNIZED;
+      return BinaryExpression_Operator.UNRECOGNIZED;
   }
 }
 
-export function binaryExpression_ComparisonOperatorToJSON(
-  object: BinaryExpression_ComparisonOperator
+export function binaryExpression_OperatorToJSON(
+  object: BinaryExpression_Operator
 ): string {
   switch (object) {
-    case BinaryExpression_ComparisonOperator.COMPARISON_UNKNOWN:
-      return "COMPARISON_UNKNOWN";
-    case BinaryExpression_ComparisonOperator.EQ:
+    case BinaryExpression_Operator.UNKNOWN:
+      return "UNKNOWN";
+    case BinaryExpression_Operator.ADD:
+      return "ADD";
+    case BinaryExpression_Operator.SUB:
+      return "SUB";
+    case BinaryExpression_Operator.DIV:
+      return "DIV";
+    case BinaryExpression_Operator.MOD:
+      return "MOD";
+    case BinaryExpression_Operator.MUL:
+      return "MUL";
+    case BinaryExpression_Operator.POW:
+      return "POW";
+    case BinaryExpression_Operator.BITAND:
+      return "BITAND";
+    case BinaryExpression_Operator.BITOR:
+      return "BITOR";
+    case BinaryExpression_Operator.RSHIFT:
+      return "RSHIFT";
+    case BinaryExpression_Operator.URSHIFT:
+      return "URSHIFT";
+    case BinaryExpression_Operator.LSHIFT:
+      return "LSHIFT";
+    case BinaryExpression_Operator.BITXOR:
+      return "BITXOR";
+    case BinaryExpression_Operator.EQ:
       return "EQ";
-    case BinaryExpression_ComparisonOperator.NEQ:
+    case BinaryExpression_Operator.NEQ:
       return "NEQ";
-    case BinaryExpression_ComparisonOperator.GT:
+    case BinaryExpression_Operator.GT:
       return "GT";
-    case BinaryExpression_ComparisonOperator.LT:
+    case BinaryExpression_Operator.LT:
       return "LT";
-    case BinaryExpression_ComparisonOperator.GTE:
+    case BinaryExpression_Operator.GTE:
       return "GTE";
-    case BinaryExpression_ComparisonOperator.LTE:
+    case BinaryExpression_Operator.LTE:
       return "LTE";
-    case BinaryExpression_ComparisonOperator.UNRECOGNIZED:
+    case BinaryExpression_Operator.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
   }
@@ -752,9 +724,124 @@ export interface VariableExpression {
 }
 
 export interface AssignmentExpression {
-  operator?: ArithmeticOperator | undefined;
+  operator: AssignmentExpression_Operator;
   left: AssignmentExpression_LValue | undefined;
   right: Expression | undefined;
+}
+
+export enum AssignmentExpression_Operator {
+  UNKNOWN = 0,
+  /** ADD - | "+" */
+  ADD = 1,
+  /** SUB - | "-" */
+  SUB = 2,
+  /** DIV - | "/" */
+  DIV = 3,
+  /** MOD - | "%" */
+  MOD = 4,
+  /** MUL - | "*" */
+  MUL = 5,
+  /** POW - | "**" */
+  POW = 6,
+  /** BITAND - | "&" */
+  BITAND = 7,
+  /** BITOR - | "|" */
+  BITOR = 8,
+  /** RSHIFT - | ">>" */
+  RSHIFT = 9,
+  /** URSHIFT - | ">>>" */
+  URSHIFT = 10,
+  /** LSHIFT - | "<<" */
+  LSHIFT = 11,
+  /** BITXOR - | "^" */
+  BITXOR = 12,
+  UNRECOGNIZED = -1,
+}
+
+export function assignmentExpression_OperatorFromJSON(
+  object: any
+): AssignmentExpression_Operator {
+  switch (object) {
+    case 0:
+    case "UNKNOWN":
+      return AssignmentExpression_Operator.UNKNOWN;
+    case 1:
+    case "ADD":
+      return AssignmentExpression_Operator.ADD;
+    case 2:
+    case "SUB":
+      return AssignmentExpression_Operator.SUB;
+    case 3:
+    case "DIV":
+      return AssignmentExpression_Operator.DIV;
+    case 4:
+    case "MOD":
+      return AssignmentExpression_Operator.MOD;
+    case 5:
+    case "MUL":
+      return AssignmentExpression_Operator.MUL;
+    case 6:
+    case "POW":
+      return AssignmentExpression_Operator.POW;
+    case 7:
+    case "BITAND":
+      return AssignmentExpression_Operator.BITAND;
+    case 8:
+    case "BITOR":
+      return AssignmentExpression_Operator.BITOR;
+    case 9:
+    case "RSHIFT":
+      return AssignmentExpression_Operator.RSHIFT;
+    case 10:
+    case "URSHIFT":
+      return AssignmentExpression_Operator.URSHIFT;
+    case 11:
+    case "LSHIFT":
+      return AssignmentExpression_Operator.LSHIFT;
+    case 12:
+    case "BITXOR":
+      return AssignmentExpression_Operator.BITXOR;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return AssignmentExpression_Operator.UNRECOGNIZED;
+  }
+}
+
+export function assignmentExpression_OperatorToJSON(
+  object: AssignmentExpression_Operator
+): string {
+  switch (object) {
+    case AssignmentExpression_Operator.UNKNOWN:
+      return "UNKNOWN";
+    case AssignmentExpression_Operator.ADD:
+      return "ADD";
+    case AssignmentExpression_Operator.SUB:
+      return "SUB";
+    case AssignmentExpression_Operator.DIV:
+      return "DIV";
+    case AssignmentExpression_Operator.MOD:
+      return "MOD";
+    case AssignmentExpression_Operator.MUL:
+      return "MUL";
+    case AssignmentExpression_Operator.POW:
+      return "POW";
+    case AssignmentExpression_Operator.BITAND:
+      return "BITAND";
+    case AssignmentExpression_Operator.BITOR:
+      return "BITOR";
+    case AssignmentExpression_Operator.RSHIFT:
+      return "RSHIFT";
+    case AssignmentExpression_Operator.URSHIFT:
+      return "URSHIFT";
+    case AssignmentExpression_Operator.LSHIFT:
+      return "LSHIFT";
+    case AssignmentExpression_Operator.BITXOR:
+      return "BITXOR";
+    case AssignmentExpression_Operator.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
 }
 
 export interface AssignmentExpression_LValue {
@@ -5188,12 +5275,7 @@ export const ArrowFunctionExpression = {
 };
 
 function createBaseBinaryExpression(): BinaryExpression {
-  return {
-    arithmetic: undefined,
-    comparison: undefined,
-    left: undefined,
-    right: undefined,
-  };
+  return { operator: 0, left: undefined, right: undefined };
 }
 
 export const BinaryExpression = {
@@ -5201,17 +5283,14 @@ export const BinaryExpression = {
     message: BinaryExpression,
     writer: _m0.Writer = _m0.Writer.create()
   ): _m0.Writer {
-    if (message.arithmetic !== undefined) {
-      writer.uint32(8).int32(message.arithmetic);
-    }
-    if (message.comparison !== undefined) {
-      writer.uint32(16).int32(message.comparison);
+    if (message.operator !== 0) {
+      writer.uint32(8).int32(message.operator);
     }
     if (message.left !== undefined) {
-      Expression.encode(message.left, writer.uint32(26).fork()).ldelim();
+      Expression.encode(message.left, writer.uint32(18).fork()).ldelim();
     }
     if (message.right !== undefined) {
-      Expression.encode(message.right, writer.uint32(34).fork()).ldelim();
+      Expression.encode(message.right, writer.uint32(26).fork()).ldelim();
     }
     return writer;
   },
@@ -5224,15 +5303,12 @@ export const BinaryExpression = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.arithmetic = reader.int32() as any;
+          message.operator = reader.int32() as any;
           break;
         case 2:
-          message.comparison = reader.int32() as any;
-          break;
-        case 3:
           message.left = Expression.decode(reader, reader.uint32());
           break;
-        case 4:
+        case 3:
           message.right = Expression.decode(reader, reader.uint32());
           break;
         default:
@@ -5245,12 +5321,9 @@ export const BinaryExpression = {
 
   fromJSON(object: any): BinaryExpression {
     return {
-      arithmetic: isSet(object.arithmetic)
-        ? arithmeticOperatorFromJSON(object.arithmetic)
-        : undefined,
-      comparison: isSet(object.comparison)
-        ? binaryExpression_ComparisonOperatorFromJSON(object.comparison)
-        : undefined,
+      operator: isSet(object.operator)
+        ? binaryExpression_OperatorFromJSON(object.operator)
+        : 0,
       left: isSet(object.left) ? Expression.fromJSON(object.left) : undefined,
       right: isSet(object.right)
         ? Expression.fromJSON(object.right)
@@ -5260,16 +5333,8 @@ export const BinaryExpression = {
 
   toJSON(message: BinaryExpression): unknown {
     const obj: any = {};
-    message.arithmetic !== undefined &&
-      (obj.arithmetic =
-        message.arithmetic !== undefined
-          ? arithmeticOperatorToJSON(message.arithmetic)
-          : undefined);
-    message.comparison !== undefined &&
-      (obj.comparison =
-        message.comparison !== undefined
-          ? binaryExpression_ComparisonOperatorToJSON(message.comparison)
-          : undefined);
+    message.operator !== undefined &&
+      (obj.operator = binaryExpression_OperatorToJSON(message.operator));
     message.left !== undefined &&
       (obj.left = message.left ? Expression.toJSON(message.left) : undefined);
     message.right !== undefined &&
@@ -5283,8 +5348,7 @@ export const BinaryExpression = {
     object: I
   ): BinaryExpression {
     const message = createBaseBinaryExpression();
-    message.arithmetic = object.arithmetic ?? undefined;
-    message.comparison = object.comparison ?? undefined;
+    message.operator = object.operator ?? 0;
     message.left =
       object.left !== undefined && object.left !== null
         ? Expression.fromPartial(object.left)
@@ -5704,7 +5768,7 @@ export const VariableExpression = {
 };
 
 function createBaseAssignmentExpression(): AssignmentExpression {
-  return { operator: undefined, left: undefined, right: undefined };
+  return { operator: 0, left: undefined, right: undefined };
 }
 
 export const AssignmentExpression = {
@@ -5712,7 +5776,7 @@ export const AssignmentExpression = {
     message: AssignmentExpression,
     writer: _m0.Writer = _m0.Writer.create()
   ): _m0.Writer {
-    if (message.operator !== undefined) {
+    if (message.operator !== 0) {
       writer.uint32(8).int32(message.operator);
     }
     if (message.left !== undefined) {
@@ -5760,8 +5824,8 @@ export const AssignmentExpression = {
   fromJSON(object: any): AssignmentExpression {
     return {
       operator: isSet(object.operator)
-        ? arithmeticOperatorFromJSON(object.operator)
-        : undefined,
+        ? assignmentExpression_OperatorFromJSON(object.operator)
+        : 0,
       left: isSet(object.left)
         ? AssignmentExpression_LValue.fromJSON(object.left)
         : undefined,
@@ -5774,10 +5838,7 @@ export const AssignmentExpression = {
   toJSON(message: AssignmentExpression): unknown {
     const obj: any = {};
     message.operator !== undefined &&
-      (obj.operator =
-        message.operator !== undefined
-          ? arithmeticOperatorToJSON(message.operator)
-          : undefined);
+      (obj.operator = assignmentExpression_OperatorToJSON(message.operator));
     message.left !== undefined &&
       (obj.left = message.left
         ? AssignmentExpression_LValue.toJSON(message.left)
@@ -5793,7 +5854,7 @@ export const AssignmentExpression = {
     object: I
   ): AssignmentExpression {
     const message = createBaseAssignmentExpression();
-    message.operator = object.operator ?? undefined;
+    message.operator = object.operator ?? 0;
     message.left =
       object.left !== undefined && object.left !== null
         ? AssignmentExpression_LValue.fromPartial(object.left)

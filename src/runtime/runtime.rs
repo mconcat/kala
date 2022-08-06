@@ -290,11 +290,9 @@ pub enum Value<
 */
 */
 
-#[path = "../gen/nessie.ast.rs"]
-mod ast;
-
 use std::collections::HashMap;
 use std::collections::HashSet;
+use crate::ast;
 
 pub type DeclarationKind = ast::DeclarationKind;
 
@@ -303,31 +301,42 @@ pub trait JSBoolean {
 }
 
 pub trait JSNumeric {
-    fn add(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn sub(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn mul(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn div(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn modulo(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn pow(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn bitand(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn bitor(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn bitxor(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn bitnot(&mut self) -> Result<&mut Self, String>;
-    fn lshift(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn rshift(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn urshift(&mut self, other: &Self) -> Result<&mut Self, String>;
-    fn equal(&self, other: &Self) -> bool;
-    fn not_equal(&self, other: &Self) -> bool;
-    fn lt(&self, other: &Self) -> bool;
-    fn gt(&self, other: &Self) -> bool;
-    fn le(&self, other: &Self) -> bool;
-    fn ge(&self, other: &Self) -> bool;
+    fn op_add(&mut self, other: &Self) -> &mut Self;
+    fn op_sub(&mut self, other: &Self) -> &mut Self;
+    fn op_mul(&mut self, other: &Self) -> &mut Self;
+    fn op_div(&mut self, other: &Self) -> &mut Self;
+    fn op_modulo(&mut self, other: &Self) -> &mut Self;
+    fn op_pow(&mut self, other: &Self) -> &mut Self;
+    fn op_bitand(&mut self, other: &Self) -> &mut Self;
+    fn op_bitor(&mut self, other: &Self) -> &mut Self;
+    fn op_bitxor(&mut self, other: &Self) -> &mut Self;
+    fn op_bitnot(&mut self) -> &mut Self;
+    fn op_lshift(&mut self, other: &Self) -> &mut Self;
+    fn op_rshift(&mut self, other: &Self) -> &mut Self;
+    fn op_urshift(&mut self, other: &Self) -> &mut Self;
+
+    fn op_equal(&self, other: &Self) -> bool;
+    fn op_not_equal(&self, other: &Self) -> bool;
+    fn op_lt(&self, other: &Self) -> bool;
+    fn op_gt(&self, other: &Self) -> bool;
+    fn op_lte(&self, other: &Self) -> bool;
+    fn op_gte(&self, other: &Self) -> bool;
+    
+    fn op_neg(&mut self) -> &mut Self;
+    fn op_inc(&mut self) -> &mut Self;
+    fn op_dec(&mut self) -> &mut Self;
 }
 
 pub trait JSNumber: JSNumeric {
+    type V: JSValue;
+
+    fn to_value(&self) -> Self::V;
 }
 
 pub trait JSBigint: JSNumeric {
+    type V: JSValue;
+
+    fn to_value(&self) -> Self::V;
 }
 
 pub trait JSString {
@@ -376,18 +385,20 @@ pub trait JSValue {
     type S: JSString;
     type R: JSReference;
 
+    /*
     // Type switch
     // I am not sure if this is the best way to do this.
     // use it when really needed
     fn type_match<T>(&self, 
         if_null: T,
         if_undefined: T,
-        if_boolean: &dyn Fn(bool) -> T,
-        if_number: &dyn Fn(&Self::N) -> T,
+        if_boolean: impl Fn(bool) -> T,
+        if_number: impl Fn(Self::N) -> T,
         // if_bigint: dyn Fn(&Self) -> &'a T,
-        if_string: &dyn Fn(&Self::S) -> T,
-        if_object: &dyn Fn(&Self::R) -> T,
+        if_string: impl Fn(Self::S) -> T,
+        if_object: impl Fn(Self::R) -> T,
     ) -> T;
+    */
 
     // Type cast
     // Returns None if the value is not of the given type.
@@ -402,9 +413,14 @@ pub trait JSValue {
     // Type coersion as defined in https://262.ecma-international.org/9.0/#sec-type-conversion
     // panics if the value is not coercible to the given type.
     fn to_boolean(&self) -> bool;
-    fn to_integer(&self) -> &Self::N;
-    fn to_string(&self) -> &Self::S;
-    fn to_object(&self) -> &Self::R;
+    fn to_number(&self) -> Self::N;
+    //fn to_string(&self) -> Self::S;
+    //fn to_object(&self) -> Self::R;
+
+    // stack manipulation
+
+    // dup creates a shallow copy of self
+    fn dup(&self) -> &Self;
 }
 
 pub enum Completion<V: JSValue> {
@@ -414,19 +430,19 @@ pub enum Completion<V: JSValue> {
     Throw(V),
 }
 
-// equivalent to Fn(params: Vec<impl Value>) -> Completion<impl Value>
-pub struct DelayedEvaulation<Ctx: JSContext> {
-    env: HashMap<String, Ctx::V>, // TODO: generalized over arbitrary map
-    func: &dyn Fn(Ctx, Vec<Ctx::V>) -> Completion<Ctx::V>,
-}
-
-impl<Ctx> DelayedEvaulation<Ctx> {
-
-}
-
+// JSContext is the runtime environment for a single execution context.
+// JSContext should not be copied.
+// 
+// Difference compilation backend could implement JSContext,
+// 1. Interpreter (crate::interpreter::JSContext)
+// 2. Transpiler (crate::transpiler::JSContext)
+// 3. Bytecode Compiler (crate:::vm::JSContext)
 pub trait JSContext {
     type V: JSValue;
 
+    // global configurations
+    fn check_early_errors(&self) -> bool;
+    
     ///////////////////////////////
     // Statements
 
@@ -435,7 +451,7 @@ pub trait JSContext {
     // 2. Constructs a new scope for the current execution context
     // 3. Hoist all the function declarations in the current execution context using parameter hoist
     // 4. Recover the parent scope after the execution context has finished
-    fn block_scope(&self, hoisted_fns: Vec<(String, Self::V)>, body: &dyn Fn());
+    fn block_scope(&self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn());
 
     fn extract_free_variables(&self, vars: HashSet<String>) -> HashSet<String>;
 
@@ -445,13 +461,13 @@ pub trait JSContext {
     fn declare_let_variable(&mut self, name: String, v: Option<Self::V>);
 
     // Control flow
-    fn control_loop(&mut self, test: &dyn Fn() -> Self::V, body: &dyn Fn());
+    fn control_loop(&mut self, test: impl Fn() -> Self::V, body: impl Fn());
     // control_branch checks the truthy/falsy value of the condition and branches accordingly
-    fn control_branch(&mut self, test: &dyn Fn() -> Self::V, consequent: &dyn Fn(), alternate: &dyn Fn());
-    fn control_branch_value(&mut self, test: &dyn Fn() -> Self::V, consequent: &dyn Fn() -> Self::V, alternate: &dyn Fn() -> Self::V) -> Self::V;
+    fn control_branch(&mut self, test: impl Fn() -> Self::V, consequent: impl Fn(), alternate: impl Fn());
+    fn control_branch_value(&mut self, test: impl Fn() -> Self::V, consequent: impl Fn() -> Self::V, alternate: impl Fn() -> Self::V) -> Self::V;
     fn control_switch(&mut self); // TODO
     // fn control_try(&mut self, body: &ast::Block, catch: &ast::Block, finally: &ast::Block);
-    fn control_coalesce(&mut self, left: &dyn Fn() -> Self::V, right: &dyn Fn() -> Self::V) -> Self::V;
+    fn control_coalesce(&mut self, left: impl Fn() -> Self::V, right: impl Fn() -> Self::V) -> Self::V;
 
     // Terminators
     fn complete_break(&mut self);
@@ -465,31 +481,34 @@ pub trait JSContext {
 
     // Literal value creation
     // XS_CODE_UNDEFINED
-    fn new_undefined() -> Self::V;
+    fn new_undefined(&self) -> Self::V;
     // XS_CODE_NULL
-    fn new_null() -> Self::V;
+    fn new_null(&self) -> Self::V;
     // XS_CODE_TRUE
     // XS_CODE_FALSE
-    fn new_boolean(b: bool) -> Self::V;
+    fn new_boolean(&self, b: bool) -> Self::V;
     // XS_CODE_NUMBER
-    fn new_number(n: i64) -> Self::V;
+    fn new_number(&self, n: i64) -> Self::V;
+    fn wrap_number(&self, n: &<<Self as JSContext>::V as JSValue>::N) -> Self::V;
     // XS_CODE_BIGINT
     // fn new_bigint(n: &[i32]) -> Self::V;
     // XS_CODE_STRING
-    fn new_string(s: String) -> Self::V;
+    fn new_string(&self, s: String) -> Self::V;
+    fn wrap_string(&self, s: &<<Self as JSContext>::V as JSValue>::S) -> Self::V;
 
     // XS_CODE_ARRAY
-    fn new_array(elements: &[Self::V]) -> Self::V;
+    fn new_array(&self, elements: Vec<Self::V>) -> Self::V;
 
     // Object value creation
     // XS_CODE_OBJECT
-    fn new_object() -> Self::V;
+    fn new_object(&self, props: Vec<(&ast::PropName, Self::V)>) -> Self::V;
 
     // Function value creation
     fn new_function(&self, identifier: Option<String>, parameters: Vec<String>, body: ast::FunctionExpression, captures: Vec<String>) -> Self::V;
 
     // variable access
     fn initialize_binding(&self, kind: ast::DeclarationKind, name: String, v: Option<Self::V>);
-    fn resolve_binding(&self, name: String) -> Option<Self::V>; 
-    fn set_binding(&mut self, name: String, v: Self::V) -> Result<(), &str>;
+    fn resolve_binding(&self, name: String) -> Result<Self::V, String>; 
+    fn set_binding(&mut self, name: String, v: Self::V) -> Result<(), String>;
 }
+

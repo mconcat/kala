@@ -1,8 +1,11 @@
-# Nessie
+# kala.js
 
-Babel AST => Proto-Nessie AST => 
-    1. Interpreted directly
-    2. Compiled into rust native code and compiled into wasm
-    3. Compiled into moddable-style bytecode and interpreted
+Kala is an interchain scripting layer on the Cosmos ecosystem. Kala provides Jessie-compatible scripting with interpreter/transpiler running on Cosmwasm and Cosmos-SDK.
 
-1 will be PoC, 2 will be neccesary for cosmwasm integration, 3 will be an optiomization pass for 1.
+## Babel
+
+`babel` directory contains offchain integration with Bable transpiler suite to blacklist non-Jessie syntax from the input script, and encode it with a `probe` serialization format.
+
+## runtime
+
+`src/runtime` directory contains the interface for transpiler backend. With the probe encoded Jessie AST, `runtime/lexical.rs` do the hoisting / binding / lexical analysis on it, which is then transpiled into provided runtime context. The `Context` trait exposes a common requirement for running a Jessie script, which could be a simple runtime interpreter or Rust-targeting transpiler. 

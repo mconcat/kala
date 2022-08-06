@@ -372,25 +372,21 @@ message ArrowFunctionExpression {
 ///////////////////////////////////////////////////////////////////////////////
 // Operator expressions
 
-enum ArithmeticOperator {
-    ARITHMETIC_UNKNOWN = 0;
-    ADD = 1; // | "+"
-    SUB = 2; // | "-"
-    DIV = 3; // | "/"
-    MOD = 4; // | "%"
-    MUL = 5; // | "*"
-    POW = 6; // | "**"
-    BITAND = 7; // | "&"
-    BITOR = 8; // | "|"
-    RSHIFT = 9; // | ">>"
-    URSHIFT = 10; // | ">>>"
-    LSHIFT = 11; // | "<<"
-    BITXOR = 12; // | "^"
-}
-
 message BinaryExpression {
-    enum ComparisonOperator {
-        COMPARISON_UNKNOWN = 0;
+    enum Operator {
+        UNKNOWN = 0;
+        ADD = 1; // | "+"
+        SUB = 2; // | "-"
+        DIV = 3; // | "/"
+        MOD = 4; // | "%"
+        MUL = 5; // | "*"
+        POW = 6; // | "**"
+        BITAND = 7; // | "&"
+        BITOR = 8; // | "|"
+        RSHIFT = 9; // | ">>"
+        URSHIFT = 10; // | ">>>"
+        LSHIFT = 11; // | "<<"
+        BITXOR = 12; // | "^"
         EQ = 13; // | "==="
         NEQ = 14; // | "!=="
         GT = 15; // | ">"
@@ -398,12 +394,9 @@ message BinaryExpression {
         GTE = 17; // | ">="
         LTE = 18; // | "<="
     }
-    oneof operator {
-        ArithmeticOperator arithmetic = 1;
-        ComparisonOperator comparison = 2;
-    }
-    Expression left = 3;
-    Expression right = 4;
+    Operator operator = 1;
+    Expression left = 2;
+    Expression right = 3;
 }
 
 message UnaryExpression {
@@ -458,6 +451,22 @@ message VariableExpression {
 }
 
 message AssignmentExpression {
+    enum Operator {
+        UNKNOWN = 0;
+        ADD = 1; // | "+"
+        SUB = 2; // | "-"
+        DIV = 3; // | "/"
+        MOD = 4; // | "%"
+        MUL = 5; // | "*"
+        POW = 6; // | "**"
+        BITAND = 7; // | "&"
+        BITOR = 8; // | "|"
+        RSHIFT = 9; // | ">>"
+        URSHIFT = 10; // | ">>>"
+        LSHIFT = 11; // | "<<"
+        BITXOR = 12; // | "^"
+    }
+
     message LValue {
         oneof lvalue {
             Identifier identifier = 1;
@@ -465,7 +474,7 @@ message AssignmentExpression {
         }
     }
 
-    optional ArithmeticOperator operator = 1;
+    Operator operator = 1;
     LValue left = 2;
     Expression right = 3;
 }
@@ -493,14 +502,3 @@ message CallExpression {
     Expression callee = 1;
     repeated ParameterElement arguments = 2;
 }
-
-
-
-
-
-
-
-
-
-
-
