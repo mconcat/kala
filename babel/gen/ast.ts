@@ -1399,7 +1399,7 @@ export const PropName = {
       Identifier.encode(message.identifier, writer.uint32(18).fork()).ldelim();
     }
     if (message.numberLiteral !== undefined) {
-      writer.uint32(24).uint64(message.numberLiteral);
+      writer.uint32(24).int64(message.numberLiteral);
     }
     return writer;
   },
@@ -1418,7 +1418,7 @@ export const PropName = {
           message.identifier = Identifier.decode(reader, reader.uint32());
           break;
         case 3:
-          message.numberLiteral = longToNumber(reader.uint64() as Long);
+          message.numberLiteral = longToNumber(reader.int64() as Long);
           break;
         default:
           reader.skipType(tag & 7);
@@ -6248,10 +6248,9 @@ export type DeepPartial<T> = T extends Builtin
 type KeysOfUnion<T> = T extends T ? keyof T : never;
 export type Exact<P, I extends P> = P extends Builtin
   ? P
-  : P & { [K in keyof P]: Exact<P[K], I[K]> } & Record<
-        Exclude<keyof I, KeysOfUnion<P>>,
-        never
-      >;
+  : P & { [K in keyof P]: Exact<P[K], I[K]> } & {
+      [K in Exclude<keyof I, KeysOfUnion<P>>]: never;
+    };
 
 function longToNumber(long: Long): number {
   if (long.gt(Number.MAX_SAFE_INTEGER)) {

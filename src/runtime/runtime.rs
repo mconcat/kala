@@ -343,10 +343,20 @@ pub trait JSString {
     fn concat(&mut self, other: &Self) -> &mut Self;
 }
 
-pub trait JSPropName {
-    fn new(name: String) -> Self;
+// Either String or Number
+// Identifier is treated as String
+pub enum PropName {
+    String(String),
+    Number(i64)
+}
 
-    fn to_string(&self) -> String;
+impl PropName {
+    pub fn to_string(&self) -> String {
+        match self {
+            PropName::String(s) => s.clone(),
+            PropName::Number(n) => n.to_string()
+        }
+    }
 }
 
 pub trait JSProperty {
@@ -358,11 +368,10 @@ pub trait JSProperty {
 
 pub trait JSReference {
     type V: JSValue;
-    type N: JSPropName;
     type P: JSProperty;
 //    type Iter: Iterator<Item=Self>;
 
-    fn property(&self, name: &Self::N) -> Self::P; 
+    fn property(&self, name: PropName) -> Self::P; 
     fn call(&self, args: &[Self::V]) -> Self::V;
     // fn set_method(&self, name: &Self::N, val: Self::M);
     
@@ -450,11 +459,6 @@ pub trait JSContext {
 
     fn extract_free_variables(&mut self, vars: HashSet<String>) -> HashSet<String>;
 
-    // Variable declaration
-    // Declare a new variable in the current scope
-    fn declare_const_variable(&mut self, name: &String, v: Self::V) -> Result<(), String>;
-    fn declare_let_variable(&mut self, name: &String, v: Option<Self::V>) -> Result<(), String>;
-
     // Control flow
     fn control_loop(&mut self, test: impl Fn(&mut Self) -> Self::V, body: impl Fn(&mut Self));
     // control_branch checks the truthy/falsy value of the condition and branches accordingly
@@ -496,7 +500,7 @@ pub trait JSContext {
 
     // Object value creation
     // XS_CODE_OBJECT
-    fn new_object(&mut self, props: Vec<(&ast::PropName, Self::V)>) -> Self::V;
+    fn new_object(&mut self, props: Vec<(PropName, Self::V)>) -> Self::V;
 
     // Function value creation
     fn new_function(&mut self, identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<String>) -> Self::V;

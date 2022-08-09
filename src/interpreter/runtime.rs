@@ -1,8 +1,6 @@
 use core::panic;
-use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::env::VarError;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::rc::Weak;
@@ -55,6 +53,9 @@ impl JSValue {
         JSValue::String(JSString::new(&value.to_string()))
     }
 
+    pub fn new_object(obj: JSObject) -> JSValue {
+        JSValue::Reference(JSReference::new(obj))
+    }
 
     pub fn is_truthy(&self) -> bool {
         match self {
@@ -192,6 +193,14 @@ impl JSNumber {
             &NaN => "NaN".to_string(),
             &Infinity(true) => "Infinity".to_string(),
             &Infinity(false) => "-Infinity".to_string(),
+        }
+    }
+
+    #[inline]
+    fn to_int64(&self) -> Option<i64> {
+        match self {
+            &Integer(i) => Some(i),
+            _ => None,
         }
     }
 
@@ -541,6 +550,86 @@ impl runtime::JSNumeric for JSNumber {
     }
 }
 
+#[cfg(test)]
+mod test_number {
+    use crate::runtime::JSNumeric;
+    use crate::interpreter::runtime::JSNumber;
+    use crate::ast;
+    
+    #[test]
+    fn simple_test() {
+        let test_arithmetic = |mut ix: i64, iy: i64, op: ast::binary_expression::Operator| {
+            let mut jsx = JSNumber::new(ix);
+            let jsy = JSNumber::new(iy);
+            assert_eq!(jsx.to_int64().unwrap(), ix);
+            assert_eq!(jsy.to_int64().unwrap(), iy);
+            match op {
+                ast::binary_expression::Operator::Add => {
+                    ix += iy;
+                    jsx.op_add(&jsy)
+                }
+                ast::binary_expression::Operator::Sub => {
+                    ix -= iy;
+                    jsx.op_sub(&jsy)
+                }
+                ast::binary_expression::Operator::Mul => {
+                    ix *= iy;
+                    jsx.op_mul(&jsy)
+                }
+                ast::binary_expression::Operator::Div => {
+                    ix /= iy;
+                    jsx.op_div(&jsy)
+                }
+                ast::binary_expression::Operator::Mod => {
+                    ix %= iy;
+                    jsx.op_modulo(&jsy)
+                }
+                /*
+                ast::BinaryOp::BitAnd => jsx.op_bitand(&jsy),
+                ast::BinaryOp::BitOr => jsx.op_bitor(&jsy),
+                ast::BinaryOp::BitXor => jsx.op_bitxor(&jsy),
+                ast::BinaryOp::LShift => jsx.op_lshift(&jsy),
+                ast::BinaryOp::RShift => jsx.op_rshift(&jsy),
+                ast::BinaryOp::URShift => jsx.op_urshift(&jsy),
+                */
+                _ => unimplemented!("Invalid op"),
+            };
+
+            assert_eq!(jsx.to_int64().unwrap(), ix);
+        };
+
+        // copilot wrote, add more edge cases later
+        test_arithmetic(1, 2, ast::binary_expression::Operator::Add);
+        test_arithmetic(1, 2, ast::binary_expression::Operator::Sub);
+        test_arithmetic(1, 2, ast::binary_expression::Operator::Mul);
+        test_arithmetic(1, 2, ast::binary_expression::Operator::Div);
+        test_arithmetic(1, 2, ast::binary_expression::Operator::Mod);
+
+        test_arithmetic(1, -2, ast::binary_expression::Operator::Add);
+        test_arithmetic(1, -2, ast::binary_expression::Operator::Sub);
+        test_arithmetic(1, -2, ast::binary_expression::Operator::Mul);
+        test_arithmetic(1, -2, ast::binary_expression::Operator::Div);
+        test_arithmetic(1, -2, ast::binary_expression::Operator::Mod);
+
+        test_arithmetic(-1, 2, ast::binary_expression::Operator::Add);
+        test_arithmetic(-1, 2, ast::binary_expression::Operator::Sub);
+        test_arithmetic(-1, 2, ast::binary_expression::Operator::Mul);
+        test_arithmetic(-1, 2, ast::binary_expression::Operator::Div);
+        test_arithmetic(-1, 2, ast::binary_expression::Operator::Mod);
+
+        test_arithmetic(-1, -2, ast::binary_expression::Operator::Add);
+        test_arithmetic(-1, -2, ast::binary_expression::Operator::Sub);
+        test_arithmetic(-1, -2, ast::binary_expression::Operator::Mul);
+        test_arithmetic(-1, -2, ast::binary_expression::Operator::Div);
+        test_arithmetic(-1, -2, ast::binary_expression::Operator::Mod);
+
+        test_arithmetic(0, 2, ast::binary_expression::Operator::Add);
+        test_arithmetic(0, 2, ast::binary_expression::Operator::Sub);
+        test_arithmetic(0, 2, ast::binary_expression::Operator::Mul);
+        test_arithmetic(0, 2, ast::binary_expression::Operator::Div);
+        test_arithmetic(0, 2, ast::binary_expression::Operator::Mod);
+    } 
+}
 
 impl runtime::JSNumber for JSNumber {
     type V = JSValue;
@@ -760,11 +849,14 @@ pub struct JSObject {
 
 impl JSObject {
     #[inline]
-    fn new(props: Vec<(&ast::PropName, JSValue)>) -> Self {
-        unimplemented!("insert properties");
+    fn new(props: Vec<(runtime::PropName, JSValue)>) -> Self {
+        let mut properties = BTreeMap::new();
+        for (k, v) in props {
+            properties.insert(k.to_string(), v);
+        }
         JSObject {
             prototype: None,
-            properties: BTreeMap::new(),
+            properties,
         }
     }
 
@@ -823,6 +915,44 @@ impl JSObject {
     }
 }
 
+#[cfg(test)]
+mod reference_test {
+    use crate::interpreter::runtime::JSObject;
+    use crate::interpreter::runtime::JSValue;
+    use crate::runtime::JSProperty;
+    use crate::runtime::PropName;
+    use crate::runtime::JSReference;
+
+    #[test]
+    fn simple_object_test() {
+        let mut obj = crate::interpreter::runtime::JSReference::new(JSObject::new(vec![
+            (PropName::String("a".to_string()), JSValue::new_number(1)),
+            (PropName::String("b".to_string()), JSValue::new_number(2)),
+            (PropName::String("c".to_string()), JSValue::new_number(3)),
+        ]));
+
+        let mut prop_a = obj.property(PropName::String("a".to_string()));
+        assert_eq!(prop_a.get(), JSValue::new_number(1));
+
+        let mut prop_b = obj.property(PropName::String("b".to_string()));
+        assert_eq!(prop_b.get(), JSValue::new_number(2));
+        
+        let mut prop_c = obj.property(PropName::String("c".to_string()));
+        assert_eq!(prop_c.get(), JSValue::new_number(3));
+
+        prop_a.set(JSValue::new_number(4));
+        assert_eq!(prop_a.get(), JSValue::new_number(4));
+
+        prop_b.set(JSValue::new_object(JSObject::new(vec![
+            (PropName::String("x".to_string()), JSValue::new_number(5)),
+        ])));
+
+        assert_eq!(prop_b.get(), JSValue::new_object(JSObject::new(vec![
+            (PropName::String("x".to_string()), JSValue::new_number(5)),
+        ])));
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 // Reference is a pointer to a value in the heap.
 pub struct JSReference {
@@ -852,34 +982,16 @@ impl JSReference {
 impl runtime::JSReference for JSReference {
     type V = JSValue;
     type P = JSProperty;
-    type N = JSPropName;
 //    type Iter = JSObjectIterator;
 
-    fn property(&self, name: &Self::N) -> Self::P {
-        JSProperty::new(self, name.name.to_string())
+    fn property(&self, name: runtime::PropName) -> Self::P {
+        JSProperty::new(self, name.to_string())
     }
 
     fn call(&self, _args: &[Self::V]) -> Self::V {
         unimplemented!()
     }
 }
-
-pub struct JSPropName {
-    name: String,
-}
-
-impl runtime::JSPropName for JSPropName {
-    fn new(name: String) -> Self {
-        JSPropName {
-            name,
-        }
-    }
-
-    fn to_string(&self) -> String {
-        self.name.clone()
-    }
-}
-
 // JSProperty is meant to be ephemeral
 pub struct JSProperty {
     value: Weak<RefCell<JSObject>>,
@@ -1093,205 +1205,8 @@ impl Scope {
         }
     }
 }
-
-pub struct JSContext {
-    scope: Scope,
-    completion: Option<runtime::Completion<JSValue>>,
-}
-
-impl JSContext {
-    fn new() -> Self {
-        JSContext {
-            scope: Scope::new(),
-            completion: None,
-        }
-    }
-
-    fn set_completion(&mut self, completion: runtime::Completion<JSValue>) {
-        self.completion = Some(completion);
-    }
-}
-
-impl runtime::JSContext for JSContext {
-    type V = JSValue;
-
-    fn check_early_errors(&self) -> bool {
-        false // TODO
-    }
-
-
-
-    fn block_scope(&mut self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn(&mut Self)) {
-        self.scope.enter();
-        body(self);
-        self.scope.exit();
-    }
-
-    fn extract_free_variables(&mut self, mut vars: HashSet<String>) -> HashSet<String> {
-        unimplemented!()
-        /*
-        for var in vars.iter() {
-            if self.scope.variable(var).is_ok() {
-                vars.remove(var);
-            }
-        }
-        
-        vars
-        */
-    }
-
-    #[inline]
-    fn declare_const_variable(&mut self, name: &String, v: Self::V) -> Result<(), String> {
-        self.scope.declare(name, ast::DeclarationKind::Const, Some(v))
-    }
-
-    #[inline]
-    fn declare_let_variable(&mut self, name: &String, v: Option<Self::V>) -> Result<(), String> {
-        self.scope.declare(name, ast::DeclarationKind::Let, v)
-    }
-
-    #[inline]
-    fn control_loop(&mut self, test: impl Fn(&mut Self) -> Self::V, body: impl Fn(&mut Self)) {
-        while test(self).is_truthy() {
-            body(self);
-        }
-    }
-
-    #[inline]
-    fn control_branch(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self), alternate: impl Fn(&mut Self)) {
-        if test(self).is_truthy() {
-            consequent(self);
-        } else {
-            alternate(self);
-        }
-    }
-
-    #[inline]
-    fn control_branch_value(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self) -> Self::V, alternate: impl Fn(&mut Self) -> Self::V) -> Self::V {
-        if test(self).is_truthy() {
-            consequent(self)
-        } else {
-            alternate(self)
-        }
-    }
-
-    #[inline]
-    fn control_switch(&mut self) {
-        unimplemented!()
-    }
-
-    #[inline]
-    fn control_coalesce(&mut self, left: impl Fn(&mut Self) -> Self::V, right: impl Fn(&mut Self) -> Self::V) -> Self::V {
-        let result = left(self);
-        match result {
-            JSValue::Undefined => right(self),
-            JSValue::Null => right(self),
-            _ => result,
-        }
-    }
-
-    #[inline]
-    fn complete_break(&mut self) {
-        self.set_completion(runtime::Completion::Break);
-    }
-
-    #[inline]
-    fn complete_continue(&mut self) {
-        self.set_completion(runtime::Completion::Continue);
-    }
-
-    #[inline]
-    fn complete_return(&mut self, v: Option<Self::V>) {
-        self.set_completion(runtime::Completion::Return(v));
-    }
-
-    #[inline]
-    fn complete_throw(&mut self, v: Self::V) {
-        self.set_completion(runtime::Completion::Throw(v));
-    }
-
-    #[inline]
-    fn completion(&mut self) -> Option<runtime::Completion<Self::V>> {
-        self.completion.clone()
-    }
-
-    #[inline]
-    fn new_undefined(&mut self) -> Self::V {
-        JSValue::Undefined
-    }
-
-    #[inline]
-    fn new_null(&mut self) -> Self::V {
-        JSValue::Null
-    }
-
-    #[inline]
-    fn new_boolean(&mut self, b: bool) -> Self::V {
-        JSValue::Boolean(b)
-    }
-
-    #[inline]
-    fn new_number(&mut self, n: i64) -> Self::V {
-        JSValue::Number(JSNumber::new(n))
-    }
-
-    #[inline]
-    fn wrap_number(&mut self, n: &<<Self as runtime::JSContext>::V as runtime::JSValue>::N) -> Self::V {
-        JSValue::Number(*n)
-    }
-
-    #[inline]
-    fn new_string(&mut self, s: &String) -> Self::V {
-        JSValue::String(JSString::new(s))
-    }
-
-    #[inline]
-    fn wrap_string(&mut self, s: &<<Self as runtime::JSContext>::V as runtime::JSValue>::S) -> Self::V {
-        JSValue::String(s.clone())
-    }
-
-    #[inline]
-    fn new_array(&mut self, elements: Vec<Self::V>) -> Self::V {
-        JSValue::Reference(JSReference::new_array(elements))
-    }
-
-    #[inline]
-    fn new_object(&mut self, props: Vec<(&ast::PropName, Self::V)>) -> Self::V {
-        JSValue::Reference(JSReference::new(JSObject::new(props)))
-    }
-
-    #[inline]
-    fn new_function(&mut self, identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<String>) -> Self::V {
-        let mut captured_vars = Vec::with_capacity(captures.len());
-        let scope = &mut self.scope;
-       
-        for capture in captures {
-            let var = scope.variable(&capture).unwrap();
-            captured_vars.push(var);
-        }
-
-        JSValue::Reference(JSReference::new_function(identifier, parameters, body, captured_vars))
-    }
-
-    fn initialize_binding(&mut self, kind: ast::DeclarationKind, name: &String, value: Option<Self::V>) -> Result<(), String> {
-        self.scope.declare(name, kind, value)
-    }
-
-    fn resolve_binding(&mut self, name: &String) -> Result<JSValue, String> {
-       self.scope.variable(name).map(|v| v.value())
-    }
-
-    fn set_binding(&mut self, name: &String, value: Self::V) -> Result<(), String>{
-        self.scope.variable_mut(name).map(|v| v.set(value))
-    }
-
-    fn dup(&mut self, v: Self::V) -> Self::V {
-        v.clone()
-    }
-}
-
 #[cfg(test)]
-mod tests {
+mod scope_tests {
     use crate::interpreter::runtime::Scope;
     use crate::interpreter::runtime::JSValue;
     use crate::ast::DeclarationKind;
@@ -1400,5 +1315,274 @@ mod tests {
         set_var(scope, "a", JSValue::new_number(5));
         assert_var(scope, "a", JSValue::new_number(5));
         assert_error(scope, "b"); // error on const variable set
+    }
+}
+
+pub struct JSContext {
+    scope: Scope,
+    completion: Option<runtime::Completion<JSValue>>,
+}
+
+impl JSContext {
+    fn new() -> Self {
+        JSContext {
+            scope: Scope::new(),
+            completion: None,
+        }
+    }
+
+    fn set_completion(&mut self, completion: runtime::Completion<JSValue>) {
+        self.completion = Some(completion);
+    }
+
+    #[inline]
+    fn declare_const_variable(&mut self, name: &String, v: JSValue) -> Result<(), String> {
+        self.scope.declare(name, ast::DeclarationKind::Const, Some(v))
+    }
+
+    #[inline]
+    fn declare_let_variable(&mut self, name: &String, v: Option<JSValue>) -> Result<(), String> {
+        self.scope.declare(name, ast::DeclarationKind::Let, v)
+    }
+
+}
+
+impl runtime::JSContext for JSContext {
+    type V = JSValue;
+
+    fn check_early_errors(&self) -> bool {
+        false // TODO
+    }
+
+
+
+    fn block_scope(&mut self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn(&mut Self)) {
+        self.scope.enter();
+        body(self);
+        self.scope.exit();
+    }
+
+    fn extract_free_variables(&mut self, mut vars: HashSet<String>) -> HashSet<String> {
+        unimplemented!()
+        /*
+        for var in vars.iter() {
+            if self.scope.variable(var).is_ok() {
+                vars.remove(var);
+            }
+        }
+        
+        vars
+        */
+    }
+
+    #[inline]
+    fn control_loop(&mut self, test: impl Fn(&mut Self) -> Self::V, body: impl Fn(&mut Self)) {
+        while test(self).is_truthy() {
+            body(self);
+        }
+    }
+
+    #[inline]
+    fn control_branch(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self), alternate: impl Fn(&mut Self)) {
+        if test(self).is_truthy() {
+            consequent(self);
+        } else {
+            alternate(self);
+        }
+    }
+
+    #[inline]
+    fn control_branch_value(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self) -> Self::V, alternate: impl Fn(&mut Self) -> Self::V) -> Self::V {
+        if test(self).is_truthy() {
+            consequent(self)
+        } else {
+            alternate(self)
+        }
+    }
+
+    #[inline]
+    fn control_switch(&mut self) {
+        unimplemented!()
+    }
+
+    #[inline]
+    fn control_coalesce(&mut self, left: impl Fn(&mut Self) -> Self::V, right: impl Fn(&mut Self) -> Self::V) -> Self::V {
+        let result = left(self);
+        match result {
+            JSValue::Undefined => right(self),
+            JSValue::Null => right(self),
+            _ => result,
+        }
+    }
+
+    #[inline]
+    fn complete_break(&mut self) {
+        self.set_completion(runtime::Completion::Break);
+    }
+
+    #[inline]
+    fn complete_continue(&mut self) {
+        self.set_completion(runtime::Completion::Continue);
+    }
+
+    #[inline]
+    fn complete_return(&mut self, v: Option<Self::V>) {
+        self.set_completion(runtime::Completion::Return(v));
+    }
+
+    #[inline]
+    fn complete_throw(&mut self, v: Self::V) {
+        self.set_completion(runtime::Completion::Throw(v));
+    }
+
+    #[inline]
+    fn completion(&mut self) -> Option<runtime::Completion<Self::V>> {
+        self.completion.clone()
+    }
+
+    #[inline]
+    fn new_undefined(&mut self) -> Self::V {
+        JSValue::Undefined
+    }
+
+    #[inline]
+    fn new_null(&mut self) -> Self::V {
+        JSValue::Null
+    }
+
+    #[inline]
+    fn new_boolean(&mut self, b: bool) -> Self::V {
+        JSValue::Boolean(b)
+    }
+
+    #[inline]
+    fn new_number(&mut self, n: i64) -> Self::V {
+        JSValue::Number(JSNumber::new(n))
+    }
+
+    #[inline]
+    fn wrap_number(&mut self, n: &<<Self as runtime::JSContext>::V as runtime::JSValue>::N) -> Self::V {
+        JSValue::Number(*n)
+    }
+
+    #[inline]
+    fn new_string(&mut self, s: &String) -> Self::V {
+        JSValue::String(JSString::new(s))
+    }
+
+    #[inline]
+    fn wrap_string(&mut self, s: &<<Self as runtime::JSContext>::V as runtime::JSValue>::S) -> Self::V {
+        JSValue::String(s.clone())
+    }
+
+    #[inline]
+    fn new_array(&mut self, elements: Vec<Self::V>) -> Self::V {
+        JSValue::Reference(JSReference::new_array(elements))
+    }
+
+    #[inline]
+    fn new_object(&mut self, props: Vec<(runtime::PropName, Self::V)>) -> Self::V {
+        JSValue::Reference(JSReference::new(JSObject::new(props)))
+    }
+
+    #[inline]
+    fn new_function(&mut self, identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<String>) -> Self::V {
+        let mut captured_vars = Vec::with_capacity(captures.len());
+        let scope = &mut self.scope;
+       
+        for capture in captures {
+            let var = scope.variable(&capture).unwrap();
+            captured_vars.push(var);
+        }
+
+        JSValue::Reference(JSReference::new_function(identifier, parameters, body, captured_vars))
+    }
+
+    fn initialize_binding(&mut self, kind: ast::DeclarationKind, name: &String, value: Option<Self::V>) -> Result<(), String> {
+        self.scope.declare(name, kind, value)
+    }
+
+    fn resolve_binding(&mut self, name: &String) -> Result<JSValue, String> {
+       self.scope.variable(name).map(|v| v.value())
+    }
+
+    fn set_binding(&mut self, name: &String, value: Self::V) -> Result<(), String>{
+        self.scope.variable_mut(name).map(|v| v.set(value))
+    }
+
+    fn dup(&mut self, v: Self::V) -> Self::V {
+        v.clone()
+    }
+}
+
+#[cfg(test)]
+mod context_test {
+    use std::cell::RefCell;
+    use crate::runtime::{JSContext, JSValue, JSNumeric};
+
+    #[test]
+    fn simple_test() {
+        let mut ctx = super::JSContext::new();
+
+        // test bindings
+
+        let name = "name".to_string();
+        let value = ctx.new_string(&"John".to_string());
+        let result = ctx.initialize_binding(crate::ast::DeclarationKind::Let, &name, Some(value));
+        assert!(result.is_ok());
+
+        let stored_value = ctx.resolve_binding(&name);
+        assert!(stored_value.is_ok());
+        assert!(stored_value.unwrap().as_string().unwrap().to_string() == "John".to_string());
+
+        let stored_value = ctx.resolve_binding(&"unknown".to_string());
+        assert!(stored_value.is_err());
+
+        let value = ctx.new_string(&"Jane".to_string());
+        let result = ctx.set_binding(&name, value);
+        assert!(result.is_ok());
+        assert!(ctx.resolve_binding(&name).unwrap().as_string().unwrap().to_string() == "Jane".to_string());
+
+        // test controls
+
+        let result = RefCell::new(ctx.new_undefined());
+        ctx.control_branch(
+            |ctx| ctx.new_boolean(true),
+            |ctx| *result.borrow_mut() = ctx.new_string(&"consequent".to_string()),
+            |ctx| *result.borrow_mut() = ctx.new_string(&"alternate".to_string()),
+        );
+
+        assert!(result.borrow().as_string().unwrap().to_string() == "consequent".to_string());
+
+        let result = RefCell::new(ctx.new_undefined());
+        ctx.control_branch(
+            |ctx| ctx.new_boolean(false),
+            |ctx| *result.borrow_mut() = ctx.new_string(&"consequent".to_string()),
+            |ctx| *result.borrow_mut() = ctx.new_string(&"alternate".to_string()),
+        );
+
+        assert!(result.borrow().as_string().unwrap().to_string() == "alternate".to_string());
+
+        // for (let i = 0; i < 10; i++) { }
+        let condition = RefCell::new(ctx.new_boolean(true));
+        let count = RefCell::new(ctx.new_number(0));
+        let ten = super::JSNumber::new(10);
+        ctx.control_loop(
+            |ctx| condition.borrow().clone(),
+            |ctx| { 
+                if let super::JSValue::Number(mut value) = *count.borrow_mut() {
+                    println!("count: {}", value.to_int64().unwrap());
+                    if !value.op_lt(&ten) {
+                        *condition.borrow_mut() = ctx.new_boolean(false);
+                        return
+                    } 
+                    value.op_inc();
+                } else {
+                    panic!("count is not a number");
+                }
+            },
+        );
+
+        assert!(count.borrow().as_number().unwrap().to_int64().unwrap() == 10);
     }
 }

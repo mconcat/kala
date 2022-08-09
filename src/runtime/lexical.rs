@@ -372,7 +372,12 @@ fn eval_object<JSContext: runtime::JSContext>(ctx: &mut JSContext, obj: &ast::Ob
     for elem in obj.elements.iter() {
         match elem.element.as_ref().unwrap() {
             ast::object_expression::element::Element::Property(prop) => {
-                let key = prop.name.as_ref().unwrap();
+                let key = match prop.name.as_ref().unwrap().name.as_ref().unwrap() {
+                    ast::prop_name::Name::Identifier(id) => runtime::PropName::String(id.name.to_string()),
+                    ast::prop_name::Name::StringLiteral(lit) => runtime::PropName::String(lit.to_string()),
+                    ast::prop_name::Name::NumberLiteral(lit) => runtime::PropName::Number(*lit),
+                    _ => unimplemented!(),
+                };
                 let value = eval_expression(ctx, prop.value.as_ref().unwrap());
                 props.push((key, value));
             },

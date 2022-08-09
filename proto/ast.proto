@@ -59,7 +59,7 @@ message PropName {
     oneof name {
         string stringLiteral = 1;
         Identifier identifier = 2;
-        uint64 numberLiteral = 3;
+        int64 numberLiteral = 3;
     }
 }
 
