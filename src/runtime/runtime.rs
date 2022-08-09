@@ -353,7 +353,7 @@ pub trait JSProperty {
     type V: JSValue;
         
     fn get(&self) -> Self::V;
-    fn set(&self, value: Self::V);
+    fn set(&mut self, value: Self::V);
 }
 
 pub trait JSReference {
@@ -379,7 +379,7 @@ pub trait JSClosure {
     fn call(&self, args: &[Self::V]) -> Self::V;
 }
 
-pub trait JSValue {
+pub trait JSValue: Clone {
     type N: JSNumber;
     // type B: Bigint;
     type S: JSString;
@@ -416,13 +416,8 @@ pub trait JSValue {
     fn to_number(&self) -> Self::N;
     //fn to_string(&self) -> Self::S;
     //fn to_object(&self) -> Self::R;
-
-    // stack manipulation
-
-    // dup creates a shallow copy of self
-    fn dup(&self) -> &Self;
 }
-
+#[derive(Clone, Copy)]
 pub enum Completion<V: JSValue> {
     Continue,
     Break,
@@ -451,64 +446,67 @@ pub trait JSContext {
     // 2. Constructs a new scope for the current execution context
     // 3. Hoist all the function declarations in the current execution context using parameter hoist
     // 4. Recover the parent scope after the execution context has finished
-    fn block_scope(&self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn());
+    fn block_scope(&mut self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn(&mut Self));
 
-    fn extract_free_variables(&self, vars: HashSet<String>) -> HashSet<String>;
+    fn extract_free_variables(&mut self, vars: HashSet<String>) -> HashSet<String>;
 
     // Variable declaration
     // Declare a new variable in the current scope
-    fn declare_const_variable(&mut self, name: String, v: Self::V);
-    fn declare_let_variable(&mut self, name: String, v: Option<Self::V>);
+    fn declare_const_variable(&mut self, name: &String, v: Self::V) -> Result<(), String>;
+    fn declare_let_variable(&mut self, name: &String, v: Option<Self::V>) -> Result<(), String>;
 
     // Control flow
-    fn control_loop(&mut self, test: impl Fn() -> Self::V, body: impl Fn());
+    fn control_loop(&mut self, test: impl Fn(&mut Self) -> Self::V, body: impl Fn(&mut Self));
     // control_branch checks the truthy/falsy value of the condition and branches accordingly
-    fn control_branch(&mut self, test: impl Fn() -> Self::V, consequent: impl Fn(), alternate: impl Fn());
-    fn control_branch_value(&mut self, test: impl Fn() -> Self::V, consequent: impl Fn() -> Self::V, alternate: impl Fn() -> Self::V) -> Self::V;
+    fn control_branch(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self), alternate: impl Fn(&mut Self));
+    fn control_branch_value(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self) -> Self::V, alternate: impl Fn(&mut Self) -> Self::V) -> Self::V;
     fn control_switch(&mut self); // TODO
     // fn control_try(&mut self, body: &ast::Block, catch: &ast::Block, finally: &ast::Block);
-    fn control_coalesce(&mut self, left: impl Fn() -> Self::V, right: impl Fn() -> Self::V) -> Self::V;
+    fn control_coalesce(&mut self, left: impl Fn(&mut Self) -> Self::V, right: impl Fn(&mut Self) -> Self::V) -> Self::V;
 
     // Terminators
     fn complete_break(&mut self);
     fn complete_continue(&mut self);
     fn complete_return(&mut self, val: Option<Self::V>);
     fn complete_throw(&mut self, val: Self::V);
-    fn completion(&self) -> Option<Completion<Self::V>>;
+    fn completion(&mut self) -> Option<Completion<Self::V>>;
 
     ///////////////////////////////
     // Expression
 
     // Literal value creation
     // XS_CODE_UNDEFINED
-    fn new_undefined(&self) -> Self::V;
+    fn new_undefined(&mut self) -> Self::V;
     // XS_CODE_NULL
-    fn new_null(&self) -> Self::V;
+    fn new_null(&mut self) -> Self::V;
     // XS_CODE_TRUE
     // XS_CODE_FALSE
-    fn new_boolean(&self, b: bool) -> Self::V;
+    fn new_boolean(&mut self, b: bool) -> Self::V;
     // XS_CODE_NUMBER
-    fn new_number(&self, n: i64) -> Self::V;
-    fn wrap_number(&self, n: &<<Self as JSContext>::V as JSValue>::N) -> Self::V;
+    fn new_number(&mut self, n: i64) -> Self::V;
+    fn wrap_number(&mut self, n: &<<Self as JSContext>::V as JSValue>::N) -> Self::V;
     // XS_CODE_BIGINT
     // fn new_bigint(n: &[i32]) -> Self::V;
     // XS_CODE_STRING
-    fn new_string(&self, s: String) -> Self::V;
-    fn wrap_string(&self, s: &<<Self as JSContext>::V as JSValue>::S) -> Self::V;
+    fn new_string(&mut self, s: &String) -> Self::V;
+    fn wrap_string(&mut self, s: &<<Self as JSContext>::V as JSValue>::S) -> Self::V;
 
     // XS_CODE_ARRAY
-    fn new_array(&self, elements: Vec<Self::V>) -> Self::V;
+    fn new_array(&mut self, elements: Vec<Self::V>) -> Self::V;
 
     // Object value creation
     // XS_CODE_OBJECT
-    fn new_object(&self, props: Vec<(&ast::PropName, Self::V)>) -> Self::V;
+    fn new_object(&mut self, props: Vec<(&ast::PropName, Self::V)>) -> Self::V;
 
     // Function value creation
-    fn new_function(&self, identifier: Option<String>, parameters: Vec<String>, body: ast::FunctionExpression, captures: Vec<String>) -> Self::V;
+    fn new_function(&mut self, identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<String>) -> Self::V;
 
     // variable access
-    fn initialize_binding(&self, kind: ast::DeclarationKind, name: String, v: Option<Self::V>);
-    fn resolve_binding(&self, name: String) -> Result<Self::V, String>; 
-    fn set_binding(&mut self, name: String, v: Self::V) -> Result<(), String>;
+    fn initialize_binding(&mut self, kind: ast::DeclarationKind, name: &String, v: Option<Self::V>) -> Result<(), String>;
+    fn resolve_binding(&mut self, name: &String) -> Result<Self::V, String>; 
+    fn set_binding(&mut self, name: &String, v: Self::V) -> Result<(), String>;
+
+    // abstract stack operations
+    fn dup(&mut self, v: Self::V) -> Self::V;
 }
 

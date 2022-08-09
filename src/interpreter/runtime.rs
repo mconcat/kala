@@ -18,7 +18,7 @@ fn eval(expr: ast::Expression) -> JSValue {
 }
 */
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum JSValue {
     Undefined,
     Null,
@@ -52,7 +52,7 @@ impl JSValue {
     }
 
     pub fn new_string(value: &str) -> JSValue {
-        JSValue::String(JSString::new(value.to_string()))
+        JSValue::String(JSString::new(&value.to_string()))
     }
 
 
@@ -158,12 +158,9 @@ impl runtime::JSValue for JSValue {
         }
     }
 */
-    fn dup(&self) -> &Self {
-        self
-    }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum JSNumber {
     NaN,
     Infinity(bool), // true = positive, false = negative
@@ -263,7 +260,7 @@ impl runtime::JSNumeric for JSNumber {
                 _ => {}, // ignore other cases
             }
             Integer(x) => match other {
-                Infinity(y) => { *y = !*y },
+                Infinity(y) => { *self = Infinity(!*y) },
                 Integer(y) => { *x -= *y; self.check_underflow(); },
                 NaN => { *self = NaN },
             },
@@ -289,7 +286,7 @@ impl runtime::JSNumeric for JSNumber {
             },
             Integer(x) => match other {
                 Infinity(y) => { *self = Infinity((*x>=0) == *y) },
-                Integer(y) => { *x = *x * *y; Ok(self) },
+                Integer(y) => { *x = *x * *y },
                 NaN => { *self = NaN },
                 _ => panic!("should not reach here"), 
             },
@@ -301,103 +298,117 @@ impl runtime::JSNumeric for JSNumber {
     #[inline]
     fn op_div(&mut self, other: &Self) -> &mut Self {
         match self {
-            NaN => Ok(self),
+            NaN => {},
             Infinity(x) => match other {
-                Infinity(y) => self.assign(NaN),
-                Integer(y) => { *x = *x == (*y>=0); Ok(self) },
-                NaN => self.assign(NaN),
+                Infinity(y) => { *self = NaN },
+                Integer(y) => { *x = *x == (*y>=0) },
+                NaN => { *self = NaN },
             }
             Integer(0) => match other {
-                Integer(0) => self.assign(NaN),
-                NaN => self.assign(NaN),
-                _ => Ok(self),
+                Integer(0) => { *self = NaN },
+                NaN => { *self = NaN },
+                _ => {},
             },
             Integer(x) => match other {
-                Integer(0) => self.assign(Infinity(*x>=0)),
-                Infinity(y) => { *x = 0; Ok(self) },
-                Integer(y) => { *x = *x / *y; Ok(self) },
-                NaN => self.assign(NaN),
-                _ => self.type_error(),
+                Integer(0) => { *self = Infinity(*x>=0) },
+                Infinity(y) => { *x = 0 },
+                Integer(y) => { *x = *x / *y },
+                NaN => { *self = NaN },
             },
-        }
+        };
+
+        self
     }
 
     #[inline]
-    fn op_modulo(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_modulo(&mut self, other: &Self) -> &mut Self {
         match self {
-            NaN => Ok(self),
-            Infinity(x) => self.assign(NaN),
+            NaN => {},
+            Infinity(x) => { *self = NaN },
             Integer(x) => match other {
-                Infinity(y) => Ok(self),
-                Integer(0) => self.assign(NaN),
-                Integer(y) => { *x = *x % *y; Ok(self) },
-                NaN => self.assign(NaN),
-                _ => self.type_error(), 
+                Infinity(y) => {},
+                Integer(0) => { *self = NaN },
+                Integer(y) => { *x = *x % *y },
+                NaN => { *self = NaN },
             },
-        }
+        };
+
+        self
     }
 
     #[inline]
-    fn op_pow(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_pow(&mut self, other: &Self) -> &mut Self {
         unimplemented!("asdf")
     } // TODO XXX
 
     #[inline]
-    fn op_bitand(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_bitand(&mut self, other: &Self) -> &mut Self {
         let v = self.to_int32() & other.to_int32();
         match self {
-            Integer(x) => { *x = v as i64; Ok(self) },
-            _ => self.assign(Integer(v as i64)),
-        }  
+            Integer(x) => { *x = v as i64 },
+            _ => { *self = Integer(v as i64) },
+        };
+        
+        self
     }
 
     #[inline]
-    fn op_bitor(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_bitor(&mut self, other: &Self) -> &mut Self {
         let v = self.to_int32() | other.to_int32();
         match self {
-            Integer(x) => self.ok(*x = v as i64),
-            _ => self.assign(Integer(v as i64)),
-        } 
+            Integer(x) => { *x = v as i64 },
+            _ => { *self = Integer(v as i64) },
+        };
+
+        self
     }
 
     #[inline]
-    fn op_bitxor(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_bitxor(&mut self, other: &Self) -> &mut Self {
         let v = self.to_int32() ^ other.to_int32();
         match self {
-            Integer(x) => { *x = v as i64; Ok(self) },
-            _ => self.assign(Integer(v as i64)),
-        }    
+            Integer(x) => { *x = v as i64 },
+            _ => { *self = Integer(v as i64) },
+        };
+
+        self
     }
 
     #[inline]
-    fn op_bitnot(&mut self) -> Result<&Self, String> {
-        let v = self.to_int32() ^ 0xFFFFFFFF;
+    fn op_bitnot(&mut self) -> &mut Self {
+        let v = !self.to_int32();
         match self {
-            Integer(x) => { *x = v as i64; Ok(self) },
-            _ => self.assign(Integer(v as i64)),
-        }
+            Integer(x) => { *x = v as i64 },
+            _ => { *self = Integer(v as i64) },
+        };
+
+        self
     }
 
     #[inline]
-    fn op_lshift(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_lshift(&mut self, other: &Self) -> &mut Self {
         let v = self.to_int32() << other.to_int32();
         match self {
-            Integer(x) => { *x = v as i64; Ok(self) }, 
-            _ => self.assign(Integer(v as i64)),
-        } 
+            Integer(x) => { *x = v as i64 }, 
+            _ => { *self = Integer(v as i64) },
+        };
+
+        self
     }
 
     #[inline]
-    fn op_rshift(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_rshift(&mut self, other: &Self) -> &mut Self {
         let v = self.to_int32() >> other.to_int32();
         match self {
-            Integer(x) => { *x = v as i64; Ok(self) },
-            _ => self.assign(Integer(v as i64)),
-        }   
+            Integer(x) => { *x = v as i64 },
+            _ => { *self = Integer(v as i64) },
+        };
+
+        self
     }
 
     #[inline]
-    fn op_urshift(&mut self, other: &Self) -> Result<&Self, String> {
+    fn op_urshift(&mut self, other: &Self) -> &mut Self {
         unimplemented!("asdfasdf")
     }
 
@@ -501,7 +512,7 @@ impl runtime::JSNumeric for JSNumber {
     }
 
     #[inline]
-    fn op_neg(&mut self) -> &Self {
+    fn op_neg(&mut self) -> &mut Self {
         match self {
             NaN => {},
             Infinity(x) => *x = !*x,
@@ -512,7 +523,7 @@ impl runtime::JSNumeric for JSNumber {
     }
 
     #[inline]
-    fn op_inc(&mut self) -> &Self {
+    fn op_inc(&mut self) -> &mut Self {
         match self {
             NaN => self,
             Infinity(x) => self,
@@ -521,7 +532,7 @@ impl runtime::JSNumeric for JSNumber {
     }
 
     #[inline]
-    fn op_dec(&mut self) -> &Self {
+    fn op_dec(&mut self) -> &mut Self {
         match self {
             NaN => self,
             Infinity(x) => self,
@@ -609,7 +620,7 @@ impl runtime::Bigint for Bigint {
 }
 */
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum JSString {
     Short(u64), // short ascii String, maximum length is 8 bytes
     Normal(String), // heap allocated arbitrary length UTF-8 String
@@ -617,8 +628,8 @@ pub enum JSString {
 
 impl JSString {
     #[inline]
-    fn new(s: String) -> Self {
-        JSString::Normal(s)
+    fn new(s: &String) -> Self {
+        JSString::Normal(s.clone())
     }
 
     #[inline]
@@ -637,16 +648,6 @@ impl JSString {
         self
     }
 
-    fn as_normal(&self) -> &Self {
-        match self {
-            JSString::Short(x) => {
-                let bytes: [u8; 8] = x.to_be_bytes();
-                &JSString::Normal(String::from_utf8(bytes.to_vec()).unwrap())
-            }
-            _ => self
-        }
-    }
-
     #[inline]
     fn is_empty(&self) -> bool {
         match self {
@@ -657,8 +658,13 @@ impl JSString {
 
     #[inline]
     fn to_string(&self) -> String {
-        let JSString::Normal(s) = self.as_normal();
-        *s
+        match self {
+           JSString::Short(x) => {
+                let bytes: [u8; 8] = x.to_be_bytes();
+                std::str::from_utf8(bytes.as_ref()).unwrap().to_string()
+            }
+            JSString::Normal(x) => x.clone()
+        }
     }
 
 }
@@ -666,10 +672,12 @@ impl JSString {
 impl runtime::JSString for JSString {
     #[inline]
     fn concat(&mut self, other: &Self) -> &mut Self {
-        let JSString::Normal(self_) = self.to_normal();
-        for c in other.to_string().chars() {
-            self_.push(c);
+        if let JSString::Normal(self_) = self.to_normal() {
+            for c in other.to_string().chars() {
+                self_.push(c);
+            }
         }
+        
         self
     }
 }
@@ -717,9 +725,10 @@ pub enum Prototype {
     Array(Vec<JSValue>), // object with array storage
     // TypedArray(Vec<u8>),
     Error(ErrorType, String), // error object
-    // Primitive(),
+    // Primitive(), // primitive value wrapper
     // ForeignFunction(Box<dyn Fn(Vec<JSValue>) -> Result<JSValue, String>>), // foreign function object
-    // State(String), // state object
+    // State(String), // chain state object
+    // Struct(), // known type struct object, inferred or from type annotation
 }
 
 impl PartialEq for Prototype {
@@ -768,7 +777,7 @@ impl JSObject {
     }
 
     #[inline]
-    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: ast::FunctionExpression, captures: Vec<&ScopedVariable>) -> Self {
+    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<&ScopedVariable>) -> Self {
         unimplemented!()
         /*
         JSObject {
@@ -814,7 +823,7 @@ impl JSObject {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 // Reference is a pointer to a value in the heap.
 pub struct JSReference {
     value: Rc<RefCell<JSObject>>
@@ -833,7 +842,7 @@ impl JSReference {
         }
     }
 
-    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: ast::FunctionExpression, captures: Vec<&ScopedVariable>) -> Self {
+    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<&ScopedVariable>) -> Self {
         JSReference {
             value: Rc::new(RefCell::new(JSObject::new_function(identifier, parameters, body, captures)))
         }
@@ -847,10 +856,10 @@ impl runtime::JSReference for JSReference {
 //    type Iter = JSObjectIterator;
 
     fn property(&self, name: &Self::N) -> Self::P {
-        JSProperty::new(*self, name.name)
+        JSProperty::new(self, name.name.to_string())
     }
 
-    fn call(&self, args: &[Self::V]) -> Self::V {
+    fn call(&self, _args: &[Self::V]) -> Self::V {
         unimplemented!()
     }
 }
@@ -867,7 +876,7 @@ impl runtime::JSPropName for JSPropName {
     }
 
     fn to_string(&self) -> String {
-        self.name
+        self.name.clone()
     }
 }
 
@@ -878,7 +887,7 @@ pub struct JSProperty {
 }
 
 impl JSProperty {
-    fn new(refer: JSReference, name: String) -> Self {
+    fn new(refer: &JSReference, name: String) -> Self {
         JSProperty {
             value: Rc::downgrade(&refer.value),
             propname: name,
@@ -891,24 +900,26 @@ impl runtime::JSProperty for JSProperty {
 
     fn get(&self) -> Self::V {
         match &*(unsafe { &*self.value.as_ptr() }).borrow() {
-            JSObject { prototype, properties } => {
-                *properties.get(&self.propname).unwrap_or(&JSValue::Undefined) 
+            JSObject { prototype: _, properties } => {
+                let value = properties.get(&self.propname);
+                value.unwrap_or(&JSValue::Undefined).clone()
             }
             _ => unimplemented!("ToObject"), // TODO
         }
     }
 
-    fn set(&self, value: Self::V) {
-        match &*(unsafe { &*self.value.as_ptr() }).borrow() {
-            JSObject { prototype, properties } => {
-                *properties.get_mut(&self.propname).unwrap() = value;
+    fn set(&mut self, value: Self::V) {
+        match &mut *(unsafe { &*self.value.as_ptr() }).borrow_mut() {
+            JSObject { prototype: _, properties } => {
+                let existing_value = properties.get_mut(&self.propname);
+                *(existing_value.unwrap()) = value;
             }
             _ => unimplemented!("TypeError"), // TODO: return TypeError
         }
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ScopedVariable {
     Stack(JSValue, ast::DeclarationKind, i16),
     Heap(Rc<RefCell<JSValue>>, ast::DeclarationKind, i16),
@@ -927,11 +938,11 @@ impl ScopedVariable {
     #[inline]
     pub fn promote(&mut self) -> &Self {
         match self {
-            &mut Self::Stack(value, kind, depth) => {
+            Self::Stack(value, kind, depth) => {
                 *self = Self::Heap(
-                    Rc::new(RefCell::new(value)),
-                    kind,
-                    depth
+                    Rc::new(RefCell::new(value.clone())),
+                    *kind,
+                    *depth
                 )
             },
             _ => {},
@@ -941,8 +952,15 @@ impl ScopedVariable {
 
     pub fn value(&self) -> JSValue {
         match self {
-            &Self::Stack(value, _, _) => value,
-            &Self::Heap(value, _, _) => *value.borrow_mut(),
+            Self::Stack(value, _, _) => value.clone(),
+            Self::Heap(value, _, _) => (*(value.borrow_mut())).clone(),
+        }
+    }
+
+    pub fn modify(&mut self, f: impl Fn(&mut JSValue)) {
+        match self {
+            Self::Stack(value, _, _) => f(value),
+            Self::Heap(value, _, _) => f(&mut *(*value).borrow_mut()),
         }
     }
 
@@ -980,7 +998,7 @@ impl Scope {
         // XXX: construct binding from env
         Scope {
             binding: HashMap::new(),
-            recovery: Vec::new(),
+            recovery: vec![BTreeMap::new()],
         }
     }
 
@@ -990,19 +1008,23 @@ impl Scope {
     }
 
     #[inline]
-    pub fn current_recovery(&self) -> &BTreeMap<String, Option<ScopedVariable>> {
-        self.recovery.last().unwrap()
+    pub fn is_parent_variable(&self, var: &ScopedVariable) -> bool {
+        var.depth() < self.depth()
+    }
+
+    pub fn add_recover_variable(&mut self, name: String, value: Option<ScopedVariable>) {
+        self.recovery.last_mut().unwrap().insert(name, value);
     }
 
     #[inline]
-    pub fn variable(&self, name: String) -> Result<&ScopedVariable, String> {
-        self.binding.get(&name).ok_or(format!("ReferenceError: {} is not defined", name))
+    pub fn variable(&self, name: &String) -> Result<&ScopedVariable, String> {
+        self.binding.get(name).ok_or(format!("ReferenceError: {} is not defined", name))
     }
 
     // variable_mut should be de
     #[inline]
-    pub fn variable_mut(&mut self, name: String) -> Result<&mut ScopedVariable, String> {
-        match self.binding.get_mut(&name) {
+    pub fn variable_mut(&mut self, name: &String) -> Result<&mut ScopedVariable, String> {
+        match self.binding.get_mut(name) {
             Some(existing) => {
                 if existing.kind() != ast::DeclarationKind::Let {
                     // cannot set to non-let variable
@@ -1015,36 +1037,40 @@ impl Scope {
         }  
     }
     
-    pub fn declare(&mut self, name: String, kind: ast::DeclarationKind, value: Option<JSValue>) {
+    pub fn declare(&mut self, name: &String, kind: ast::DeclarationKind, value: Option<JSValue>) -> Result<(), String> {
         if kind == ast::DeclarationKind::Const && value.is_none() {
             panic!("const variable must be initialized");
         }
+        
+        let binding = self.binding.get(name).clone();
 
-        match self.binding.get_mut(&name) {
-            Some(existing) => {
-                if existing.depth() < self.depth() {
-                    // parent scope had declared the variable,
-                    // shadow it by adding it to the recovery list
-                    self.current_recovery().insert(name, Some(*existing));
-                } else if existing.kind() == ast::DeclarationKind::Const {
-                    // current scope had declared the variable as const,
-                    // cannot override const variables
-                    unimplemented!("SyntaxError: redeclaration of formal parameter \"{}\"", name)
-                } else {
-                    // current scope had declared the variable as let,
-                    // by override the existing, the rust compiler will automatically drop the existing reference(possibly Rc).
-                    // noop
-                }
-                *existing = ScopedVariable::new(value.unwrap_or(JSValue::Undefined), kind, self.depth());
-            },
-            None => {
-                // there is no variable declared with this name
-                // add the variable as discard to the recovery list
-                // and insert the new variable to the binding
-                self.current_recovery().insert(name, None);
-                self.binding.insert(name, ScopedVariable::new(value.unwrap_or(JSValue::Undefined), kind, self.depth()));
-            }
+        // if there is no variable existing already, create a new one, and add it to the recovery list as to be discarded
+        if binding.is_none() {
+            self.add_recover_variable(name.clone(), None);
+            let var = ScopedVariable::new(value.unwrap_or(JSValue::Undefined), kind, self.depth());
+            self.binding.insert(name.clone(), var); 
+            return Ok(())
         }
+        
+        let existing = binding.unwrap();
+        let existing_kind = existing.kind();
+
+        // if there is a variable existing already, check if it is a parent variable, 
+        // if so, shadow it by adding it to the recovery list as to be recovered, and create a new one
+        if self.is_parent_variable(existing) {
+            let recover_value = Some(existing.clone());
+            self.add_recover_variable(name.clone(), recover_value);
+        }
+
+        // at this point the variable is already declared in the current scope, so we just update it after checking if it is a let
+        else if existing_kind != ast::DeclarationKind::Let {
+            // cannot set to non-let variable
+            return Err(format!("SyntaxError: redeclaration of formal parameter \"{}\"", name))
+        }
+
+        let var = ScopedVariable::new(value.unwrap_or(JSValue::Undefined), kind, self.depth());
+        self.binding.insert(name.clone(), var);
+        Ok(())
     }
 
     #[inline]
@@ -1053,14 +1079,15 @@ impl Scope {
     }
 
     pub fn exit(&mut self) {
-        let Some(recovery) = self.recovery.pop();
-        for (key, entry) in recovery.iter() {
-            match entry {
-                Some(existing) => {
-                    self.binding.insert(key.clone(), *existing.clone());
-                }
-                None => {
-                    self.binding.remove(key);
+        if let Some(recovery) = self.recovery.pop() {
+            for (key, entry) in recovery.iter() {
+                match entry {
+                    Some(existing) => {
+                        self.binding.insert(key.clone(), existing.clone());
+                    }
+                    None => {
+                        self.binding.remove(key);
+                    }
                 }
             }
         }
@@ -1094,54 +1121,57 @@ impl runtime::JSContext for JSContext {
 
 
 
-    fn block_scope(&self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn()) {
+    fn block_scope(&mut self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn(&mut Self)) {
         self.scope.enter();
-        body();
+        body(self);
         self.scope.exit();
     }
 
-    fn extract_free_variables(&self, vars: HashSet<String>) -> HashSet<String> {
+    fn extract_free_variables(&mut self, mut vars: HashSet<String>) -> HashSet<String> {
+        unimplemented!()
+        /*
         for var in vars.iter() {
-            if self.scope.variable(*var).is_ok() {
+            if self.scope.variable(var).is_ok() {
                 vars.remove(var);
             }
         }
         
         vars
+        */
     }
 
     #[inline]
-    fn declare_const_variable(&mut self, name: String, v: Self::V) {
+    fn declare_const_variable(&mut self, name: &String, v: Self::V) -> Result<(), String> {
         self.scope.declare(name, ast::DeclarationKind::Const, Some(v))
     }
 
     #[inline]
-    fn declare_let_variable(&mut self, name: String, v: Option<Self::V>) {
+    fn declare_let_variable(&mut self, name: &String, v: Option<Self::V>) -> Result<(), String> {
         self.scope.declare(name, ast::DeclarationKind::Let, v)
     }
 
     #[inline]
-    fn control_loop(&mut self, test: impl Fn() -> Self::V, body: impl Fn()) {
-        while test().is_truthy() {
-            body();
+    fn control_loop(&mut self, test: impl Fn(&mut Self) -> Self::V, body: impl Fn(&mut Self)) {
+        while test(self).is_truthy() {
+            body(self);
         }
     }
 
     #[inline]
-    fn control_branch(&mut self, test: impl Fn() -> Self::V, consequent: impl Fn(), alternate: impl Fn()) {
-        if test().is_truthy() {
-            consequent();
+    fn control_branch(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self), alternate: impl Fn(&mut Self)) {
+        if test(self).is_truthy() {
+            consequent(self);
         } else {
-            alternate();
+            alternate(self);
         }
     }
 
     #[inline]
-    fn control_branch_value(&mut self, test: impl Fn() -> Self::V, consequent: impl Fn() -> Self::V, alternate: impl Fn() -> Self::V) -> Self::V {
-        if test().is_truthy() {
-            consequent()
+    fn control_branch_value(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self) -> Self::V, alternate: impl Fn(&mut Self) -> Self::V) -> Self::V {
+        if test(self).is_truthy() {
+            consequent(self)
         } else {
-            alternate()
+            alternate(self)
         }
     }
 
@@ -1151,11 +1181,11 @@ impl runtime::JSContext for JSContext {
     }
 
     #[inline]
-    fn control_coalesce(&mut self, left: impl Fn() -> Self::V, right: impl Fn() -> Self::V) -> Self::V {
-        let result = left();
+    fn control_coalesce(&mut self, left: impl Fn(&mut Self) -> Self::V, right: impl Fn(&mut Self) -> Self::V) -> Self::V {
+        let result = left(self);
         match result {
-            JSValue::Undefined => right(),
-            JSValue::Null => right(),
+            JSValue::Undefined => right(self),
+            JSValue::Null => right(self),
             _ => result,
         }
     }
@@ -1181,71 +1211,82 @@ impl runtime::JSContext for JSContext {
     }
 
     #[inline]
-    fn completion(&self) -> Option<runtime::Completion<Self::V>> {
-        self.completion
+    fn completion(&mut self) -> Option<runtime::Completion<Self::V>> {
+        self.completion.clone()
     }
 
     #[inline]
-    fn new_undefined(&self) -> Self::V {
+    fn new_undefined(&mut self) -> Self::V {
         JSValue::Undefined
     }
 
     #[inline]
-    fn new_null(&self) -> Self::V {
+    fn new_null(&mut self) -> Self::V {
         JSValue::Null
     }
 
     #[inline]
-    fn new_boolean(&self, b: bool) -> Self::V {
+    fn new_boolean(&mut self, b: bool) -> Self::V {
         JSValue::Boolean(b)
     }
 
     #[inline]
-    fn new_number(&self, n: i64) -> Self::V {
+    fn new_number(&mut self, n: i64) -> Self::V {
         JSValue::Number(JSNumber::new(n))
     }
 
     #[inline]
-    fn wrap_number(&self, n: &<<Self as runtime::JSContext>::V as runtime::JSValue>::N) -> Self::V {
+    fn wrap_number(&mut self, n: &<<Self as runtime::JSContext>::V as runtime::JSValue>::N) -> Self::V {
         JSValue::Number(*n)
     }
 
     #[inline]
-    fn new_string(&self, s: String) -> Self::V {
+    fn new_string(&mut self, s: &String) -> Self::V {
         JSValue::String(JSString::new(s))
     }
 
     #[inline]
-    fn wrap_string(&self, s: &<<Self as runtime::JSContext>::V as runtime::JSValue>::S) -> Self::V {
-        JSValue::String(*s)
+    fn wrap_string(&mut self, s: &<<Self as runtime::JSContext>::V as runtime::JSValue>::S) -> Self::V {
+        JSValue::String(s.clone())
     }
 
     #[inline]
-    fn new_array(&self, elements: Vec<Self::V>) -> Self::V {
+    fn new_array(&mut self, elements: Vec<Self::V>) -> Self::V {
         JSValue::Reference(JSReference::new_array(elements))
     }
 
     #[inline]
-    fn new_object(&self, props: Vec<(&ast::PropName, Self::V)>) -> Self::V {
+    fn new_object(&mut self, props: Vec<(&ast::PropName, Self::V)>) -> Self::V {
         JSValue::Reference(JSReference::new(JSObject::new(props)))
     }
 
     #[inline]
-    fn new_function(&self, identifier: Option<String>, parameters: Vec<String>, body: ast::FunctionExpression, captures: Vec<String>) -> Self::V {
-        let captured_variables = captures.iter().map(|v| self.scope.variable_mut(*v).unwrap().promote()).collect();
-        JSValue::Reference(JSReference::new_function(identifier, parameters, body, captured_variables))
+    fn new_function(&mut self, identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<String>) -> Self::V {
+        let mut captured_vars = Vec::with_capacity(captures.len());
+        let scope = &mut self.scope;
+       
+        for capture in captures {
+            let var = scope.variable(&capture).unwrap();
+            captured_vars.push(var);
+        }
+
+        JSValue::Reference(JSReference::new_function(identifier, parameters, body, captured_vars))
     }
 
-    fn initialize_binding(&self, kind: ast::DeclarationKind, name: String, value: Option<Self::V>) {
-        self.scope.declare(name, kind, value);
+    fn initialize_binding(&mut self, kind: ast::DeclarationKind, name: &String, value: Option<Self::V>) -> Result<(), String> {
+        self.scope.declare(name, kind, value)
     }
 
-    fn resolve_binding(&self, name: String) -> Result<JSValue, String> {
+    fn resolve_binding(&mut self, name: &String) -> Result<JSValue, String> {
        self.scope.variable(name).map(|v| v.value())
     }
 
-    fn set_binding(&mut self, name: String, value: Self::V) -> Result<(), String>{
+    fn set_binding(&mut self, name: &String, value: Self::V) -> Result<(), String>{
         self.scope.variable_mut(name).map(|v| v.set(value))
+    }
+
+    fn dup(&mut self, v: Self::V) -> Self::V {
+        v.clone()
     }
 }
 
@@ -1260,25 +1301,25 @@ mod tests {
         let scope = &mut Scope::new();
 
         let declare_let = |scope: &mut Scope, name: &str, value: Option<JSValue>| {
-            scope.declare(name.to_string(), DeclarationKind::Let, value);
+            scope.declare(&name.to_string(), DeclarationKind::Let, value);
         };
 
         let declare_const = |scope: &mut Scope, name: &str, value: Option<JSValue>| {
-            scope.declare(name.to_string(), DeclarationKind::Const, value);
+            scope.declare(&name.to_string(), DeclarationKind::Const, value);
         };
 
         let set_var = |scope: &mut Scope, name: &str, value: JSValue| {
-            scope.variable_mut(name.to_string())
+            scope.variable_mut(&name.to_string())
                 .map(|v| v.set(value))
                 .unwrap();
         };
 
-        let assert_set_error = |scope: &mut Scope, name: &str| {
-            assert!(scope.variable_mut(name.to_string()).is_err());
+        let assert_error = |scope: &mut Scope, name: &str| {
+            assert!(scope.variable_mut(&name.to_string()).is_err());
         };
 
         let assert_var = |scope: &mut Scope, name: &str, value: JSValue| {
-            assert_eq!(scope.variable(name.to_string()).unwrap().value(), value);
+            assert_eq!(scope.variable(&name.to_string()).unwrap().value(), value);
         };
 
         /*
@@ -1300,50 +1341,64 @@ mod tests {
         }
         */
 
+        println!("1");
         declare_let(scope, "a", Some(JSValue::new_number(1)));
         assert_var(scope, "a", JSValue::new_number(1));
 
+        println!("2");
         declare_const(scope ,"b", Some(JSValue::new_number(2)));
         assert_var(scope, "b", JSValue::new_number(2));
 
+        println!("3");
         set_var(scope, "a", JSValue::new_number(3));
         assert_var(scope, "a", JSValue::new_number(3));
 
-        assert_set_error(scope, "b"); // error on const variable set
+        println!("4");
+        assert_error(scope, "b"); // error on const variable set
 
+        println!("5");
         declare_let(scope, "c", None);
         assert_var(scope, "c", JSValue::new_undefined());
 
+        println!("6");
         set_var(scope, "c", JSValue::new_number(4));
         assert_var(scope, "c", JSValue::new_number(4));
 
+        println!("7");
         scope.enter();
         {
+            println!("8");
             assert_var(scope, "a", JSValue::new_number(3));
             declare_const(scope, "a", Some(JSValue::new_number(11)));
             assert_var(scope, "a", JSValue::new_number(11));
 
+            println!("9");
             assert_var(scope, "b", JSValue::new_number(2));
             declare_let(scope, "b", Some(JSValue::new_number(12)));
             assert_var(scope, "b", JSValue::new_number(12));
 
-            assert_var(scope, "x", JSValue::new_undefined());
+            println!("10");
+            assert_error(scope, "x"); // error on undeclared variable
             declare_let(scope, "x", Some(JSValue::new_number(13)));
             assert_var(scope, "x", JSValue::new_number(13));
 
+            println!("11");
             assert_var(scope, "c", JSValue::new_number(4));
             set_var(scope, "c", JSValue::new_number(14));
             assert_var(scope, "c", JSValue::new_number(14));
         }; 
+
+        println!("11");
         scope.exit();
 
+        println!("12");
         assert_var(scope, "a", JSValue::new_number(3));
         assert_var(scope, "b", JSValue::new_number(2));
         assert_var(scope, "c", JSValue::new_number(14));
-        assert_var(scope, "x", JSValue::new_undefined());
+        assert_error(scope, "x"); // error on undeclared variable
 
         set_var(scope, "a", JSValue::new_number(5));
         assert_var(scope, "a", JSValue::new_number(5));
-        assert_set_error(scope, "b"); // error on const variable set
+        assert_error(scope, "b"); // error on const variable set
     }
 }
