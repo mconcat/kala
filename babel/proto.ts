@@ -164,7 +164,7 @@ export function ToStatement(node: types.Statement): ast.Statement {
         result.continueStatement = ToContinueStatement(node);
         break
     case 'ExpressionStatement':
-        result.expressionStatement = ToExpression(node.expression)
+        result.expressionStatement = { expression: ToExpression(node.expression) };
         break
     case 'ForStatement':
         result.forStatement = ToForStatement(node)
@@ -217,16 +217,31 @@ export function ToContinueStatement(node: types.ContinueStatement): ast.Continue
 }
 
 export function ToForStatement(node: types.ForStatement): ast.ForStatement {
+    if (node?.init?.kind !== 'let' || node.init.kind !== 'const') {
+        throw 'For loop must use let or const'
+    }
+
+    if (node.init?.type !== 'VariableDeclaration') {
+        throw 'ForStatement init must be a VariableDeclaration'
+    }
+
+    if (node.init.declarations.length !== 1) {
+        // TODO: support multiple decls
+        throw 'ForStatement init must have exactly one declaration'
+    }
+
+    const declaration = node.init.declarations[0]
+
     const init = {
         initDeclaration: node.init?.type === 'VariableDeclaration' ? ToVariableDeclaration(node.init) : undefined,
-        initExpression: node.init && node.init.type !== 'VariableDeclaration' ? ToExpression(node.init) : undefined
     }
 
     return {
-        ...init,
+        kind: node.init.kind,
+        init: ToVariableDeclarator(declaration),
         test: node.test ? ToExpression(node.test) : undefined,
         update: node.update ? ToExpression(node.update) : undefined,
-        body: ToStatement(node.body),
+        body: ToBlockStatement(node.body),
     }
 }
 
@@ -245,26 +260,42 @@ export function ToForOfStatement(node: types.ForOfStatement): ast.ForOfStatement
 
 // export type Pattern = AssignmentPattern | ArrayPattern | ObjectPattern;
 
-export function ToPatternLike(node: types.Pattern | types.PatternLike | null): ast.PatternLike {
-    const result = {} as ast.PatternLike
+export function ToParameterPattern(node: types.Pattern | types.PatternLike | null): ast.ParameterPattern {
+    const result = {} as ast.ParameterPattern
     if (!node) {
         throw 'Node is undefined'
     }
     switch (node.type) {
         case "Identifier":
-            result.identifier = ToIdentifier(node)
+            result.pattern = { identifier: ToIdentifier(node) } as ast.Pattern
             break
         case "ArrayPattern":
-            result.array = ToArrayPattern(node)
+            result.pattern = { binding: { array: ToArrayPattern(node) } } as ast.Pattern
             break
         case "ObjectPattern":
-            result.object = ToObjectPattern(node)
+            result.pattern = { binding: { object: ToObjectPattern(node) } } as ast.Pattern
             break
         case "AssignmentPattern":
-            result.assignment = ToAssignmentPattern(node)
+            result.optional = ToAssignmentPattern(node)
             break
-        case "RestElement":
-            result.restElement = ToRestElement(node)
+        case "RestElement": 
+            result.pattern = { isRest: true } as ast.Pattern
+            switch (node.argument.type) {
+                case "Identifier":
+                    result.pattern.identifier = ToIdentifier(node.argument)
+                    break
+                case "ArrayPattern":
+                    result.pattern.binding = { array: ToArrayPattern(node.argument) } as ast.BindingPattern
+                    break
+                case "ObjectPattern":
+                    result.pattern.binding = { object: ToObjectPattern(node.argument) } as ast.BindingPattern
+                    break
+                case "AssignmentPattern":
+                    result.optional = ToAssignmentPattern(node.argument)
+                    break
+                case "RestElement":
+                    throw 'i dont know what to do with this'
+            }
             break
         default:
             throw 'Node type not recognized by Tessie grammar'
@@ -289,15 +320,15 @@ export function ToAssignmentPattern(node: types.AssignmentPattern): ast.Assignme
 
 export function ToArrayPattern(node: types.ArrayPattern): ast.ArrayPattern {
     return {
-        elements: node.elements.map(ToPatternLike),
+        elements: node.elements.map(ToParameterPattern),
     }
 }
 
 export function ToObjectPattern(node: types.ObjectPattern): ast.ObjectPattern {
     return {
-        properties: node.properties.map(
+        elements: node.properties.map(
             x => x.type === 'RestElement' 
-                ? {rest: ToLVal(x.argument)} as ast.ObjectProperty 
+                ? {restPattern: ToLVal(x.argument)} as ast.ObjectPattern_Element
                 : ToObjectProperty(x)),
     }
 }
@@ -351,7 +382,7 @@ export function ToObjectProperty(node: types.ObjectProperty): ast.ObjectProperty
             node.value.type === 'AssignmentPattern' ||
             node.value.type === 'ArrayPattern' ||
             node.value.type === 'ObjectPattern'
-                ? ToPatternLike(node.value) 
+                ? ToParameterPattern(node.value) 
                 : undefined,
         valueExpression: 
             node.value.type !== 'Identifier' &&
@@ -372,26 +403,13 @@ export function ToObjectProperty(node: types.ObjectProperty): ast.ObjectProperty
 }
 
 export function ToFunctionDeclaration(node: types.FunctionDeclaration): ast.FunctionDeclaration {
-    const params = {
-        params: [] as ast.PatternLike[],
-        rest: undefined as ast.LVal | undefined,
-    }
-    node.params.forEach(x => {
-        if (x.type === 'Identifier') {
-            params.params.push({identifier: ToIdentifier(x)} as ast.PatternLike)
-        } else if (x.type === 'RestElement') {
-            if (params.rest) throw 'Multiple rest parameters'
-            params.rest = ToLVal(x.argument)
-        } else {
-            params.params.push(ToPatternLike(x))
-        }
-    })
+    const parameters = node.params.map(ToParameterPattern)
 
-    return {
-        id: ToIdentifier(node.id),
-        ...params,
-        body: node.body.body.map(ToStatement),
-    }
+    return { function: {
+        identifier: ToIdentifier(node.id),
+        parameters,
+        body: { body: node.body.body.map(ToStatement) },
+    }}
 }
 
 export function ToIfStatement(node: types.IfStatement): ast.IfStatement {
@@ -450,8 +468,8 @@ export function ToCatchClause(node: types.CatchClause): ast.CatchClause {
 }
 
 const VariableDeclarationKindMap = {
-    'let': ast.VariableDeclaration_Kind.LET,
-    'const': ast.VariableDeclaration_Kind.CONST,
+    'let': ast.DeclarationKind.LET,
+    'const': ast.DeclarationKind.CONST,
 }
 
 export function ToVariableDeclaration(node: types.VariableDeclaration): ast.VariableDeclaration {
@@ -520,19 +538,19 @@ export function ToExpression(node: types.Expression): ast.Expression {
     let result = {} as ast.Expression
     switch (node.type) {
     case 'BigIntLiteral':
-        result.literal = { bigintLiteral: node.value } as ast.Literal
+        result.literal = { literal: { bigintLiteral: node.value } } as ast.LiteralExpression
         break
     case 'BooleanLiteral':
-        result.literal = { booleanLiteral: node.value } as ast.Literal
+        result.literal = { literal: { booleanLiteral: node.value } } as ast.LiteralExpression
         break
     case 'NullLiteral':
-        result.literal = { nullLiteral: {} } as ast.Literal;
+        result.literal = { literal: { nullLiteral: {} } } as ast.LiteralExpression
         break
     case 'NumericLiteral':
-        result.literal = { numberLiteral: node.value } as ast.Literal;
+        result.literal = { literal: { numberLiteral: node.value } } as ast.LiteralExpression
         break
     case 'StringLiteral':
-        result.literal = { stringLiteral: node.value } as ast.Literal;
+        result.literal = { literal: { stringLiteral: node.value } } as ast.LiteralExpression
         break
     case 'ArrayExpression':
         result.array = ToArrayExpression(node) 
@@ -556,7 +574,7 @@ export function ToExpression(node: types.Expression): ast.Expression {
         result.function = ToFunctionExpression(node)
         break
     case 'Identifier':
-        result.identifier = ToIdentifier(node)
+        result.variable = { name: ToIdentifier(node) } as ast.VariableExpression
         break
     case 'LogicalExpression':
         result.logical = ToLogicalExpression(node)
@@ -700,11 +718,10 @@ export function ToCallExpression(node: types.CallExpression): ast.CallExpression
             if (x.type === 'JSXNamespacedName' || x.type === 'ArgumentPlaceholder') {
                 throw `${x.type} is not a valid Tessie grammar`
             }
-            return x.type === 'SpreadElement' 
-                ? { ...ToExpression(x.argument), isSpread: true } as ast.MaybeSpreadExpression
-                : { ...ToExpression(x), isSpread: false } as ast.MaybeSpreadExpression
+            return (x.type === 'SpreadElement' 
+                ? { spreadElement: ToExpression(x.argument) }
+                : { element: ToExpression(x) }) as ast.CallExpression_CallElement
         }),
-        option: node.optional ? node.optional : undefined,
     }
 }
 
@@ -718,9 +735,9 @@ export function ToConditionalExpression(node: types.ConditionalExpression): ast.
 
 export function ToFunctionExpression(node: types.FunctionExpression): ast.FunctionExpression {
     return {
-        id: node.id ? ToIdentifier(node.id) : undefined,
-        params: node.params.map(ToParam),
-        body: node.body.body.map(ToStatement),
+        identifier: node.id ? ToIdentifier(node.id) : undefined,
+        parameters: node.params.map(ToParam),
+        body: { body: node.body.body.map(ToStatement) },
     }
 }
 
@@ -743,6 +760,24 @@ export function ToMemberExpression(node: types.MemberExpression): ast.MemberExpr
         throw 'PrivateName is not a valid Tessie grammar'
     }
 
+    if (node.computed) {
+        // obj[x]
+        if (node.property.type === 'Identifier') {
+            return {
+                object: ToExpression(node.object),
+                property: ToIdentifier(node.property),
+            }
+        } else {
+
+        }
+        // obj[1]
+    } else {
+        // obj.x
+        if (node.property.type === 'Identifier') {
+            
+        }
+    }
+
     const property = node.property && {
         propertyIdentifier: node.property.type === 'Identifier' ? ToIdentifier(node.property) : undefined,
         propertyExpression: node.property.type !== 'Identifier' ? ToExpression(node.property) : undefined,
@@ -751,27 +786,20 @@ export function ToMemberExpression(node: types.MemberExpression): ast.MemberExpr
     return {
         object: ToExpression(node.object),
         ...property,
-        computed: node.computed,
-        option: node.optional ? node.optional : undefined,
     }
 }
 
 export function ToObjectExpression(node: types.ObjectExpression): ast.ObjectExpression {
     const toObjectElement = (x) => { return {
+        // TODO: shorthand properties
         method: x.type === 'ObjectMethod' ? ToObjectMethod(x) : undefined,
         property: x.type === 'ObjectProperty' ? ToObjectProperty(x) : undefined,
         spread: x.type === 'SpreadElement' ? ToExpression(x) : undefined,
-    }}
+    } as ast.ObjectExpression_Element}
 
     return {
-        properties: node.properties.map(toObjectElement)
+        elements: node.properties.map(toObjectElement)
     }
-}
-
-const ObjectMethodKindMap = {
-    "method": ast.ObjectMethod_Kind.METHOD,
-    "get": ast.ObjectMethod_Kind.GET,
-    "set": ast.ObjectMethod_Kind.SET,
 }
 
 export function ToObjectMethod(node: types.ObjectMethod): ast.ObjectMethod {
@@ -830,7 +858,7 @@ export function ToUpdateExpression(node: types.UpdateExpression): ast.UpdateExpr
 
 export function ToArrowFunctionExpression(node: types.ArrowFunctionExpression): ast.ArrowFunctionExpression {
     const body = {
-        statement: node.body.type === 'BlockStatement' ? node.body.body.map(ToStatement) : [],
+        statement: node.body.type === 'BlockStatement' ? { body: node.body.body.map(ToStatement) } : undefined,
         expression: node.body.type !== 'BlockStatement' ? ToExpression(node.body) : undefined,
     }
 

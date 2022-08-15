@@ -212,7 +212,7 @@ export interface ForStatement {
   init: VariableDeclarator | undefined;
   test?: Expression | undefined;
   update?: Expression | undefined;
-  body: BlockStatement | undefined;
+  body: Statement | undefined;
 }
 
 /**
@@ -858,7 +858,7 @@ export interface MemberExpression {
 
 export interface CallExpression {
   callee: Expression | undefined;
-  arguments: ParameterElement[];
+  arguments: CallExpression_CallElement[];
 }
 
 export interface CallExpression_CallElement {
@@ -2935,7 +2935,7 @@ export const ForStatement = {
       Expression.encode(message.update, writer.uint32(34).fork()).ldelim();
     }
     if (message.body !== undefined) {
-      BlockStatement.encode(message.body, writer.uint32(42).fork()).ldelim();
+      Statement.encode(message.body, writer.uint32(42).fork()).ldelim();
     }
     return writer;
   },
@@ -2960,7 +2960,7 @@ export const ForStatement = {
           message.update = Expression.decode(reader, reader.uint32());
           break;
         case 5:
-          message.body = BlockStatement.decode(reader, reader.uint32());
+          message.body = Statement.decode(reader, reader.uint32());
           break;
         default:
           reader.skipType(tag & 7);
@@ -2980,9 +2980,7 @@ export const ForStatement = {
       update: isSet(object.update)
         ? Expression.fromJSON(object.update)
         : undefined,
-      body: isSet(object.body)
-        ? BlockStatement.fromJSON(object.body)
-        : undefined,
+      body: isSet(object.body) ? Statement.fromJSON(object.body) : undefined,
     };
   },
 
@@ -3001,9 +2999,7 @@ export const ForStatement = {
         ? Expression.toJSON(message.update)
         : undefined);
     message.body !== undefined &&
-      (obj.body = message.body
-        ? BlockStatement.toJSON(message.body)
-        : undefined);
+      (obj.body = message.body ? Statement.toJSON(message.body) : undefined);
     return obj;
   },
 
@@ -3026,7 +3022,7 @@ export const ForStatement = {
         : undefined;
     message.body =
       object.body !== undefined && object.body !== null
-        ? BlockStatement.fromPartial(object.body)
+        ? Statement.fromPartial(object.body)
         : undefined;
     return message;
   },
@@ -6061,7 +6057,7 @@ export const CallExpression = {
       Expression.encode(message.callee, writer.uint32(10).fork()).ldelim();
     }
     for (const v of message.arguments) {
-      ParameterElement.encode(v!, writer.uint32(18).fork()).ldelim();
+      CallExpression_CallElement.encode(v!, writer.uint32(18).fork()).ldelim();
     }
     return writer;
   },
@@ -6078,7 +6074,7 @@ export const CallExpression = {
           break;
         case 2:
           message.arguments.push(
-            ParameterElement.decode(reader, reader.uint32())
+            CallExpression_CallElement.decode(reader, reader.uint32())
           );
           break;
         default:
@@ -6095,7 +6091,9 @@ export const CallExpression = {
         ? Expression.fromJSON(object.callee)
         : undefined,
       arguments: Array.isArray(object?.arguments)
-        ? object.arguments.map((e: any) => ParameterElement.fromJSON(e))
+        ? object.arguments.map((e: any) =>
+            CallExpression_CallElement.fromJSON(e)
+          )
         : [],
     };
   },
@@ -6108,7 +6106,7 @@ export const CallExpression = {
         : undefined);
     if (message.arguments) {
       obj.arguments = message.arguments.map((e) =>
-        e ? ParameterElement.toJSON(e) : undefined
+        e ? CallExpression_CallElement.toJSON(e) : undefined
       );
     } else {
       obj.arguments = [];
@@ -6125,7 +6123,8 @@ export const CallExpression = {
         ? Expression.fromPartial(object.callee)
         : undefined;
     message.arguments =
-      object.arguments?.map((e) => ParameterElement.fromPartial(e)) || [];
+      object.arguments?.map((e) => CallExpression_CallElement.fromPartial(e)) ||
+      [];
     return message;
   },
 };

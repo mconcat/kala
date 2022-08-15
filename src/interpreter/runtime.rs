@@ -955,6 +955,8 @@ mod reference_test {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 // Reference is a pointer to a value in the heap.
+// TODO: whenever the reference does not escape the current scope,
+// it should be a pointer to the stack(without Rc<>).
 pub struct JSReference {
     value: Rc<RefCell<JSObject>>
 }
@@ -1101,7 +1103,10 @@ impl ScopedVariable {
 // Binding: variables that are visible in the current scope.
 // Recovery: shadowed parent scope variables
 pub struct Scope {
-    binding: HashMap<String, ScopedVariable>,
+    // binding is a map from variable name to its ScopedVariable
+    // the binding should hold the ScopedVariables in perspective of the innermost scope.
+    // TODO: use a vector to emulate a stack
+    binding: HashMap<String, ScopedVariable>, 
     recovery: Vec<BTreeMap<String, Option<ScopedVariable>>>,
 }
 
@@ -1202,6 +1207,8 @@ impl Scope {
                     }
                 }
             }
+        } else {
+            panic!("exit scope without entering");
         }
     }
 }
@@ -1570,7 +1577,7 @@ mod context_test {
         ctx.control_loop(
             |ctx| condition.borrow().clone(),
             |ctx| { 
-                if let super::JSValue::Number(mut value) = *count.borrow_mut() {
+                if let super::JSValue::Number(value) = &mut *count.borrow_mut() {
                     println!("count: {}", value.to_int64().unwrap());
                     if !value.op_lt(&ten) {
                         *condition.borrow_mut() = ctx.new_boolean(false);

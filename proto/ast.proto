@@ -200,7 +200,7 @@ message ForStatement {
     VariableDeclarator init = 2;
     optional Expression test = 3;
     optional Expression update = 4;
-    BlockStatement body = 5;
+    Statement body = 5;
 }
 
 // for (let x of y) { doSomething() }
@@ -500,5 +500,5 @@ message CallExpression {
     }
 
     Expression callee = 1;
-    repeated ParameterElement arguments = 2;
+    repeated CallElement arguments = 2;
 }
