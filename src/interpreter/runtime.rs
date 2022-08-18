@@ -30,6 +30,19 @@ pub enum JSValue {
 //    External(JSExternal),
 }
 
+impl ToString for JSValue {
+    fn to_string(&self) -> String {
+        match self {
+            JSValue::Undefined => "undefined".to_string(),
+            JSValue::Null => "null".to_string(),
+            JSValue::Boolean(b) => b.to_string(),
+            JSValue::Number(n) => n.to_string(),
+            JSValue::String(s) => s.to_string(),
+            JSValue::Reference(r) => r.to_string(),
+        }
+    }
+}
+
 // JSExternal corresponds to WASM externals, interface for native functions.
 #[derive(PartialEq, Eq, Debug)]
 pub struct JSExternal {
@@ -76,6 +89,11 @@ impl runtime::JSValue for JSValue {
     // type B = Bigint;
     type S = JSString;
     type R = JSReference;
+    
+    fn new_undefined() -> Self {
+        JSValue::new_undefined()
+    }
+
 /*
     fn type_match<T>(&self, 
             if_null: T,
@@ -120,8 +138,14 @@ impl runtime::JSValue for JSValue {
 
     fn as_reference(&self) -> Option<&Self::R> {
         match self {
-            JSValue::Reference(r) => Some(r),
-            _ => None,
+            JSValue::Reference(r) => {
+                println!("some");
+                Some(r)
+            },
+            _ => {
+                println!("none");
+                None
+            }
         }
     }
 
@@ -810,7 +834,7 @@ pub enum ErrorType {
 // Jessie does not allow custom prototype definition,
 // so we use a single enum for all predefined prototypes.
 pub enum Prototype {
-    Function(HashMap<String, JSValue>, ast::FunctionExpression), // function object
+    Function(Vec<(String, ScopedVariable)>, ast::FunctionExpression), // function object
     Array(Vec<JSValue>), // object with array storage
     // TypedArray(Vec<u8>),
     Error(ErrorType, String), // error object
@@ -847,6 +871,18 @@ pub struct JSObject {
     properties: BTreeMap<String, JSValue>,
 }
 
+impl ToString for JSObject {
+    fn to_string(&self) -> String {
+        let mut s = String::new();
+        s.push_str("{");
+        for (k, v) in &self.properties {
+            s.push_str(&format!("{}:{},", k, v.to_string()));
+        }
+        s.push_str("}");
+        s
+    }
+}
+
 impl JSObject {
     #[inline]
     fn new(props: Vec<(runtime::PropName, JSValue)>) -> Self {
@@ -868,45 +904,58 @@ impl JSObject {
         }
     }
 
+    // CONTRACT: captures must be already promoted
+    // TODO: enforce it
     #[inline]
-    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<&ScopedVariable>) -> Self {
-        unimplemented!()
-        /*
-        JSObject {
-            prototype: Some(Prototype::Function()),
+    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<(String, ScopedVariable)>) -> Self {
+        JSObject { 
+            prototype: Some(Prototype::Function(captures, body.clone())),
             properties: BTreeMap::new(),
         }
-        */
     }
 }
 
 impl JSObject {
-    fn call(&self, ctx: JSContext, parameters: Vec<JSValue>) -> Option<JSValue> {
-        unimplemented!()
+    fn enter_function(&self, ctx: &mut JSContext, parameters: Vec<JSValue>) -> Option<JSValue> {
+        use crate::runtime::JSContext;
+
+        let (env, func) = match self.prototype.as_ref().unwrap() {
+            Prototype::Function(env, func) => (env, func),
+            _ => panic!("should not call a non-function")
+        };
+
+        ctx.scope.enter();
+        for (i, param) in func.parameters.iter().enumerate() {
+            match param.body.as_ref().unwrap() {
+                ast::parameter_pattern::Body::Pattern(p) => {
+                    match p.pattern.as_ref().unwrap() {
+                        ast::pattern::Pattern::Identifier(id) => {
+                            ctx.initialize_binding(ast::DeclarationKind::Let, &id.name, Some(parameters[i].clone())).expect("initialize_binding");
+                        }
+                        _ => unimplemented!()
+                    }
+                }
+                _ => unimplemented!()
+            }
+        }
+        for (name, var) in env.iter() {
+            ctx.initialize_binding(ast::DeclarationKind::Let, name, Some(var.value())).expect("initialize_binding");
+        }
+
+        println!("before block eval");
+        crate::lexical::eval_block_statement(ctx, &func.body.as_ref().unwrap());
+        println!("after block eval");
+        ctx.scope.exit();
+        
+        match ctx.completion() {
+            Some(runtime::Completion::Return(v)) => v,
+            Some(_) => unimplemented!("break, throw, continue"),
+            _ => None,
+        }
+
         /*
         if let Prototype::Function(env, func) = &self.prototype {
-            let scope = Scope::new(env);
-
-            ctx.scope.enter();
-            for (i, param) in func.parameters.iter().enumerate() {
-                match param.body? {
-                    ast::parameter_pattern::Body::Pattern(p) => {
-                        match p {
-                            ast::pattern::Pattern::Identifier(id) => {
-                                ctx.initialize_binding(id.name, ast::DeclarationKind::Let, Some(parameters[i]));
-                            }
-                            _ => unimplemented!()
-                        }
-                    }
-                    _ => unimplemented!()
-                }
-            }
-            for (name, capture) in env.iter() {
-                ctx.initialize_binding(capture.to_string(), ast::DeclarationKind::Let, Some(parameters[i]));
-            }
-
-            lexical::eval_statement(&ctx, self.prototype);
-            ctx.scope.exit()
+            
         } else {
             panic!("Type error");
         }
@@ -961,6 +1010,12 @@ pub struct JSReference {
     value: Rc<RefCell<JSObject>>
 }
 
+impl ToString for JSReference {
+    fn to_string(&self) -> String {
+        (*self.value.borrow()).to_string()
+    }
+}
+
 impl JSReference {
     fn new(value: JSObject) -> Self {
         JSReference {
@@ -974,7 +1029,7 @@ impl JSReference {
         }
     }
 
-    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<&ScopedVariable>) -> Self {
+    fn new_function(identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<(String, ScopedVariable)>) -> Self {
         JSReference {
             value: Rc::new(RefCell::new(JSObject::new_function(identifier, parameters, body, captures)))
         }
@@ -982,18 +1037,14 @@ impl JSReference {
 }
 
 impl runtime::JSReference for JSReference {
-    type V = JSValue;
     type P = JSProperty;
 //    type Iter = JSObjectIterator;
 
     fn property(&self, name: runtime::PropName) -> Self::P {
         JSProperty::new(self, name.to_string())
     }
-
-    fn call(&self, _args: &[Self::V]) -> Self::V {
-        unimplemented!()
-    }
 }
+
 // JSProperty is meant to be ephemeral
 pub struct JSProperty {
     value: Weak<RefCell<JSObject>>,
@@ -1331,7 +1382,7 @@ pub struct JSContext {
 }
 
 impl JSContext {
-    fn new() -> Self {
+    pub fn new() -> Self {
         JSContext {
             scope: Scope::new(),
             completion: None,
@@ -1498,8 +1549,8 @@ impl runtime::JSContext for JSContext {
         let scope = &mut self.scope;
        
         for capture in captures {
-            let var = scope.variable(&capture).unwrap();
-            captured_vars.push(var);
+            let var = scope.variable_mut(&capture).unwrap();
+            captured_vars.push((capture, var.promote().clone()));
         }
 
         JSValue::Reference(JSReference::new_function(identifier, parameters, body, captured_vars))
@@ -1519,6 +1570,12 @@ impl runtime::JSContext for JSContext {
 
     fn dup(&mut self, v: Self::V) -> Self::V {
         v.clone()
+    }
+
+    fn enter_function(&mut self, callee: &Self::V, args: Vec<Self::V>) -> Option<Self::V> {
+        use crate::runtime::JSValue;
+        println!("enter_function: {:?}", callee);
+        callee.as_reference().unwrap().value.borrow().enter_function(self, args)
     }
 }
 

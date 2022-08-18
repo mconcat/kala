@@ -162,7 +162,7 @@ fn hoist_function_declaration<JSContext: runtime::JSContext>(ctx: &mut JSContext
 // ctx.block_scope() declares a new scope for the block, and restores the previous
 // scope when the block is finished. TODO: inline closure 
 // Equivalent to NewDeclarativeEnvironment
-fn eval_block_statement<JSContext: runtime::JSContext>(ctx: &mut JSContext, stmt: &ast::BlockStatement) {
+pub fn eval_block_statement<JSContext: runtime::JSContext>(ctx: &mut JSContext, stmt: &ast::BlockStatement) {
     ctx.block_scope(Vec::new(),|ctx| {
         /* // TODO: uncomment function hoisting=
         for stmt in stmt.body.iter() {
@@ -406,7 +406,28 @@ fn eval_object<JSContext: runtime::JSContext>(ctx: &mut JSContext, obj: &ast::Ob
 
 #[inline]
 fn eval_function<JSContext: runtime::JSContext>(ctx: &mut JSContext, func: &ast::FunctionExpression) -> JSContext::V {
-    unimplemented!("closure literal")
+    // TODO: implement variable capture
+    // only the locally declared variables and function parameters are available now
+    
+    let params = func.parameters.iter().map(|pat| match pat.body.as_ref().unwrap() {
+        ast::parameter_pattern::Body::Pattern(pat) => match pat.pattern.as_ref().unwrap() {
+                ast::pattern::Pattern::Identifier(id) => id.name.to_string(),
+                _ => unimplemented!(),
+            },
+            _ => unimplemented!(),
+        }).collect();
+        /*
+        ast::parameter_element::Body::Spread(e) => {
+            for val in eval_expression(ctx, &e).element_iter() {
+                params.push(val);
+            }
+        },
+        */
+
+    let function_object = ctx.new_function(func.identifier.as_ref().map(|x| x.name.to_string()), params, func, vec![]);
+
+    function_object
+
     /*
     let captured_vars = ctx.capture_variables(func.body);
     let function_object = ctx.new_function(func.identifier, func.parameters?, || eval_statement(ctx, func.body), captured_vars);
@@ -433,7 +454,27 @@ fn eval_assignment<JSContext: runtime::JSContext>(ctx: &JSContext, expr: &ast::A
 
 #[inline]
 fn eval_call<JSContext: runtime::JSContext>(ctx: &mut JSContext, expr: &ast::CallExpression) -> JSContext::V {
-    unimplemented!()
+    let callee = eval_expression(ctx, expr.callee.as_ref().unwrap());
+            
+    let args = expr.arguments.iter().map(|elem| {
+        match elem.body.as_ref().unwrap() {
+            ast::call_expression::call_element::Body::Element(e) => eval_expression(ctx, &e),
+            _ => unimplemented!(),
+        }
+    }).collect();
+
+    ctx.enter_function(&callee, args).unwrap_or(ctx.new_undefined())
+    
+    /* 
+    callee.as_reference().call(ctx, expr.arguments.iter().map(|arg| eval_expression(ctx, arg)).collect())
+    let args = expr.arguments.iter().map(|arg| {
+        match arg.body.unwrap() {
+            ast::call_expression::call_element::Body::Element(e) => e,
+            _ => unimplemented!(),
+        }
+    }).collect::<Vec<_>>();
+    ctx.call(callee, args)
+    */
 }
 
 #[inline]

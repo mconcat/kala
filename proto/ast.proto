@@ -452,7 +452,7 @@ message VariableExpression {
 
 message AssignmentExpression {
     enum Operator {
-        UNKNOWN = 0;
+        ASSIGN = 0;
         ADD = 1; // | "+"
         SUB = 2; // | "-"
         DIV = 3; // | "/"

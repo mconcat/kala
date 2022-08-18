@@ -216,13 +216,18 @@ export function ToContinueStatement(node: types.ContinueStatement): ast.Continue
     return {}
 }
 
+const MapDeclarationKind = {
+    'const': ast.DeclarationKind.CONST,
+    'let': ast.DeclarationKind.LET,
+}
+
 export function ToForStatement(node: types.ForStatement): ast.ForStatement {
-    if (node?.init?.kind !== 'let' || node.init.kind !== 'const') {
-        throw 'For loop must use let or const'
+    if (node?.init?.type !== 'VariableDeclaration') {
+        throw 'ForStatement init must be a VariableDeclaration'
     }
 
-    if (node.init?.type !== 'VariableDeclaration') {
-        throw 'ForStatement init must be a VariableDeclaration'
+    if (node.init.kind !== 'let' && node.init.kind !== 'const') {
+        throw 'For loop must use let or const'
     }
 
     if (node.init.declarations.length !== 1) {
@@ -237,15 +242,16 @@ export function ToForStatement(node: types.ForStatement): ast.ForStatement {
     }
 
     return {
-        kind: node.init.kind,
+        kind: MapDeclarationKind[node.init.kind],
         init: ToVariableDeclarator(declaration),
         test: node.test ? ToExpression(node.test) : undefined,
         update: node.update ? ToExpression(node.update) : undefined,
-        body: ToBlockStatement(node.body),
+        body: ToStatement(node.body),
     }
 }
 
 export function ToForOfStatement(node: types.ForOfStatement): ast.ForOfStatement {
+    /*
     const left = {
         leftDeclaration: node.left.type === 'VariableDeclaration' ? ToVariableDeclaration(node.left) : undefined,
         leftLval: node.left.type !== 'VariableDeclaration' ? ToLVal(node.left) : undefined
@@ -256,6 +262,8 @@ export function ToForOfStatement(node: types.ForOfStatement): ast.ForOfStatement
         right: ToExpression(node.right),
         body: ToStatement(node.body),
     }
+    */
+   throw 'Not implemented forof'
 }
 
 // export type Pattern = AssignmentPattern | ArrayPattern | ObjectPattern;
@@ -304,17 +312,14 @@ export function ToParameterPattern(node: types.Pattern | types.PatternLike | nul
     return result
 }
 
-export function ToAssignmentPattern(node: types.AssignmentPattern): ast.AssignmentPattern {
-    const left = {
-        leftIdentifier: node.left.type === 'Identifier' ? ToIdentifier(node.left) : undefined,
-        leftObject: node.left.type === 'ObjectPattern' ? ToObjectPattern(node.left) : undefined,
-        leftArray: node.left.type === 'ArrayPattern' ? ToArrayPattern(node.left) : undefined,
-        leftMember: node.left.type === 'MemberExpression' ? ToMemberExpression(node.left) : undefined,
+export function ToAssignmentPattern(node: types.AssignmentPattern): ast.OptionalPattern {
+    if (node.left.type !== 'Identifier') {
+        throw 'AssignmentPattern left must be an Identifier'
     }
 
     return {
-        ...left,
-        right: ToExpression(node.right),
+        identifier: ToIdentifier(node.left),
+        expression: ToExpression(node.right), 
     }
 }
 
@@ -325,19 +330,22 @@ export function ToArrayPattern(node: types.ArrayPattern): ast.ArrayPattern {
 }
 
 export function ToObjectPattern(node: types.ObjectPattern): ast.ObjectPattern {
+    /*
     return {
         elements: node.properties.map(
-            x => x.type === 'RestElement' 
-                ? {restPattern: ToLVal(x.argument)} as ast.ObjectPattern_Element
-                : ToObjectProperty(x)),
+            x => {
+                if (x.type === 'RestElement') {
+                    throw 'RestElement not implemented'
+                }
+                // {restPattern: ToPattern(x.argument)} as ast.ObjectPattern_Element
+                return ToObjectProperty(x)
+            }
     }
+    */
+    throw 'Not implemented toobjectpattern'
 }
 
-export function ToRestElement(node: types.RestElement): ast.LVal {
-    return ToLVal(node.argument)
-}
-
-export function ToObjectProperty(node: types.ObjectProperty): ast.ObjectProperty {
+export function ToObjectProperty(node: types.ObjectProperty): ast.ObjectExpression_Property {
     if (node.key.type === 'PrivateName') {
         throw 'PrivateName is not a valid Tessie grammar'
     }
@@ -346,9 +354,42 @@ export function ToObjectProperty(node: types.ObjectProperty): ast.ObjectProperty
         node.value.type === 'TSTypeAssertion' ||
         node.value.type === 'TSNonNullExpression'
     ) {
+        // TODO: implement
         throw 'TSAsExpression, TSTypeAssertion, and TSNonNullExpression are not a valid Tessie grammar'
     }
 
+    const result = {} as ast.ObjectExpression_Property
+
+    switch (node.key.type) {
+        case 'Identifier':
+            result.name = { identifier: ToIdentifier(node.key) } as ast.PropName
+            break
+        case 'StringLiteral':
+            result.name = { stringLiteral: node.key.value } as ast.PropName
+            break
+        case 'NumericLiteral':
+            result.name = { numberLiteral: node.key.value } as ast.PropName
+            break
+        default:
+            throw 'Node type not recognized by Tessie grammar'
+    }
+
+    switch (node.value.type) {
+        case 'Identifier':
+            result.value = { variable: { name: ToIdentifier(node.value) } } as ast.Expression
+            break
+        case 'RestElement':
+        case 'AssignmentPattern':
+        case 'ArrayPattern':
+        case 'ObjectPattern':
+            throw 'Not implemented'
+        default:
+            result.value = ToExpression(node.value)
+    }
+
+    return result
+
+    /*
     const key = {
         keyIdentifier: 
             node.key.type === 'Identifier' 
@@ -398,8 +439,9 @@ export function ToObjectProperty(node: types.ObjectProperty): ast.ObjectProperty
         ...key,
         ...value,
         computed: node.computed,
-        shorthand: node.shorthand,
+        shorthand: node.shorthand ,
     }
+    */
 }
 
 export function ToFunctionDeclaration(node: types.FunctionDeclaration): ast.FunctionDeclaration {
@@ -433,11 +475,14 @@ export function ToSwitchStatement(node: types.SwitchStatement): ast.SwitchStatem
     }
 }
 
-export function ToSwitchCase(node: types.SwitchCase): ast.SwitchCase {
+export function ToSwitchCase(node: types.SwitchCase): ast.SwitchStatement_Case {
+    /*
     return {
         test: node.test ? ToExpression(node.test) : undefined,
         consequent: node.consequent.map(ToStatement),
     }
+    */
+    throw 'Not implemented switchcase'
 }
 
 export function ToThrowStatement(node: types.ThrowStatement): ast.ThrowStatement {
@@ -447,14 +492,18 @@ export function ToThrowStatement(node: types.ThrowStatement): ast.ThrowStatement
 }
 
 export function ToTryStatement(node: types.TryStatement): ast.TryStatement {
+    /*
     return {
         block: ToStatement(node.block),
         handler: node.handler ? ToCatchClause(node.handler) : undefined,
         finalizer: node.finalizer ? ToBlockStatement(node.finalizer) : undefined,
     }
+    */
+    throw 'Not implemented trystatement'
 }
 
-export function ToCatchClause(node: types.CatchClause): ast.CatchClause {
+export function ToCatchClause(node: types.CatchClause): ast.TryStatement_CatchClause {
+    /*
     const param = {
         paramIdentifier: node.param?.type === 'Identifier' ? ToIdentifier(node.param) : undefined,
         paramArray: node.param?.type === 'ArrayPattern' ? ToArrayPattern(node.param) : undefined,
@@ -465,6 +514,8 @@ export function ToCatchClause(node: types.CatchClause): ast.CatchClause {
         ...param,
         body: ToBlockStatement(node.body),
     }
+    */
+   throw 'Not implemented catchclause'
 }
 
 const VariableDeclarationKindMap = {
@@ -484,9 +535,15 @@ export function ToVariableDeclaration(node: types.VariableDeclaration): ast.Vari
 }
 
 export function ToVariableDeclarator(node: types.VariableDeclarator): ast.VariableDeclarator {
-    return {
-        id: ToLVal(node.id),
-        init: node.init ? ToExpression(node.init) : undefined,
+    if (node.id.type === 'Identifier') {
+        return {
+            normal: {
+                identifier: ToIdentifier(node.id),
+                value: node.init ? ToExpression(node.init) : undefined,
+            },
+        } as ast.VariableDeclarator
+    } else {
+        throw 'binding pattern is not implemented'
     }
 }
 
@@ -612,6 +669,7 @@ export type LVal =
   // | TSTypeAssertion
   // | TSNonNullExpression;
 */
+/*
 export function ToLVal(node: types.LVal): ast.LVal {
     let result = {} as ast.LVal
     switch (node.type) {
@@ -637,14 +695,14 @@ export function ToLVal(node: types.LVal): ast.LVal {
     }
     return result
 }
-
+*/
 export function ToArrayExpression(node: types.ArrayExpression): ast.ArrayExpression {
     return {
         elements: node.elements.map(x => {
             if (!x) throw 'ArrayExpression element is null'
-            return x.type === 'SpreadElement'
-                ? { ...ToExpression(x.argument), isSpread: true }
-                : { ...ToExpression(x), isSpread: false }
+            return (x.type === 'SpreadElement'
+                ? { spreadElement: ToExpression(x.argument) }
+                : { element: ToExpression(x) }) as ast.ParameterElement
         }) 
     }
 }
@@ -658,7 +716,7 @@ const AssignmentExpressionOperatorMap = {
     '-=': ast.AssignmentExpression_Operator.SUB,
     '<<=': ast.AssignmentExpression_Operator.LSHIFT,
     '>>=': ast.AssignmentExpression_Operator.RSHIFT,
-    '>>>=': ast.AssignmentExpression_Operator.ZRSHIFT,
+    '>>>=': ast.AssignmentExpression_Operator.URSHIFT,
     '&=': ast.AssignmentExpression_Operator.BITAND,
     '^=': ast.AssignmentExpression_Operator.BITXOR,
     '|=': ast.AssignmentExpression_Operator.BITOR,
@@ -666,9 +724,27 @@ const AssignmentExpressionOperatorMap = {
 }
 
 export function ToAssignmentExpression(node: types.AssignmentExpression): ast.AssignmentExpression {
+    const left = {} as ast.AssignmentExpression_LValue
+    switch (node.left.type) {
+        case 'Identifier':
+            left.identifier = ToIdentifier(node.left)
+            break
+        case 'MemberExpression':
+            left.member = ToMemberExpression(node.left)
+            break
+        case 'RestElement':
+            throw 'RestElement not supported in AssignmentExpression'
+        case 'AssignmentPattern':
+            throw 'AssignmentPattern not supported in AssignmentExpression'
+        case 'ArrayPattern':
+            throw 'ArrayPattern not supported in AssignmentExpression'
+        case 'ObjectPattern':
+            throw 'ObjectPattern not supported in AssignmentExpression'
+    }
+
     return {
         operator: AssignmentExpressionOperatorMap[node.operator],
-        left: ToLVal(node.left),
+        left,
         right: ToExpression(node.right),
     }
 }
@@ -736,7 +812,7 @@ export function ToConditionalExpression(node: types.ConditionalExpression): ast.
 export function ToFunctionExpression(node: types.FunctionExpression): ast.FunctionExpression {
     return {
         identifier: node.id ? ToIdentifier(node.id) : undefined,
-        parameters: node.params.map(ToParam),
+        parameters: node.params.map(ToParameterPattern),
         body: { body: node.body.body.map(ToStatement) },
     }
 }
@@ -761,31 +837,30 @@ export function ToMemberExpression(node: types.MemberExpression): ast.MemberExpr
     }
 
     if (node.computed) {
-        // obj[x]
         if (node.property.type === 'Identifier') {
+            // obj[x]
+            return {
+                object: ToExpression(node.object),
+                index: { variable: { name: ToIdentifier(node.property) } },
+            } as ast.MemberExpression
+        } else {
+            // obj[someExpression()]
+            return {
+                object: ToExpression(node.object),
+                index: ToExpression(node.property),
+            } as ast.MemberExpression
+        }
+    } else {
+        if (node.property.type === 'Identifier') {
+            // obj.x
             return {
                 object: ToExpression(node.object),
                 property: ToIdentifier(node.property),
-            }
+            } as ast.MemberExpression
         } else {
-
+            // ???
+            throw 'Unsupported MemberExpression'
         }
-        // obj[1]
-    } else {
-        // obj.x
-        if (node.property.type === 'Identifier') {
-            
-        }
-    }
-
-    const property = node.property && {
-        propertyIdentifier: node.property.type === 'Identifier' ? ToIdentifier(node.property) : undefined,
-        propertyExpression: node.property.type !== 'Identifier' ? ToExpression(node.property) : undefined,
-    }
-
-    return {
-        object: ToExpression(node.object),
-        ...property,
     }
 }
 
@@ -802,7 +877,36 @@ export function ToObjectExpression(node: types.ObjectExpression): ast.ObjectExpr
     }
 }
 
-export function ToObjectMethod(node: types.ObjectMethod): ast.ObjectMethod {
+export function ToObjectMethod(node: types.ObjectMethod): ast.ObjectExpression_Method {
+    if (node.key.type !== 'Identifier') {
+        throw 'Unsupported ObjectMethod'
+    }
+
+    const method = node.kind === 'method' 
+        ? { 
+            identifier: { name: node.key.name },
+            parameters: node.params.map(ToParameterPattern),
+            body: { body: node.body.body.map(ToStatement) },
+        } 
+        : undefined
+/*
+    const getter = node.kind === 'get' 
+        ? { getter: {
+            name: node.key.name,
+            body: { body: node.body.body.map(ToStatement) },
+        } }
+        : undefined
+
+    const setter = node.kind === 'set'
+        ? { setter: {
+            name: node.key.name,
+            parameters: [],
+        } }
+        : undefined
+*/
+// TODO
+
+/*
     const key = node.key && {
         keyIdentifier: node.key.type === 'Identifier' ? ToIdentifier(node.key) : undefined,
 
@@ -812,14 +916,10 @@ export function ToObjectMethod(node: types.ObjectMethod): ast.ObjectMethod {
 
         keyExpression: node.key.type !== 'Identifier' && node.key.type !== 'StringLiteral' && node.key.type !== 'NumericLiteral' ? ToExpression(node.key) : undefined,
     }
-
+*/
     return {
-        kind: ObjectMethodKindMap[node.kind],
-        ...key,
-        params: node.params.map(ToParam),
-        body: node.body.body.map(ToStatement),
-        computed: node.computed,
-    }
+        method,
+    } as ast.ObjectExpression_Method
 }
 
 const UnaryExpressionOperatorMap = {
@@ -863,7 +963,7 @@ export function ToArrowFunctionExpression(node: types.ArrowFunctionExpression): 
     }
 
     return {
-        params: node.params.map(ToParam),
+        params: node.params.map(ToParameterPattern),
         ...body,
     }
 }
@@ -877,8 +977,8 @@ export function ToIdentifier(node?: types.Identifier | null | undefined): ast.Id
         option: node.optional ? node.optional : undefined,
     }
 }
-
-export function ToParam(node: types.Identifier | types.Pattern | types.RestElement): ast.Param {
+/*
+export function ToParameterPattern(node: types.Identifier | types.Pattern | types.RestElement): ast.Param {
     const result = {} as ast.PatternLike
     if (node.type === 'Identifier') {
         result.identifier = ToIdentifier(node)
@@ -889,3 +989,4 @@ export function ToParam(node: types.Identifier | types.Pattern | types.RestEleme
     }
     return result
 }
+*/

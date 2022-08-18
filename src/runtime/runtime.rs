@@ -367,12 +367,13 @@ pub trait JSProperty {
 }
 
 pub trait JSReference {
-    type V: JSValue;
+    //type Context: JSContext;
+    //type V: JSValue;
     type P: JSProperty;
 //    type Iter: Iterator<Item=Self>;
 
     fn property(&self, name: PropName) -> Self::P; 
-    fn call(&self, args: &[Self::V]) -> Self::V;
+    //fn call(&self, ctx: &mut Self::Context, args: &[<Self::Context as JSContext>::V]) -> <Self::Context as JSContext>::V;
     // fn set_method(&self, name: &Self::N, val: Self::M);
     
     // iterators
@@ -382,17 +383,14 @@ pub trait JSReference {
     // fn element_iter(&self) -> Self::Iter;
 }
 
-pub trait JSClosure {
-    type V: JSValue;
-
-    fn call(&self, args: &[Self::V]) -> Self::V;
-}
 
 pub trait JSValue: Clone {
     type N: JSNumber;
     // type B: Bigint;
     type S: JSString;
     type R: JSReference;
+
+    fn new_undefined() -> Self;
 
     /*
     // Type switch
@@ -434,6 +432,15 @@ pub enum Completion<V: JSValue> {
     Throw(V),
 }
 
+impl<V: JSValue> Completion<V> {
+    pub fn get_return(&self) -> Option<V> {
+        match self {
+            Completion::Return(v) => Some(v.as_ref().unwrap_or(&V::new_undefined()).clone()),
+            _ => None
+        }
+    }
+}
+
 // JSContext is the runtime environment for a single execution context.
 // JSContext should not be copied.
 // 
@@ -456,6 +463,9 @@ pub trait JSContext {
     // 3. Hoist all the function declarations in the current execution context using parameter hoist
     // 4. Recover the parent scope after the execution context has finished
     fn block_scope(&mut self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn(&mut Self));
+
+    // enter function code
+    fn enter_function(&mut self, callee: &Self::V, args: Vec<Self::V>) -> Option<Self::V>;
 
     fn extract_free_variables(&mut self, vars: HashSet<String>) -> HashSet<String>;
 

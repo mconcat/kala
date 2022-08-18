@@ -730,7 +730,7 @@ export interface AssignmentExpression {
 }
 
 export enum AssignmentExpression_Operator {
-  UNKNOWN = 0,
+  ASSIGN = 0,
   /** ADD - | "+" */
   ADD = 1,
   /** SUB - | "-" */
@@ -763,8 +763,8 @@ export function assignmentExpression_OperatorFromJSON(
 ): AssignmentExpression_Operator {
   switch (object) {
     case 0:
-    case "UNKNOWN":
-      return AssignmentExpression_Operator.UNKNOWN;
+    case "ASSIGN":
+      return AssignmentExpression_Operator.ASSIGN;
     case 1:
     case "ADD":
       return AssignmentExpression_Operator.ADD;
@@ -812,8 +812,8 @@ export function assignmentExpression_OperatorToJSON(
   object: AssignmentExpression_Operator
 ): string {
   switch (object) {
-    case AssignmentExpression_Operator.UNKNOWN:
-      return "UNKNOWN";
+    case AssignmentExpression_Operator.ASSIGN:
+      return "ASSIGN";
     case AssignmentExpression_Operator.ADD:
       return "ADD";
     case AssignmentExpression_Operator.SUB:
