@@ -9,7 +9,9 @@ use crate::runtime::JSValue;
 
 use ast::statement::Statement;
 
+use core::panic;
 use std::cell::RefCell;
+
 
 pub fn eval_statement<JSContext: runtime::JSContext>(ctx: &mut JSContext, stmt: &ast::Statement) {
     match &stmt.statement {
@@ -78,7 +80,15 @@ fn eval_variable_declaration<JSContext: runtime::JSContext>(ctx: &mut JSContext,
                         ctx.set_binding(name, value.unwrap());
                     },
                     Err(_) => {
-                       ctx.initialize_binding(kind, name, value);
+                        match kind {
+                            ast::DeclarationKind::Let => {
+                                ctx.initialize_mutable_binding(name, &value);
+                            },
+                            ast::DeclarationKind::Const => {
+                                ctx.initialize_immutable_binding(name, &value.unwrap());
+                            },
+                            _ => panic!("unknown declaration kind"),
+                        }
                     },
                 }
             },
@@ -135,7 +145,7 @@ fn hoist_function_declaration<JSContext: runtime::JSContext>(ctx: &mut JSContext
     */
 
     let function = stmt.function.as_ref().unwrap();
-    let function_object = ctx.new_function(
+    let function_object = ctx.function(
         function.identifier.as_ref().map(|name| name.name.to_string()), 
         function.parameters.iter().map(|param| {
             // TODO: handle other patterns
@@ -215,9 +225,9 @@ fn eval_continue_statement<JSContext: runtime::JSContext>(ctx: &mut JSContext, s
 fn eval_return_statement<JSContext: runtime::JSContext>(ctx: &mut JSContext, stmt: &ast::ReturnStatement) {
     let value = match &stmt.argument {
         Some(expr) => eval_expression(ctx, expr),
-        None => ctx.new_undefined(),
+        None => JSContext::undefined(),
     };
-    ctx.complete_return(Some(value));
+    ctx.complete_return_value(value);
 }
 
 
@@ -322,8 +332,8 @@ pub fn eval_expression<JSContext: runtime::JSContext>(ctx: &mut JSContext, expr:
         
         Some(Expression::Variable(expr)) => eval_variable(ctx, &expr),
         Some(Expression::Assignment(expr)) => eval_assignment(ctx, &expr),
-        // Expression::Member(expr) => eval_member(ctx, expr),
-        
+        Some(Expression::Member(expr)) => eval_member(ctx, &expr),
+ 
         Some(Expression::Call(expr)) => eval_call(ctx, &expr),
 
         _ => unimplemented!(),
@@ -335,11 +345,11 @@ use ast::literal::Literal;
 #[inline]
 fn eval_literal<JSContext: runtime::JSContext>(ctx: &mut JSContext, literal: &ast::Literal) -> JSContext::V {
     match &literal.literal {
-        Some(Literal::UndefinedLiteral(_)) => ctx.new_undefined(),
-        Some(Literal::NullLiteral(_)) => ctx.new_null(),
-        Some(Literal::BooleanLiteral(literal)) => ctx.new_boolean(*literal),
-        Some(Literal::NumberLiteral(literal)) => ctx.new_number(*literal),
-        Some(Literal::StringLiteral(literal)) => ctx.new_string(&literal),
+        Some(Literal::UndefinedLiteral(_)) => JSContext::undefined(),
+        Some(Literal::NullLiteral(_)) => JSContext::null(),
+        Some(Literal::BooleanLiteral(literal)) => JSContext::boolean(*literal),
+        Some(Literal::NumberLiteral(literal)) => JSContext::number(*literal),
+        Some(Literal::StringLiteral(literal)) => JSContext::string(*literal),
         // Literal::Bigint(literal) => JSContext::new_bigint(literal),
         _ => unimplemented!(),
     }
@@ -372,10 +382,10 @@ fn eval_object<JSContext: runtime::JSContext>(ctx: &mut JSContext, obj: &ast::Ob
     for elem in obj.elements.iter() {
         match elem.element.as_ref().unwrap() {
             ast::object_expression::element::Element::Property(prop) => {
-                let key = match prop.name.as_ref().unwrap().name.as_ref().unwrap() {
-                    ast::prop_name::Name::Identifier(id) => runtime::PropName::String(id.name.to_string()),
-                    ast::prop_name::Name::StringLiteral(lit) => runtime::PropName::String(lit.to_string()),
-                    ast::prop_name::Name::NumberLiteral(lit) => runtime::PropName::Number(*lit),
+                let key  = match prop.name.as_ref().unwrap().name.as_ref().unwrap() {
+                    ast::prop_name::Name::Identifier(id) => id,
+                    ast::prop_name::Name::StringLiteral(lit) => lit,
+                    ast::prop_name::Name::NumberLiteral(lit) => lit.to_string(),
                     _ => unimplemented!(),
                 };
                 let value = eval_expression(ctx, prop.value.as_ref().unwrap());
@@ -405,7 +415,7 @@ fn eval_object<JSContext: runtime::JSContext>(ctx: &mut JSContext, obj: &ast::Ob
 }
 
 #[inline]
-fn eval_function<JSContext: runtime::JSContext>(ctx: &mut JSContext, func: &ast::FunctionExpression) -> JSContext::V {
+pub fn eval_function<JSContext: runtime::JSContext>(ctx: &mut JSContext, func: &ast::FunctionExpression) -> JSContext::V {
     // TODO: implement variable capture
     // only the locally declared variables and function parameters are available now
     
@@ -442,14 +452,25 @@ fn eval_arrow_function<JSContext: runtime::JSContext>(ctx: &JSContext, func: &as
 }
 
 #[inline]
-fn eval_assignment<JSContext: runtime::JSContext>(ctx: &JSContext, expr: &ast::AssignmentExpression) -> JSContext::V {
-    match expr.operator {
-        // None => eval_assign(ctx, expr.left, expr.right),
-        _ => unimplemented!()
-        // ast::assignment_expression::Operator::Add => eval_lval(ctx, expr.left).as_numeric().add(eval_expression(ctx, &expr.right).as_numeric()),
-    }
-}
+fn eval_assignment<JSContext: runtime::JSContext>(ctx: &mut JSContext, expr: &ast::AssignmentExpression) -> JSContext::V {
+    let left = match expr.left.as_ref().unwrap().lvalue.as_ref().unwrap() {
+        ast::assignment_expression::l_value::Lvalue::Identifier(id) => {
+            &id.name.to_string()
+        },        
+        ast::assignment_expression::l_value::Lvalue::Member(mexpr) => {
+            unimplemented!("member expression")
+        }
+    };
 
+    return match ast::assignment_expression::Operator::from_i32(expr.operator).unwrap() {
+        ast::assignment_expression::Operator::Assign => {
+            let right = eval_expression(ctx, expr.right.as_ref().unwrap());
+            ctx.set_binding(left, right);
+            right
+        },
+        _ => unimplemented!(),
+    };
+}
 
 
 #[inline]
@@ -525,62 +546,60 @@ fn eval_variable<JSContext: runtime::JSContext>(ctx: &mut JSContext, expr: &ast:
         Err(err) => unimplemented!("{}", err)
     }
 }
+use crate::ast::binary_expression::Operator;
 
-
+// binary operations does NOT coerces the values to primitive.
 #[inline]
 fn eval_binary<JSContext: runtime::JSContext>(ctx: &mut JSContext, expr: &ast::BinaryExpression) -> JSContext::V {
-    use crate::runtime::JSNumeric;
-    use ast::binary_expression::Operator;
     let left = eval_expression(ctx, &*expr.left.as_ref().unwrap());
     let right = eval_expression(ctx, &*expr.right.as_ref().unwrap());
-    match Operator::from_i32(expr.operator) {
-        Some(Operator::Add) => {
-            let new_left = ctx.dup(left);
-            ctx.wrap_number(new_left.to_number().op_add(&right.to_number()))
-        }
-        Some(Operator::Sub) => {
-            let new_left = ctx.dup(left);
-            ctx.wrap_number(new_left.to_number().op_sub(&right.to_number()))
-        }
-        Some(Operator::Mul) => {
-            let new_left = ctx.dup(left);
-            ctx.wrap_number(new_left.to_number().op_mul(&right.to_number()))
-        },
-        Some(Operator::Div) => {
-            let new_left = ctx.dup(left);
-            ctx.wrap_number(new_left.to_number().op_div(&right.to_number()))
-        }
-        Some(Operator::Mod) => {
-            let new_left = ctx.dup(left);
-            ctx.wrap_number(new_left.to_number().op_modulo(&right.to_number()))
-        }
-        // Some(Operator::Exp) => unimplemented!(),
-        Some(Operator::Bitand) => unimplemented!(),
-        Some(Operator::Bitor) => unimplemented!(),
-        Some(Operator::Bitxor) => unimplemented!(),
-        Some(Operator::Lshift) => unimplemented!(),
-        Some(Operator::Rshift) => unimplemented!(),
-        Some(Operator::Lt) => ctx.new_boolean(left.to_number().op_lt(&right.to_number())),
-        Some(Operator::Lte) => ctx.new_boolean(left.to_number().op_lte(&right.to_number())),
-        Some(Operator::Gt) => ctx.new_boolean(left.to_number().op_gt(&right.to_number())),
-        Some(Operator::Gte) => ctx.new_boolean(left.to_number().op_gte(&right.to_number())),
-        _ => unimplemented!(),
+    let op = Operator::from_i32(expr.operator).unwrap();
+    match op {
+        Operator::Add => ctx.op_add(&mut left, &right),
+        Operator::Sub => ctx.op_sub(&mut left, &right),
+        Operator::Mul => ctx.op_mul(&mut left, &right),
+        Operator::Div => ctx.op_div(&mut left, &right),
+        Operator::Mod => ctx.op_mod(&mut left, &right),
+        Operator::Pow => ctx.op_pow(&mut left, &right),
+
+        Operator::Eq => ctx.op_eq(&mut left, &right),
+        Operator::Neq => ctx.op_neq(&mut left, &right),
+        Operator::Gt => ctx.op_gt(&mut left, &right),
+        Operator::Gte => ctx.op_gte(&mut left, &right),
+        Operator::Lt => ctx.op_lt(&mut left, &right),
+        Operator::Lte => ctx.op_lte(&mut left, &right),
+
+        Operator::Bitand => ctx.op_bit_and(&mut left, &right),
+        Operator::Bitor => ctx.op_bit_or(&mut left, &right),
+        Operator::Bitxor => ctx.op_bit_xor(&mut left, &right),
+        Operator::Lshift => ctx.op_bit_lshift(&mut left, &right),
+        Operator::Rshift => ctx.op_bit_rshift(&mut left, &right),
+        Operator::Urshift => ctx.op_bit_urshift(&mut left, &right),
+
+        _ => unimplemented!(""),
     }
 }
 
 #[inline]
 fn eval_unary<JSContext: runtime::JSContext>(ctx: &mut JSContext, expr: &ast::UnaryExpression) -> JSContext::V {
-    use crate::runtime::JSNumeric;
     use ast::unary_expression::Operator;
     match Operator::from_i32(expr.operator) {
-        Some(Operator::Pos) => eval_expression(ctx, &*expr.argument.as_ref().unwrap()),
+        Some(Operator::Pos) => {
+            eval_expression(ctx, &*expr.argument.as_ref().unwrap())
+        }
         Some(Operator::Neg) => {
             let arg = eval_expression(ctx, &*expr.argument.as_ref().unwrap());
-            ctx.wrap_number(arg.to_number().op_neg())
+            match arg.as_number() {
+                Some(n) => ctx.wrap_number(n.op_neg()),
+                None => unimplemented!(),
+            }
         },
         Some(Operator::Not) => {
             let arg = eval_expression(ctx, &*expr.argument.as_ref().unwrap());
-            ctx.new_boolean(!arg.to_boolean())
+            match arg.as_boolean() {
+                Some(b) => ctx.new_boolean(!b),
+                None => unimplemented!("some type error message"),        
+            }
         },
         _ => unimplemented!(),
     }
@@ -719,3 +738,18 @@ fn used_variable_expression(expr: &ast::Expression) -> HashSet<String> {
     used
 }
 */
+
+#[inline]
+fn eval_member<JSContext: runtime::JSContext>(ctx: &mut JSContext, expr: &ast::MemberExpression) -> JSContext::V {
+    let obj = eval_expression(ctx, expr.object.as_ref().unwrap());
+    let propname = match expr.member.as_ref().unwrap() {
+        ast::member_expression::Member::Index(iexpr) => {
+            let index = eval_expression(ctx, iexpr);
+            ctx.object_property_computed(&obj, &index)
+        },
+        ast::member_expression::Member::Property(id) => {
+            ctx.object_property(&obj, &id.name)
+        },
+    };
+
+}

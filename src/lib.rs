@@ -10,6 +10,9 @@ pub mod runtime;
 #[path="./interpreter/lib.rs"]
 pub mod interpreter;
 
+#[path="./interpreter/environment_record.rs"]
+pub mod environment_record;
+
 /*
 #[wasm_bindgen]
 pub fn evaluate(code: String) -> String {

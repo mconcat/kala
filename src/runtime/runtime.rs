@@ -290,89 +290,43 @@ pub enum Value<
 */
 */
 
-use std::collections::HashMap;
 use std::collections::HashSet;
 use crate::ast;
 
 pub type DeclarationKind = ast::DeclarationKind;
 
-pub trait JSBoolean {
-    fn to_bool(&self) -> bool;
-}
 
-pub trait JSNumeric {
-    fn op_add(&mut self, other: &Self) -> &mut Self;
-    fn op_sub(&mut self, other: &Self) -> &mut Self;
-    fn op_mul(&mut self, other: &Self) -> &mut Self;
-    fn op_div(&mut self, other: &Self) -> &mut Self;
-    fn op_modulo(&mut self, other: &Self) -> &mut Self;
-    fn op_pow(&mut self, other: &Self) -> &mut Self;
-    fn op_bitand(&mut self, other: &Self) -> &mut Self;
-    fn op_bitor(&mut self, other: &Self) -> &mut Self;
-    fn op_bitxor(&mut self, other: &Self) -> &mut Self;
-    fn op_bitnot(&mut self) -> &mut Self;
-    fn op_lshift(&mut self, other: &Self) -> &mut Self;
-    fn op_rshift(&mut self, other: &Self) -> &mut Self;
-    fn op_urshift(&mut self, other: &Self) -> &mut Self;
 
-    fn op_equal(&self, other: &Self) -> bool;
-    fn op_not_equal(&self, other: &Self) -> bool;
-    fn op_lt(&self, other: &Self) -> bool;
-    fn op_gt(&self, other: &Self) -> bool;
-    fn op_lte(&self, other: &Self) -> bool;
-    fn op_gte(&self, other: &Self) -> bool;
-    
-    fn op_neg(&mut self) -> &mut Self;
-    fn op_inc(&mut self) -> &mut Self;
-    fn op_dec(&mut self) -> &mut Self;
-}
-
-pub trait JSNumber: JSNumeric {
-    type V: JSValue;
-
-    fn to_value(&self) -> Self::V;
-}
-
-pub trait JSBigint: JSNumeric {
-    type V: JSValue;
-
-    fn to_value(&self) -> Self::V;
-}
-
-pub trait JSString {
-    fn concat(&mut self, other: &Self) -> &mut Self;
-}
-
-// Either String or Number
-// Identifier is treated as String
-pub enum PropName {
-    String(String),
-    Number(i64)
-}
-
-impl PropName {
+/*
+impl<S: JSString, N: JSNumber> PropName<S, N> {
     pub fn to_string(&self) -> String {
         match self {
-            PropName::String(s) => s.clone(),
-            PropName::Number(n) => n.to_string()
+            PropName::String(s) => s.to_string(),
+            PropName::Number(n) => n.to_string(),
         }
     }
 }
-
+*/
+/*
 pub trait JSProperty {
     type V: JSValue;
         
     fn get(&self) -> Self::V;
     fn set(&mut self, value: Self::V);
 }
-
+*/
+/* 
 pub trait JSReference {
     //type Context: JSContext;
-    //type V: JSValue;
-    type P: JSProperty;
 //    type Iter: Iterator<Item=Self>;
+    type V: JSValue;
 
-    fn property(&self, name: PropName) -> Self::P; 
+    fn property(&self, name: 
+        PropName<
+            <Self::V as JSValue>::S,
+            <Self::V as JSValue>::N,
+        >
+    ) -> <Self::V as JSValue>::P; 
     //fn call(&self, ctx: &mut Self::Context, args: &[<Self::Context as JSContext>::V]) -> <Self::Context as JSContext>::V;
     // fn set_method(&self, name: &Self::N, val: Self::M);
     
@@ -382,145 +336,265 @@ pub trait JSReference {
     // element_iter coerces self to an array and iterates over the elements
     // fn element_iter(&self) -> Self::Iter;
 }
+*/
 
-
-pub trait JSValue: Clone {
-    type N: JSNumber;
-    // type B: Bigint;
-    type S: JSString;
-    type R: JSReference;
-
-    fn new_undefined() -> Self;
-
-    /*
-    // Type switch
-    // I am not sure if this is the best way to do this.
-    // use it when really needed
-    fn type_match<T>(&self, 
-        if_null: T,
-        if_undefined: T,
-        if_boolean: impl Fn(bool) -> T,
-        if_number: impl Fn(Self::N) -> T,
-        // if_bigint: dyn Fn(&Self) -> &'a T,
-        if_string: impl Fn(Self::S) -> T,
-        if_object: impl Fn(Self::R) -> T,
-    ) -> T;
-    */
-
-    // Type cast
-    // Returns None if the value is not of the given type.
-    fn as_boolean(&self) -> Option<bool>;
-    fn as_number(&self) -> Option<&Self::N>;
-    // fn as_bigint(&self) -> Option<&Self::B>;
-    fn as_string(&self) -> Option<&Self::S>;
-
-    fn as_reference(&self) -> Option<&Self::R>;
-
-    // Type coersion
-    // Type coersion as defined in https://262.ecma-international.org/9.0/#sec-type-conversion
-    // panics if the value is not coercible to the given type.
-    fn to_boolean(&self) -> bool;
-    fn to_number(&self) -> Self::N;
-    //fn to_string(&self) -> Self::S;
-    //fn to_object(&self) -> Self::R;
+/*
+pub enum ObjectKind {
+    Array,
+    ArrayIterator(ArrayIterator),
+    // ArrayBuffer(ArrayBuffer),
+    // Map(OrderedMap<JsValue>),
+    // MapIterator(MapIterator),
+    BigInt(JsBigInt),
+    Boolean(bool),
+    // DataView(DataView),
+    // ForInIterator(ForInIterator),
+    Function(Function),
+    // Set(OrderedSet<JsValue>),
+    // SetIterator(SetIterator),
+    String(JsString),
+    StringIterator(StringIterator),
+    Number(f64),
+    Symbol(JsSymbol),
+    Error,
+    Ordinary,
+    // Date(Date),
+    NativeObject(Box<dyn NativeObject>),
+    // IntegerIndexed(IntegerIndexed), // TypedArray
+    #[cfg(feature = "intl")]
+    // DateTimeFormat(Box<DateTimeFormat>),
+    // Promise(Promise),
 }
-#[derive(Clone, Copy)]
-pub enum Completion<V: JSValue> {
-    Continue,
-    Break,
-    Return(Option<V>),
-    Throw(V),
+*/
+
+/*
+pub trait JSBoolean<V: JSValue> {
+    fn wrap(self) -> V;
 }
 
-impl<V: JSValue> Completion<V> {
-    pub fn get_return(&self) -> Option<V> {
-        match self {
-            Completion::Return(v) => Some(v.as_ref().unwrap_or(&V::new_undefined()).clone()),
-            _ => None
-        }
+pub trait JSNumber<V: JSValue> {
+    fn wrap(self) -> V;
+
+ 
+    fn to_i64(&self) -> Option<i64>;
+}
+
+pub trait JSBigint<V: JSValue> {
+    fn wrap(self) -> V;
+
+    fn op_add(&mut self, other: &Self) -> &mut Self;
+    fn op_sub(&mut self, other: &Self) -> &mut Self;
+    fn op_mul(&mut self, other: &Self) -> &mut Self;
+    fn op_div(&mut self, other: &Self) -> &mut Self;
+    fn op_mod(&mut self, other: &Self) -> &mut Self;
+   
+    fn op_neg(&mut self) -> &mut Self;
+    fn op_inc(&mut self) -> &mut Self;
+    fn op_dec(&mut self) -> &mut Self;
+
+    // TODO: bit operations
+   
+    fn op_lt(&self, other: &Self) -> bool;
+    fn op_gt(&self, other: &Self) -> bool;
+    fn op_lte(&self, other: &Self) -> bool;
+    fn op_gte(&self, other: &Self) -> bool;
+}
+
+pub trait JSString<V: JSValue> {
+    fn wrap(self) -> V;
+
+    fn op_concat(&mut self, other: &Self) -> &mut Self;
+}
+*/
+pub trait JSObject<V: JSValue> {
+    fn wrap(self) -> V;
+
+}
+/*
+// Function-like objects, Functions, Closures, Native functions, etc.
+pub trait JSCallable<V: JSValue> {
+    fn check(v: V) -> bool;
+    fn cast(v: V) -> Option<Self>;
+    fn coerce(v: V) -> Self;
+    fn wrap(&self) -> V;
+
+}
+
+// Array-like objects, Array, TypedArray, Custom Iterators, String Iterators, etc.
+pub trait JSIndexible<V: JSValue> {
+    fn check(v: V) -> bool;
+    fn cast(v: V) -> Option<Self>;
+    fn coerce(v: V) -> Self;
+    fn wrap(&self) -> V;
+
+    fn get_index(&self, index: i64) -> V;
+    fn set_index(&mut self, index: i64, value: V);
+}
+*/
+pub trait JSError<V: JSValue> {
+    fn wrap(self) -> V;
+
+    // TODO
+}
+
+
+
+pub trait JSValue: Clone + Sized  {
+
+    // value constructors
+    //fn undefined() -> Self;
+
+//    fn null() -> Self;
+
+//    fn as_boolean(&self) -> Option<Self::Boolean>;
+//    fn boolean(b: bool) -> Self;
+
+//    fn as_number(&self) -> Option<Self::Number>;
+//    fn number(n: i64) -> Self;
+
+//    fn as_bigint(&self) -> Option<Self::Bigint>;
+//    fn bigint(n: i64) -> Self;
+
+    //fn as_string(&self) -> Option<Self::String>;
+//    fn string(s: String) -> Self;
+
+    fn is_reference(&self) -> bool;
+
+    // error constructors
+    fn error(s: String) -> Self;
+    fn range_error(s: String) -> Self;
+    fn reference_error(s: String) -> Self;
+    fn type_error(s: String) -> Self;
+
+
+    // objects(reference types) requires memory allocation
+    // creation of them should be handled in context.
+}
+
+type Value<Context: JSContext> = <Context as JSContext>::V; 
+struct InternalValue<V: JSValue>(V);
+
+impl<V: JSValue> InternalValue<V> {
+    fn wrap(v: V) -> Self {
+        InternalValue(v)
+    }
+
+    fn unwrap(&self) -> V {
+        self.0
     }
 }
 
-// JSContext is the runtime environment for a single execution context.
-// JSContext should not be copied.
-// 
-// Difference compilation backend could implement JSContext,
-// 1. Interpreter (crate::interpreter::JSContext)
-// 2. Transpiler (crate::transpiler::JSContext)
-// 3. Bytecode Compiler (crate:::vm::JSContext)
 pub trait JSContext {
     type V: JSValue;
 
-    // global configurations
-    fn check_early_errors(&self) -> bool;
+    // Primitive value constructors
+    fn undefined() -> Self::V;
+
+    fn null() -> Self::V;
+
+    fn coerce_boolean(&mut self, v: &Self::V) -> Self::V; // "truthy"
+    fn boolean(b: bool) -> Self::V;
+
+    fn coerce_number(&mut self, v: &Self::V) -> Self::V; // ToNumber
+    fn number(n: i64) -> Self::V;
+
+    fn bigint(n: i64) -> Self::V;
+
+    fn coerce_string(&mut self, v: &Self::V) -> Self::V; // ToString
+    fn string(s: String) -> Self::V;
     
-    ///////////////////////////////
-    // Statements
+    // Reference value constructors
 
-    // Block scope.
-    // 1. Holds a reference to the parent scope
-    // 2. Constructs a new scope for the current execution context
-    // 3. Hoist all the function declarations in the current execution context using parameter hoist
-    // 4. Recover the parent scope after the execution context has finished
-    fn block_scope(&mut self, hoisted_fns: Vec<(String, Self::V)>, body: impl Fn(&mut Self));
+    // fn coerce_reference(v: Self::V) -> ObjectValue<Self>; // TODO
+    fn array(&mut self, elems: Vec<Self::V>) -> Self::V;
+    fn object(&mut self, props: Vec<(String, Self::V)>) -> Self::V;
+    fn function(&mut self, captures: Vec<String>, code: ast::FunctionExpression) -> Self::V;
+    
+    // Lexical environment
+    
+    fn block_scope(&mut self, hoisted_funcs: Vec<(String, Self::V)>, body: impl Fn(&mut Self));
 
-    // enter function code
-    fn enter_function(&mut self, callee: &Self::V, args: Vec<Self::V>) -> Option<Self::V>;
-
-    fn extract_free_variables(&mut self, vars: HashSet<String>) -> HashSet<String>;
+    fn call(&mut self, func: &Self::V, args: Vec<Self::V>) -> Result<Self::V, String>;
 
     // Control flow
+
     fn control_loop(&mut self, test: impl Fn(&mut Self) -> Self::V, body: impl Fn(&mut Self));
-    // control_branch checks the truthy/falsy value of the condition and branches accordingly
+
     fn control_branch(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self), alternate: impl Fn(&mut Self));
     fn control_branch_value(&mut self, test: impl Fn(&mut Self) -> Self::V, consequent: impl Fn(&mut Self) -> Self::V, alternate: impl Fn(&mut Self) -> Self::V) -> Self::V;
+
     fn control_switch(&mut self); // TODO
-    // fn control_try(&mut self, body: &ast::Block, catch: &ast::Block, finally: &ast::Block);
+
     fn control_coalesce(&mut self, left: impl Fn(&mut Self) -> Self::V, right: impl Fn(&mut Self) -> Self::V) -> Self::V;
 
+
+
     // Terminators
+    
     fn complete_break(&mut self);
+    fn is_break(&self) -> bool;
+
     fn complete_continue(&mut self);
-    fn complete_return(&mut self, val: Option<Self::V>);
+    fn is_continue(&self) -> bool;
+
+    fn complete_return(&mut self);
+    fn complete_return_value(&mut self, val: Self::V);
+    fn is_return(&self) -> bool;
+    fn consume_return(&mut self) -> Option<Self::V>;
+
     fn complete_throw(&mut self, val: Self::V);
-    fn completion(&mut self) -> Option<Completion<Self::V>>;
-
-    ///////////////////////////////
-    // Expression
-
-    // Literal value creation
-    // XS_CODE_UNDEFINED
-    fn new_undefined(&mut self) -> Self::V;
-    // XS_CODE_NULL
-    fn new_null(&mut self) -> Self::V;
-    // XS_CODE_TRUE
-    // XS_CODE_FALSE
-    fn new_boolean(&mut self, b: bool) -> Self::V;
-    // XS_CODE_NUMBER
-    fn new_number(&mut self, n: i64) -> Self::V;
-    fn wrap_number(&mut self, n: &<<Self as JSContext>::V as JSValue>::N) -> Self::V;
-    // XS_CODE_BIGINT
-    // fn new_bigint(n: &[i32]) -> Self::V;
-    // XS_CODE_STRING
-    fn new_string(&mut self, s: &String) -> Self::V;
-    fn wrap_string(&mut self, s: &<<Self as JSContext>::V as JSValue>::S) -> Self::V;
-
-    // XS_CODE_ARRAY
-    fn new_array(&mut self, elements: Vec<Self::V>) -> Self::V;
-
-    // Object value creation
-    // XS_CODE_OBJECT
-    fn new_object(&mut self, props: Vec<(PropName, Self::V)>) -> Self::V;
-
-    // Function value creation
-    fn new_function(&mut self, identifier: Option<String>, parameters: Vec<String>, body: &ast::FunctionExpression, captures: Vec<String>) -> Self::V;
+    fn is_throw(&self) -> bool;
+    fn consume_throw(&mut self) -> Self::V; 
 
     // variable access
-    fn initialize_binding(&mut self, kind: ast::DeclarationKind, name: &String, v: Option<Self::V>) -> Result<(), String>;
+    fn initialize_mutable_binding(&mut self, name: &String, v: &Option<Self::V>) -> Result<(), String>;
+    fn initialize_immutable_binding(&mut self, name: &String, v: &Self::V) -> Result<(), String>;
     fn resolve_binding(&mut self, name: &String) -> Result<Self::V, String>; 
     fn set_binding(&mut self, name: &String, v: Self::V) -> Result<(), String>;
 
-    // abstract stack operations
-    fn dup(&mut self, v: Self::V) -> Self::V;
-}
+    // memory manipulation
+    fn dup(&mut self, val: &Self::V) -> &Self::V;
+    fn dup_mut(&mut self, val: &mut Self::V) -> &mut Self::V;
 
+    // boolean operations
+    fn op_and(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_or(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+
+    // operations 
+    // Mutates and stores to the left arguments.
+    fn op_add(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_sub(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_mul(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_div(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_mod(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_pow(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+
+    fn op_neg(&mut self, left: &mut Self::V) -> &mut Self::V;
+    fn op_inc(&mut self, left: &mut Self::V) -> &mut Self::V;
+    fn op_dec(&mut self, left: &mut Self::V) -> &mut Self::V;
+   
+    fn op_bitand(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_bitor(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_bitxor(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+
+    fn op_bitnot(&mut self, left: &mut Self::V) -> &mut Self::V;
+
+    fn op_lshift(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_rshift(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_urshift(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+
+    fn op_eq(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V
+    fn op_neq(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V
+    fn op_lt(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_gt(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_lte(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_gte(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+
+    // equality operations
+    fn op_strict_eq(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+    fn op_strict_neq(&mut self, left: &mut Self::V, other: &Self::V) -> &mut Self::V;
+
+    // object access
+    fn object_property(&mut self, obj: &Self::V, property: &String) -> Result<Self::V, String>;
+    fn object_property_computed(&mut self, obj: &Self::V, property: &Self::V) -> Result<Self::V, String>;
+}
