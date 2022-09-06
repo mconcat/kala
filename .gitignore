@@ -1,2 +1,6 @@
-/target
-/node_modules
+target
+node_modules
+kala-ast/target/*
+kala-context/target/*
+kala-runtime/target/*
+kala-parser/target/*
