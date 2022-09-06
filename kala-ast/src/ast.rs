@@ -364,7 +364,7 @@ pub struct ConditionalExpression {
 /// Variable Expressions
 
 pub struct VariableExpression{
-    name: Identifier
+    pub name: Identifier
 }
 
 pub struct AssignmentExpression {
