@@ -3,8 +3,8 @@
 // runtime contexts are provided by the runtime module, which is responsible for
 // evaluating the runtime semantics of the program.
 
-use kala_ast::ast::{self, DeclarationKind};
-use kala_context::JSContext;
+use kala_ast::ast;
+use kala_context::context::JSContext;
 
 use core::panic;
 use std::cell::RefCell;
@@ -48,9 +48,9 @@ fn eval_variable_declaration<Context: JSContext>(ctx: &mut Context, stmt: &ast::
     */
 
     for decl in stmt.declarators.iter() {
-        match decl.binding {
+        match &decl.binding {
             ast::Pattern::Identifier(ident) => {
-                let value = decl.init.map(|init| eval_expression(ctx, &init));
+                let value = decl.init.as_ref().map(|init| eval_expression(ctx, &init));
                 match stmt.kind {
                     ast::DeclarationKind::Const => ctx.initialize_immutable_binding(&ident.name, &value.expect("const variable must have an initializer")),
                     ast::DeclarationKind::Let => ctx.initialize_mutable_binding(&ident.name, &value),
@@ -91,7 +91,7 @@ pub fn eval_block_statement<Context: JSContext>(ctx: &mut Context, stmt: &ast::B
 fn eval_if_statement<Context: JSContext>(ctx: &mut Context, stmt: &ast::IfStatement) {
     ctx.control_branch(|ctx| eval_expression(ctx, &stmt.test), 
         |ctx| eval_statement(ctx, &stmt.consequent), 
-        |ctx| { stmt.alternate.map(|s| eval_statement(ctx, &s)); },
+        |ctx| { stmt.alternate.as_ref().map(|s| eval_statement(ctx, &s)); },
     )
 }
 
@@ -244,7 +244,7 @@ fn eval_literal<Context: JSContext>(ctx: &mut Context, literal: &ast::Literal) -
         ast::Literal::Null => Context::null(),
         ast::Literal::Boolean(literal) => Context::boolean(literal.value),
         ast::Literal::Number(literal) => Context::number(literal.value),
-        ast::Literal::String(literal) => Context::string(literal.value),
+        ast::Literal::String(literal) => Context::string(literal.value.clone()),
         // Literal::Bigint(literal) => JSContext::new_bigint(literal),
         _ => unimplemented!(),
     }
@@ -277,7 +277,7 @@ fn eval_object<Context: JSContext>(ctx: &mut Context, obj: &ast::ObjectExpressio
     for elem in obj.properties.iter() {
         match elem {
             ast::ObjectElement::KeyValue(key, value) => { 
-                props.push((key.name, eval_expression(ctx, value)));
+                props.push((&key.name, eval_expression(ctx, value)));
             },
             /*
             ast::object_expression::element::Element::Shorthand(propname) => {
@@ -314,7 +314,7 @@ pub fn eval_function<Context: JSContext>(ctx: &mut Context, func: &ast::Function
         },
         */
 
-    let function_object = ctx.function(vec![], *func);
+    let function_object = ctx.function(vec![], func);
 
     function_object
 
@@ -333,11 +333,11 @@ fn eval_arrow_function<Context: JSContext>(ctx: &mut Context, func: &ast::ArrowF
 
 #[inline]
 fn eval_assignment<Context: JSContext>(ctx: &mut Context, expr: &ast::AssignmentExpression) -> Context::V {
-    let left = match expr.left {
+    let left = match &expr.left {
         ast::LValue::Variable(id) => {
-            &id.name.to_string()
+            &id.name
         },        
-        ast::LValue::Member(mexpr) => {
+        ast::LValue::Member(_) => {
             unimplemented!("member expression")
         }
     };
@@ -345,7 +345,7 @@ fn eval_assignment<Context: JSContext>(ctx: &mut Context, expr: &ast::Assignment
     return match expr.operator {
         ast::AssignmentOperator::Assign => {
             let right = eval_expression(ctx, &expr.right);
-            ctx.set_binding(left, right);
+            ctx.set_binding(left, right.clone());
             right
         },
         _ => unimplemented!(),
@@ -455,12 +455,11 @@ fn eval_binary<Context: JSContext>(ctx: &mut Context, expr: &ast::BinaryExpressi
 */
         _ => unimplemented!(""),
     };
-    *result
+    result.clone()
 }
 
 #[inline]
 fn eval_unary<Context: JSContext>(ctx: &mut Context, expr: &ast::UnaryExpression) -> Context::V {
-    let arg = eval_expression(ctx, &expr.argument);
     match expr.operator {
         ast::UnaryOperator::Plus => {
             unimplemented!()
@@ -469,8 +468,8 @@ fn eval_unary<Context: JSContext>(ctx: &mut Context, expr: &ast::UnaryExpression
             unimplemented!() 
         },
         ast::UnaryOperator::Bang => {
-            let arg = eval_expression(ctx, &expr.argument);
-            *ctx.op_not(&mut arg)
+            let mut arg = eval_expression(ctx, &expr.argument);
+            ctx.op_not(&mut arg).clone()
         },
         _ => unimplemented!(),
     }
@@ -613,7 +612,7 @@ fn used_variable_expression(expr: &ast::Expression) -> HashSet<String> {
 #[inline]
 fn eval_member<Context: JSContext>(ctx: &mut Context, expr: &ast::MemberExpression) -> Context::V {
     let obj = eval_expression(ctx, &expr.object);
-    let result = match expr.property {
+    let result = match &expr.property {
         ast::Member::Computed(iexpr) => {
             let index = eval_expression(ctx, &iexpr);
             ctx.object_property_computed(&obj, &index)

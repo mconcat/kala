@@ -1,13 +1,7 @@
 // Jessie AST definitions, with neccesary interpreter runtime metadata.
 
-pub enum DeclarationKind {
-    Let,
-    Const,
-}
-
-pub struct Identifier {
-    pub name: String,
-}
+pub use crate::common::{Identifier, DeclarationKind, Literal};
+pub use crate::pattern::Pattern;
 
 ////////////////////////////////////////////////////////////////////////
 /// Module
@@ -21,69 +15,8 @@ pub struct Script {
     pub body: Vec<Statement>
 }
 
-////////////////////////////////////////////////////////////////////////
-/// Literals
 
-pub struct NumberLiteral{
-    pub value: i64,
-}
 
-pub struct StringLiteral {
-    pub value: String,
-}
-
-pub struct BooleanLiteral {
-    pub value: bool,
-}
-
-pub struct BigintLiteral {
-    pub value: String,
-}
-
-pub enum Literal {
-    Undefined,
-    Null,
-    Number(NumberLiteral),
-    Boolean(BooleanLiteral),
-    String(StringLiteral),
-    Bigint(BigintLiteral),
-}
-
-////////////////////////////////////////////////////////////////////////
-/// Patterns
-///
-/// Patterns are used in variable declarations, function parameters, and
-/// destructuring assignments.
-
-pub enum Pattern {
-    Identifier(Identifier),
-    Literal(Literal),
-    Array(ArrayPattern),
-    Object(ObjectPattern),
-    Hole,
-    Rest(Box<Pattern>),
-    Optional(OptionalPattern),
-}
-
-pub struct OptionalPattern {
-    pub binding: Identifier,
-    pub default: Expression,
-}
-
-pub struct ArrayPattern {
-    pub elements: Vec<Pattern>,
-}
-
-pub struct ObjectPattern {
-    pub properties: Vec<PropertyPattern>,
-}
-
-pub enum PropertyPattern {
-    KeyValue(Identifier, Pattern),
-    Shorthand(Identifier),
-    Optional(OptionalPattern),
-    Rest(Pattern),
-}
 
 ////////////////////////////////////////////////////////////////////////
 /// Statements
@@ -135,7 +68,7 @@ pub struct VariableDeclaration {
 }
 
 pub struct FunctionDeclaration {
-    function: FunctionExpression
+    pub function: FunctionExpression
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -412,7 +345,7 @@ pub struct CallExpression {
 }
 
 pub struct ParenthesizedExpression{
-    expression: Expression
+    pub expression: Expression
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -425,54 +358,7 @@ use core::panic;
 
 use swc_ecma_ast as ast;
 
-impl From<ast::Ident> for Identifier {
-    fn from(ident: ast::Ident) -> Self {
-        Identifier {
-            name: ident.sym.to_string(),
-        }
-    }
-}
 
-impl From<ast::Pat> for Pattern {
-    fn from(pat: ast::Pat) -> Self {
-        match pat {
-            ast::Pat::Ident(ident) => Pattern::Identifier(Identifier::from(ident.id)),
-            ast::Pat::Array(array) => Pattern::Array(ArrayPattern {
-                elements: array.elems.into_iter().map(|e| e.map(|e| e.into()).unwrap_or(Pattern::Hole)).collect(),
-            }),
-            ast::Pat::Object(object) => Pattern::Object(ObjectPattern {
-                properties: object
-                    .props
-                    .into_iter()
-                    .map(|p| match p {
-                        ast::ObjectPatProp::KeyValue(key_value) => {
-                            PropertyPattern::KeyValue(
-                                Identifier::from(key_value.key),
-                                (*key_value.value).into(),
-                            )
-                        }
-                        ast::ObjectPatProp::Assign(assign) => {
-                            PropertyPattern::Optional(OptionalPattern {
-                                binding: Identifier::from(assign.key),
-                                default: (*assign.value.unwrap()).into(),
-                            })
-                        }
-                        ast::ObjectPatProp::Rest(rest) => {
-                            PropertyPattern::Rest((*rest.arg).into())
-                        }
-                    })
-                    .collect(),
-            }),
-            _ => unimplemented!(),   
-        }
-    }
-}
-
-impl From<ast::Param> for Pattern {
-    fn from(param: ast::Param) -> Self {
-        param.pat.into()
-    }
-}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -696,31 +582,6 @@ impl From<ast::Expr> for Expression {
     }
 }
 
-const MAX_SAFE_INTEGER: f64 = 9007199254740991.0;
-const MIN_SAFE_INTEGER: f64 = -9007199254740991.0;
-
-impl From<f64> for NumberLiteral {
-    fn from(num: f64) -> Self {
-        if num < MIN_SAFE_INTEGER || num > MAX_SAFE_INTEGER {
-            unimplemented!("Number literal is out of range");
-        } else {
-            NumberLiteral{value: num.round() as i64}
-        }
-    }
-}
-
-impl From<ast::Lit> for Literal {
-    fn from(lit: ast::Lit) -> Self {
-        match lit {
-            ast::Lit::Str(str) => Literal::String(StringLiteral{value: str.value.to_string()}),
-            ast::Lit::Num(num) => Literal::Number(num.value.into()), // TODO: add bound checks
-            ast::Lit::Bool(bool) => Literal::Boolean(BooleanLiteral{value: bool.value}),
-            ast::Lit::Null(_) => Literal::Null,
-            // ast::Lit::BigInt(bigint) => Literal::Bigint(bigint.value.to_string()),
-            _ => unimplemented!(),
-        }
-    }
-}
 
 impl From<ast::ArrayLit> for ArrayExpression {
     fn from(array: ast::ArrayLit) -> Self {
