@@ -150,12 +150,18 @@ impl Decimal64 {
         self.0 & (1 << (Self::T)) - 1
     }
 
-    fn into_parts(&self) -> (u64, u64, NumberClass) {
+    pub fn is_exotic(&self) -> bool {
+        self.combination() == 0b1111
+    }
+
+    // into_parts() returns the raw bits representation of the decimal,
+    // consists of biased exponent and mantissa
+    pub fn into_parts(&self) -> (u64, u64, NumberClass) {
         let sign = self.sign();
 
         match self.combination() {
             0b0000 => {
-                let exponent = self.exponent_direct();
+                let biased_exponent = self.exponent_direct();
                 let mantissa = self.mantissa_direct();
                 let class = match exponent {
                     0 => match mantissa {
@@ -164,7 +170,7 @@ impl Decimal64 {
                     },
                     _ => if sign { NumberClass::NegativeNormal } else { NumberClass::PositiveNormal },
                 };
-                (exponent, mantissa, class)
+                (biased_exponent, mantissa, class)
             },
             0b0001 |
             0b0010 |
@@ -179,7 +185,7 @@ impl Decimal64 {
             0b1011 => {
                 let exponent = self.exponent_direct();
                 let mantissa = self.mantissa_direct();
-                (exponent, mantissa, if sign { NumberClass::NegativeNormal } else { NumberClass::PositiveNormal })
+                (biased_exponent, mantissa, if sign { NumberClass::NegativeNormal } else { NumberClass::PositiveNormal })
             },
             0b1100 |
             0b1101 |
@@ -187,25 +193,202 @@ impl Decimal64 {
                 let exponent = self.exponent_extended();
                 let mantissa = self.mantissa_extended();
                 let class = match exponent {
-                    0 => match mantissa {
-                        0 => unreachable!("not a canonical representation of zero"),
-                        _ => if sign { NumberClass::NegativeSubnormal } else { NumberClass::PositiveSubnormal },
-                    },
+                    0 => if sign { NumberClass::NegativeSubnormal } else { NumberClass::PositiveSubnormal },
                     _ => if sign { NumberClass::NegativeNormal } else { NumberClass::PositiveNormal },
                 };
-                (exponent, mantissa, class)
+                (biased_exponent, mantissa, class)
             }
             0b1111 => (0, 0, self.exotic_class())
         }
     }
-
 }
 
 impl Add<Self> for Decimal64 {
     fn add(self, other: Self) -> Self {
-        let a = self.0;
-        let b = other.0;
-        let c = a + b;
-        Decimal64(c)
+        let (a, b) = if self >= other {
+            (self, other)
+        } else {
+            (other, self)
+        };        
+
+        let (a_biased_exponent, a_mantissa, a_class) = a.into_parts();
+        let (b_biased_exponent, b_mantissa, b_class) = b.into_parts();
+
+        match (a_class, b_class) {
+            (NumberClass::SignalingNaN, _) | (_, NumberClass::SignalingNaN) => Self::quiet_nan(),
+            (NumberClass::QuietNaN, _) | (_, NumberClass::QuietNaN) => Self::quiet_nan(),
+            (NumberClass::NegativeInfinity, NumberClass::PositiveInfinity) | 
+            (NumberClass::PositiveInfinity, NumberClass::NegativeInfinity) => Self::quiet_nan(),
+            (NumberClass::NegativeInfinity, _) | (_, NumberClass::NegativeInfinity) => Self::negative_infinity(),
+            (NumberClass::PositiveInfinity, _) | (_, NumberClass::PositiveInfinity) => Self::positive_infinity(),
+
+            (NumberClass::NegativeZero, NumberClass::NegativeZero) => Self::negative_zero(),
+            (NumberClass::PositiveZero, NumberClass::PositiveZero) |
+            (NumberClass::NegativeZero, NumberClass::PositiveZero) |
+            (NumberClass::PositiveZero, NumberClass::NegativeZero) => Self::positive_zero(),
+
+            (NumberClass::PositiveZero, _) | (NumberClass::NegativeZero, _) => b,
+            (_, NumberClass::PositiveZero) | (_, NumberClass::NegativeZero) => a,
+
+            // at this point, we know that both numbers are normal or subnormal
+            (_, _) => {
+                // 1. divide the mantissa of the smaller number to align the decimal point
+                let denormal_exponent = if a_biased_exponent > b_biased_exponent {
+                    let shift = a_biased_exponent - b_biased_exponent;
+                    b_mantissa = Self::divide_by_tens_power(b_mantissa, shift);
+                    a_biased_exponent
+                } else {
+                    let shift = b_biased_exponent - a_biased_exponent;
+                    a_mantissa = Self::divide_by_tens_power(a_mantissa, shift);
+                    b_biased_exponent
+                };
+
+                // 2. add the mantissa of the smaller number to the mantissa of the larger number
+                let denormal_mantissa = a_mantissa + b_mantissa
+
+                // 3. normalize the result
+                let (normalized_exponent, normalized_mantissa) = Self::normalize(denormal_exponent, denormal_mantissa);
+
+                // 4. round the result
+                let round_mantissa = Self::round(normalized_mantissa);
+
+                // 5. construct the result
+                Self::from_parts(normalized_exponent, round_mantissa)
+            }
+        }
     }
 }
+
+impl Neg<Self> for Decimal64 {
+    fn neg(self) -> Self {
+        if self.is_exotic() {
+            return self;
+        }
+
+        self.0 ^= 1 << (Self::K - 1);
+        self
+    }
+}
+
+impl Sub<Self> for Decimal64 {
+    fn sub(self, other: Self) -> Self {
+        self + other.neg()
+    }
+}
+
+impl Mul<Self> for Decimal64 {
+    fn mul(self, other: Self) -> Self {
+        let (a, b) = if self >= other {
+            (self, other)
+        } else {
+            (other, self)
+        };        
+
+        let (a_biased_exponent, a_mantissa, a_class) = a.into_parts();
+        let (b_biased_exponent, b_mantissa, b_class) = b.into_parts();
+
+        match (a_class, b_class) {
+            (NumberClass::SignalingNaN, _) | (_, NumberClass::SignalingNaN) => Self::quiet_nan(),
+            (NumberClass::QuietNaN, _) | (_, NumberClass::QuietNaN) => Self::quiet_nan(),
+
+            (NumberClass::PositiveInfinity, NumberClass::PositiveZero) |
+            (NumberClass::PositiveZero, NumberClass::PositiveInfinity) |
+            (NumberClass::PositiveInfinity, NumberClass::NegativeZero) |
+            (NumberClass::NegativeZero, NumberClass::PositiveInfinity) |
+            (NumberClass::NegativeInfinity, NumberClass::PositiveZero) |
+            (NumberClass::PositiveZero, NumberClass::NegativeInfinity) |
+            (NumberClass::NegativeInfinity, NumberClass::NegativeZero) |
+            (NumberClass::NegativeZero, NumberClass::NegativeInfinity) => Self::quiet_nan(),
+
+            (NumberClass::PositiveInfinity, x) |
+            (x, NumberClass::PositiveInfinity) => {
+                if b.is_negative() {
+                    Self::negative_infinity()
+                } else {
+                    Self::positive_infinity()
+                }
+            },
+            (NumberClass::NegativeInfinity, x) |
+            (x, NumberClass::NegativeInfinity) => {
+                if b.is_negative() {
+                    Self::positive_infinity()
+                } else {
+                    Self::negative_infinity()
+                }
+            },
+
+            (NumberClass::NegativeZero, NumberClass::NegativeZero) |
+            (NumberClass::PositiveZero, NumberClass::PositiveZero) => Self::positive_zero(),
+            (NumberClass::NegativeZero, NumberClass::PositiveZero) |
+            (NumberClass::PositiveZero, NumberClass::NegativeZero) => Self::negative_zero(),
+
+            (NumberClass::PositiveZero, x) |
+            (x, NumberClass::PositiveZero) => {
+                if b.is_negative() {
+                    Self::negative_zero()
+                } else {
+                    Self::positive_zero()
+                }
+            },
+
+            (NumberClass::NegativeZero, x) |
+            (x, NumberClass::NegativeZero) => {
+                if b.is_negative() {
+                    Self::positive_zero()
+                } else {
+                    Self::negative_zero()
+                }
+            },
+
+            // at this point, we know that both numbers are normal or subnormal
+            (_, _) => {
+                // 1. Add the exponents of the two numbers
+                let denormal_exponent = a_biased_exponent + b_biased_exponent - 255; // TODO: parameterize
+            
+                // 2. Multiply the mantissas of the two numbers
+                let denormal_mantissa = (a_mantissa as u128 * b_mantissa as u128);
+                
+            }
+        } 
+    }
+}
+
+impl Div<Self> for Decimal64 {
+    fn div(self, other: Self) -> Self {
+        let (a, b) = if self >= other {
+            (self, other)
+        } else {
+            (other, self)
+        };        
+
+        let (a_biased_exponent, a_mantissa, a_class) = a.into_parts();
+        let (b_biased_exponent, b_mantissa, b_class) = b.into_parts();
+
+        match (a_class, b_class) {
+            (NumberClass::SignalingNaN, _) | (_, NumberClass::SignalingNaN) => Self::quiet_nan(),
+            (NumberClass::QuietNaN, _) | (_, NumberClass::QuietNaN) => Self::quiet_nan(),
+            (NumberClass::NegativeInfinity, NumberClass::PositiveInfinity) | 
+            (NumberClass::PositiveInfinity, NumberClass::NegativeInfinity) => Self::quiet_nan(),
+            (NumberClass::NegativeInfinity, _) | (_, NumberClass::NegativeInfinity) => Self::negative_infinity(),
+            (NumberClass::PositiveInfinity, _) | (_, NumberClass::PositiveInfinity) => Self::positive_infinity(),
+
+            (NumberClass::NegativeZero, NumberClass::NegativeZero) => Self::negative_zero(),
+            (NumberClass::PositiveZero, NumberClass::PositiveZero) |
+            (NumberClass::NegativeZero, NumberClass::PositiveZero) |
+            (NumberClass::PositiveZero, NumberClass::NegativeZero) => Self::positive_zero(),
+
+            (NumberClass::PositiveZero, _) | (NumberClass::NegativeZero, _) => b,
+            (_, NumberClass::PositiveZero) | (_, NumberClass::NegativeZero) => a,
+
+            // at this point, we know that both numbers are normal or subnormal
+            (_, _) => {
+                // 1. divide the mantissa of the smaller number to align the decimal point
+                let denormal_exponent = if a_biased_exponent > b_biased_exponent {
+                    let shift = a_biased_exponent - b_biased_exponent;
+                    b_mantissa = Self::divide_by_tens_power(b_mantissa, shift);
+                    a_biased_exponent
+                } else {
+                    let shift = b_biased_exponent - a_biased_exponent;
+                    a_mantissa = Self::divide_by_tens_power(a_mantissa, shift);
+                    b_biased_exponent
+                }

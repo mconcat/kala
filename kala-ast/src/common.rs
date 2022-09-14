@@ -22,7 +22,7 @@ impl From<ast::Ident> for Identifier {
 /// Literals
 
 pub struct NumberLiteral{
-    pub value: i64,
+    pub value: i64, // TODO: use decimal64
 }
 
 pub struct StringLiteral {

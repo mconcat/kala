@@ -1,368 +1,58 @@
-// Jessie AST definitions, with neccesary interpreter runtime metadata.
-
-pub use crate::common::{Identifier, DeclarationKind, Literal};
-pub use crate::pattern::Pattern;
-
-////////////////////////////////////////////////////////////////////////
-/// Module
-
-pub enum Program {
-//    Module(Module),
-    Script(Script),
-}
-
-pub struct Script {
-    pub body: Vec<Statement>
-}
-
-
-
-
-////////////////////////////////////////////////////////////////////////
-/// Statements
-/// 
-/// Statements are the basic building blocks of a program. They are
-/// executed in order, and can be nested.
-
-pub enum Statement {
-    // Declarations
-    VariableDeclaration(Box<VariableDeclaration>),
-    FunctionDeclaration(Box<FunctionDeclaration>),
-
-    // Block
-    Block(Box<BlockStatement>),
-
-    // If
-    If(Box<IfStatement>),
-
-    // Breakable Statements
-    For(Box<ForStatement>),
-    ForOf(Box<ForOfStatement>),
-    While(Box<WhileStatement>),
-    Switch(Box<SwitchStatement>),
-
-    // Try-catch
-    Try(Box<TryStatement>),
-
-    // Terminators
-    Break(Box<BreakStatement>),
-    Continue(Box<ContinueStatement>),
-    Return(Box<ReturnStatement>),
-    Throw(Box<ThrowStatement>),
-
-    // Expression
-    Expression(Box<ExpressionStatement>),
-}
-
-////////////////////////////////////////////////////////////////////////
-// Declaration statements
-
-pub struct VariableDeclarator {
-    pub binding: Pattern,
-    pub init: Option<Expression>,
-}
-
-pub struct VariableDeclaration {
-    pub kind: DeclarationKind,
-    pub declarators: Vec<VariableDeclarator>,
-}
-
-pub struct FunctionDeclaration {
-    pub function: FunctionExpression
-}
-
-////////////////////////////////////////////////////////////////////////
-/// Control flow
-
-pub struct BlockStatement {
-    pub body: Vec<Statement>,
-}
-
-pub struct IfStatement {
-    pub test: Expression,
-    pub consequent: Statement,
-    pub alternate: Option<Statement>,
-}
-
-pub struct ForStatement {
-    pub kind: DeclarationKind,
-    pub init: Option<VariableDeclaration>,
-    pub test: Option<Expression>,
-    pub update: Option<Expression>,
-    pub body: Statement,
-}
-
-pub struct ForOfStatement {
-    pub kind: DeclarationKind,
-    pub decl: VariableDeclarator,
-    pub body: Statement,
-}
-
-pub struct WhileStatement {
-    pub test: Expression,
-    pub body: Statement,
-}
-
-pub struct SwitchStatement {
-    pub discriminant: Expression,
-    pub cases: Vec<SwitchCase>,
-}
-
-pub struct SwitchCase {
-    pub cases: Vec<CaseLabel>,
-    pub body: BlockStatement, // must end with a terminator
-}
-
-pub enum CaseLabel {
-    Test(Expression),
-    Default,
-}
-
-pub struct TryStatement {
-    pub block: BlockStatement,
-    pub handler: Option<(Pattern, BlockStatement)>,
-    pub finalizer: Option<BlockStatement>,
-}
-
-////////////////////////////////////////////////////////////////////////
-// Terminators
-
-pub enum Terminator {
-    Break(BreakStatement),
-    Continue(ContinueStatement),
-    Return(ReturnStatement),
-    Throw(ThrowStatement),
-}
-
-pub struct BreakStatement{}
-
-pub struct ContinueStatement{}
-
-pub struct ReturnStatement{
-    pub argument: Option<Expression>
-}
-
-pub struct ThrowStatement{
-    pub argument: Expression
-}
-
-////////////////////////////////////////////////////////////////////////
-/// Expression Statements
-
-pub struct ExpressionStatement {
-    pub expression: Expression
-}
-
-////////////////////////////////////////////////////////////////////////
-/// Expressions
-
-pub enum Expression {
-    // Literals
-    Literal(Box<Literal>),
-    Array(Box<ArrayExpression>),
-    Object(Box<ObjectExpression>),
-    Function(Box<FunctionExpression>),
-    ArrowFunction(Box<ArrowFunctionExpression>),
-
-    // Operations
-    Unary(Box<UnaryExpression>),
-    Binary(Box<BinaryExpression>),
-    Logical(Box<LogicalExpression>),
-    Conditional(Box<ConditionalExpression>),
-    Update(Box<UpdateExpression>),
-
-    // Variable Expressions
-    Variable(Box<VariableExpression>),
-    Assignment(Box<AssignmentExpression>),
-    Member(Box<MemberExpression>),
-    Call(Box<CallExpression>),
-
-    // Parenthesized
-    Parenthesized(Box<ParenthesizedExpression>),
-}
-
-pub struct ArrayExpression {
-    pub elements: Vec<ParameterElement>,
-}
-
-pub enum ParameterElement {
-    Parameter(Expression),
-    Spread(Expression),
-}
-
-pub struct ObjectExpression {
-    pub properties: Vec<ObjectElement>,
-}
-
-pub enum ObjectElement {
-    KeyValue(Identifier, Expression),
-    Shorthand(Identifier),
-    Getter(Identifier, BlockStatement), // Must return a value
-    Setter(Identifier, Pattern, BlockStatement), // Must not return a value
-    Method(FunctionExpression),
-    Spread(Expression),
-}
-
-pub struct FunctionExpression {
-    pub name: Option<Identifier>,
-    pub params: Vec<Pattern>,
-    pub body: BlockStatement,
-}
-
-pub struct ArrowFunctionExpression {
-    pub params: Vec<Pattern>,
-    pub body: ArrowFunctionBody
-}
-
-pub enum ArrowFunctionBody {
-    Block(BlockStatement),
-    Expression(Expression),
-}
-
-////////////////////////////////////////////////////////////////////////
-/// Operations
-
-pub struct UnaryExpression {
-    pub operator: UnaryOperator,
-    pub argument: Expression,
-}
-
-pub enum UnaryOperator {
-    Void,
-    TypeOf,
-    Plus,
-    Minus,
-    Bang,
-    Tilde,
-}
-
-pub struct BinaryExpression {
-    pub operator: BinaryOperator,
-    pub left: Expression,
-    pub right: Expression,
-}
-
-pub enum BinaryOperator {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    Pow,
-    BitAnd,
-    BitOr,
-    BitXor,
-    LeftShift,
-    RightShift,
-    UnsignedRightShift,
-    StrictEqual,
-    StrictNotEqual,
-    LessThan,
-    LessThanEqual,
-    GreaterThan,
-    GreaterThanEqual,
-}
-
-pub struct UpdateExpression {
-    pub operator: UpdateOperator,
-    pub argument: Expression,
-    pub prefix: bool,
-}
-
-pub enum UpdateOperator {
-    Increment,
-    Decrement,
-}
-
-pub struct LogicalExpression {
-    pub operator: LogicalOperator,
-    pub left: Expression,
-    pub right: Expression,
-}
-
-pub enum LogicalOperator {
-    And,
-    Or,
-    Coalesce,
-}
-
-pub struct ConditionalExpression {
-    pub test: Expression,
-    pub consequent: Expression,
-    pub alternate: Expression,
-}
-
-////////////////////////////////////////////////////////////////////////
-/// 
-/// Variable Expressions
-
-pub struct VariableExpression{
-    pub name: Identifier
-}
-
-pub struct AssignmentExpression {
-    pub operator: AssignmentOperator,
-    pub left: LValue,
-    pub right: Expression,
-}
-
-pub enum LValue {
-    Variable(Identifier),
-    Member(MemberExpression),
-}
-
-pub enum AssignmentOperator {
-    Assign,
-    /*
-    AddAssign,
-    SubAssign,
-    MulAssign,
-    DivAssign,
-    ModAssign,
-    PowAssign,
-    BitAndAssign,
-    BitOrAssign,
-    BitXorAssign,
-    LeftShiftAssign,
-    RightShiftAssign,
-    UnsignedRightShiftAssign,
-    */
-}
-
-pub struct MemberExpression {
-    pub object: Expression,
-    pub property: Member,
-}
-
-pub enum Member {
-    Computed(Expression),
-    Property(Identifier),
-}
-
-pub struct CallExpression {
-    pub callee: Expression,
-    pub arguments: Vec<ParameterElement>,
-}
-
-pub struct ParenthesizedExpression{
-    pub expression: Expression
-}
-
-////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////
-
-// SWC AST integration
-
 use core::panic;
 
 use swc_ecma_ast as ast;
 
+use crate::pattern::Pattern;
+use crate::common::*;
 
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+/// NodeF
+
+pub trait NodeF: Sized {
+    type Identifier: From<swc_ecma_ast::Ident> + From<swc_ecma_ast::PropName>;
+    type Variable;
+
+    type Statement: From<swc_ecma_ast::Stmt> + From<Statement<Self>>;
+    type Block: From<swc_ecma_ast::BlockStmt> + From<BlockStatement<Self>>;
+    type Expression: From<swc_ecma_ast::Expr> + From<Expression<Self>>;
+    type Function: From<swc_ecma_ast::Function> + From<FunctionExpression<Self>>;
+}
+
+pub struct LexicalNodeF;
+
+impl NodeF for LexicalNodeF {
+    type Identifier = Identifier;
+    type Variable = Identifier;
+
+    type Statement = Statement<Self>;
+    type Block = BlockStatement<Self>;
+    type Expression = Expression<Self>;
+    type Function = FunctionExpression<Self>;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+/// Module
 
 ////////////////////////////////////////////////////////////////////////
+/// Type definitions
 
-impl From<ast::Script> for Script {
+pub enum Program<F: NodeF> {
+//    Module(Module),
+    Script(Script<F>),
+}
+
+pub struct Script<F: NodeF> {
+    pub body: Vec<F::Statement>
+}
+
+////////////////////////////////////////////////////////////////////////
+/// SWC AST integration
+
+impl<F: NodeF> From<ast::Script> for Script<F> {
     fn from(script: ast::Script) -> Self {
         Script {
             body: script.body.into_iter().map(|stmt| stmt.into()).collect(),
@@ -370,7 +60,148 @@ impl From<ast::Script> for Script {
     }
 }
 
-impl From<ast::Stmt> for Statement {
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+/// Statements
+
+////////////////////////////////////////////////////////////////////////
+/// Type definitions
+
+pub enum Statement<F: NodeF> {
+    // Declarations
+    VariableDeclaration(Box<VariableDeclaration<F>>),
+    FunctionDeclaration(Box<FunctionDeclaration<F>>),
+
+    // Block
+    Block(Box<F::Block>),
+
+    // If
+    If(Box<IfStatement<F>>),
+
+    // Breakable Statements
+    For(Box<ForStatement<F>>),
+    ForOf(Box<ForOfStatement<F>>),
+    While(Box<WhileStatement<F>>),
+    Switch(Box<SwitchStatement<F>>),
+
+    // Try-catch
+    Try(Box<TryStatement<F>>),
+
+    // Terminators
+    Break(Box<BreakStatement>),
+    Continue(Box<ContinueStatement>),
+    Return(Box<ReturnStatement<F>>),
+    Throw(Box<ThrowStatement<F>>),
+
+    // Expression
+    Expression(Box<ExpressionStatement<F>>),
+}
+
+////////////////////////////////////////////////////////////////////////
+// Declaration statements
+
+pub struct VariableDeclarator<F: NodeF> {
+    pub binding: Pattern,
+    pub init: Option<F::Expression>,
+}
+
+pub struct VariableDeclaration<F: NodeF> {
+    pub kind: DeclarationKind,
+    pub declarators: Vec<VariableDeclarator<F>>,
+}
+
+pub struct FunctionDeclaration<F: NodeF> {
+    pub function: F::Function
+}
+
+////////////////////////////////////////////////////////////////////////
+/// Control flow
+
+pub struct BlockStatement<F: NodeF> {
+    pub body: Vec<F::Statement>,
+}
+
+pub struct IfStatement<F: NodeF> {
+    pub test: F::Expression,
+    pub consequent: F::Statement,
+    pub alternate: Option<F::Statement>,
+}
+
+pub struct ForStatement<F: NodeF> {
+    pub kind: DeclarationKind,
+    pub init: Option<VariableDeclaration<F>>,
+    pub test: Option<F::Expression>,
+    pub update: Option<F::Expression>,
+    pub body: F::Statement,
+}
+
+pub struct ForOfStatement<F: NodeF> {
+    pub kind: DeclarationKind,
+    pub decl: VariableDeclarator<F>,
+    pub body: F::Statement,
+}
+
+pub struct WhileStatement<F: NodeF> {
+    pub test: F::Expression,
+    pub body: F::Statement,
+}
+
+pub struct SwitchStatement<F: NodeF> {
+    pub discriminant: F::Expression,
+    pub cases: Vec<SwitchCase<F>>,
+}
+
+pub struct SwitchCase<F: NodeF> {
+    pub cases: Vec<CaseLabel<F>>,
+    pub body: F::Block, // must end with a terminator
+}
+
+pub enum CaseLabel<F: NodeF> {
+    Test(F::Expression),
+    Default,
+}
+
+pub struct TryStatement<F: NodeF> {
+    pub block: BlockStatement<F>,
+    pub handler: Option<(Pattern, BlockStatement<F>)>,
+    pub finalizer: Option<BlockStatement<F>>,
+}
+
+////////////////////////////////////////////////////////////////////////
+// Terminators
+
+pub enum Terminator<F: NodeF> {
+    Break(BreakStatement),
+    Continue(ContinueStatement),
+    Return(ReturnStatement<F>),
+    Throw(ThrowStatement<F>),
+}
+
+pub struct BreakStatement{}
+
+pub struct ContinueStatement{}
+
+pub struct ReturnStatement<F: NodeF> {
+    pub argument: Option<F::Expression>
+}
+
+pub struct ThrowStatement<F: NodeF> {
+    pub argument: F::Expression
+}
+
+////////////////////////////////////////////////////////////////////////
+/// Expression Statements
+
+pub struct ExpressionStatement<F: NodeF> {
+    pub expression: F::Expression
+}
+
+////////////////////////////////////////////////////////////////////////
+/// SWC integration
+
+impl<F: NodeF> From<ast::Stmt> for Statement<F> {
     fn from(stmt: ast::Stmt) -> Self {
         match stmt {
             ast::Stmt::Decl(decl) => match decl {
@@ -400,7 +231,7 @@ impl From<ast::Stmt> for Statement {
 
 
 
-impl From<ast::VarDecl> for VariableDeclaration {
+impl<F: NodeF> From<ast::VarDecl> for VariableDeclaration<F> {
     fn from(decl: ast::VarDecl) -> Self {
         VariableDeclaration {
             kind: match decl.kind {
@@ -413,7 +244,7 @@ impl From<ast::VarDecl> for VariableDeclaration {
     }
 }
 
-impl From<ast::VarDeclarator> for VariableDeclarator {
+impl<F: NodeF> From<ast::VarDeclarator> for VariableDeclarator<F> {
     fn from(decl: ast::VarDeclarator) -> Self {
         VariableDeclarator {
             binding: decl.name.into(),
@@ -422,15 +253,15 @@ impl From<ast::VarDeclarator> for VariableDeclarator {
     }
 }
 
-impl From<ast::FnDecl> for FunctionDeclaration {
+impl<F: NodeF> From<ast::FnDecl> for FunctionDeclaration<F> {
     fn from(decl: ast::FnDecl) -> Self {
-        let mut function: FunctionExpression = decl.function.into();
+        let mut function: FunctionExpression<F> = decl.function.into();
         function.name = Some(decl.ident.into());
-        FunctionDeclaration { function }
+        FunctionDeclaration { function: function.into() }
     }
 }
 
-impl From<ast::BlockStmt> for BlockStatement {
+impl<F: NodeF> From<ast::BlockStmt> for BlockStatement<F> {
     fn from(stmt: ast::BlockStmt) -> Self {
         BlockStatement {
             body: stmt.stmts.into_iter().map(|stmt| stmt.into()).collect(),
@@ -438,7 +269,7 @@ impl From<ast::BlockStmt> for BlockStatement {
     }
 }
 
-impl From<ast::IfStmt> for IfStatement {
+impl<F: NodeF> From<ast::IfStmt> for IfStatement<F> {
     fn from(stmt: ast::IfStmt) -> Self {
         IfStatement {
             test: (*stmt.test).into(),
@@ -448,7 +279,7 @@ impl From<ast::IfStmt> for IfStatement {
     }
 }
 
-impl From<ast::ForStmt> for ForStatement {
+impl<F: NodeF> From<ast::ForStmt> for ForStatement<F> {
     fn from(stmt: ast::ForStmt) -> Self {
         /*
         ForStatement {
@@ -462,13 +293,13 @@ impl From<ast::ForStmt> for ForStatement {
     }
 }
 
-impl From<ast::ForOfStmt> for ForOfStatement {
+impl<F: NodeF> From<ast::ForOfStmt> for ForOfStatement<F> {
     fn from(stmt: ast::ForOfStmt) -> Self {
         unimplemented!()
     }
 }
 
-impl From<ast::WhileStmt> for WhileStatement {
+impl<F: NodeF> From<ast::WhileStmt> for WhileStatement<F> {
     fn from(stmt: ast::WhileStmt) -> Self {
         WhileStatement {
             test: (*stmt.test).into(),
@@ -477,7 +308,7 @@ impl From<ast::WhileStmt> for WhileStatement {
     }
 }
 
-impl From<ast::SwitchStmt> for SwitchStatement {
+impl<F: NodeF> From<ast::SwitchStmt> for SwitchStatement<F> {
     fn from(stmt: ast::SwitchStmt) -> Self {
         SwitchStatement {
             discriminant: (*stmt.discriminant).into(),
@@ -486,7 +317,7 @@ impl From<ast::SwitchStmt> for SwitchStatement {
     }
 }
 
-impl From<ast::SwitchCase> for SwitchCase {
+impl<F: NodeF> From<ast::SwitchCase> for SwitchCase<F> {
     fn from(case: ast::SwitchCase) -> Self {
         /*
         SwitchCase {
@@ -498,7 +329,7 @@ impl From<ast::SwitchCase> for SwitchCase {
     }
 }
 
-impl From<ast::TryStmt> for TryStatement {
+impl<F: NodeF> From<ast::TryStmt> for TryStatement<F> {
     fn from(stmt: ast::TryStmt) -> Self {
         /*
         TryStatement {
@@ -527,7 +358,7 @@ impl From<ast::ContinueStmt> for ContinueStatement {
     }
 }
 
-impl From<ast::ReturnStmt> for ReturnStatement {
+impl<F: NodeF> From<ast::ReturnStmt> for ReturnStatement<F> {
     fn from(stmt: ast::ReturnStmt) -> Self {
         ReturnStatement {
             argument: stmt.arg.map(|arg| (*arg).into()),
@@ -535,7 +366,7 @@ impl From<ast::ReturnStmt> for ReturnStatement {
     }
 }
 
-impl From<ast::ThrowStmt> for ThrowStatement {
+impl<F: NodeF> From<ast::ThrowStmt> for ThrowStatement<F> {
     fn from(stmt: ast::ThrowStmt) -> Self {
         ThrowStatement {
             argument: (*stmt.arg).into(),
@@ -543,7 +374,7 @@ impl From<ast::ThrowStmt> for ThrowStatement {
     }
 }
 
-impl From<ast::ExprStmt> for ExpressionStatement {
+impl<F: NodeF> From<ast::ExprStmt> for ExpressionStatement<F> {
     fn from(stmt: ast::ExprStmt) -> Self {
         ExpressionStatement {
             expression: (*stmt.expr).into(),
@@ -551,7 +382,211 @@ impl From<ast::ExprStmt> for ExpressionStatement {
     }
 }
 
-impl From<ast::Expr> for Expression {
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+/// Expressions
+
+///////////////////////////////////////////////////////////////////////////////
+/// Type definitions
+
+pub enum Expression<F: NodeF> {
+    // Literals
+    Literal(Box<Literal>),
+    Array(Box<ArrayExpression<F>>),
+    Object(Box<ObjectExpression<F>>),
+    Function(Box<FunctionExpression<F>>),
+    ArrowFunction(Box<ArrowFunctionExpression<F>>),
+
+    // Operations
+    Unary(Box<UnaryExpression<F>>),
+    Binary(Box<BinaryExpression<F>>),
+    Logical(Box<LogicalExpression<F>>),
+    Conditional(Box<ConditionalExpression<F>>),
+    Update(Box<UpdateExpression<F>>),
+
+    // Variable Expressions
+    Variable(Box<VariableExpression<F>>),
+    Assignment(Box<AssignmentExpression<F>>),
+    Member(Box<MemberExpression<F>>),
+    Call(Box<CallExpression<F>>),
+
+    // Parenthesized
+    Parenthesized(Box<ParenthesizedExpression<F>>),
+}
+
+pub struct ArrayExpression<F: NodeF> {
+    pub elements: Vec<ParameterElement<F>>,
+}
+
+pub enum ParameterElement<F: NodeF> {
+    Parameter(F::Expression),
+    Spread(F::Expression),
+}
+
+pub struct ObjectExpression<F: NodeF> {
+    pub properties: Vec<ObjectElement<F>>,
+}
+
+pub enum ObjectElement<F: NodeF> {
+    KeyValue(F::Identifier, F::Expression),
+    Shorthand(F::Identifier),
+    Getter(F::Identifier, F::Block), // Must return a value
+    Setter(F::Identifier, F::Identifier, F::Block), // Must not return a value
+    Method(F::Function),
+    Spread(F::Expression),
+}
+
+pub struct FunctionExpression<F: NodeF> {
+    pub name: Option<F::Identifier>,
+    pub params: Vec<Pattern>,
+    pub body: F::Block,
+}
+
+pub struct ArrowFunctionExpression<F: NodeF> {
+    pub params: Vec<Pattern>,
+    pub body: ArrowFunctionBody<F>
+}
+
+pub enum ArrowFunctionBody<F: NodeF> {
+    Block(F::Block),
+    Expression(F::Expression),
+}
+
+////////////////////////////////////////////////////////////////////////
+/// Operations
+
+pub struct UnaryExpression<F: NodeF> {
+    pub operator: UnaryOperator,
+    pub argument: F::Expression,
+}
+
+pub enum UnaryOperator {
+    Void,
+    TypeOf,
+    Plus,
+    Minus,
+    Bang,
+    Tilde,
+}
+
+pub struct BinaryExpression<F: NodeF> {
+    pub operator: BinaryOperator,
+    pub left: F::Expression,
+    pub right: F::Expression,
+}
+
+pub enum BinaryOperator {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Pow,
+    BitAnd,
+    BitOr,
+    BitXor,
+    LeftShift,
+    RightShift,
+    UnsignedRightShift,
+    StrictEqual,
+    StrictNotEqual,
+    LessThan,
+    LessThanEqual,
+    GreaterThan,
+    GreaterThanEqual,
+}
+
+pub struct UpdateExpression<F: NodeF> {
+    pub operator: UpdateOperator,
+    pub argument: F::Expression,
+    pub prefix: bool,
+}
+
+pub enum UpdateOperator {
+    Increment,
+    Decrement,
+}
+
+pub struct LogicalExpression<F: NodeF> {
+    pub operator: LogicalOperator,
+    pub left: F::Expression,
+    pub right: F::Expression,
+}
+
+pub enum LogicalOperator {
+    And,
+    Or,
+    Coalesce,
+}
+
+pub struct ConditionalExpression<F: NodeF> {
+    pub test: F::Expression,
+    pub consequent: F::Expression,
+    pub alternate: F::Expression,
+}
+
+////////////////////////////////////////////////////////////////////////
+/// 
+/// Variable Expressions
+
+pub struct VariableExpression<F: NodeF> {
+    pub name: F::Identifier
+}
+
+pub struct AssignmentExpression<F: NodeF> {
+    pub operator: AssignmentOperator,
+    pub left: LValue<F>,
+    pub right: F::Expression,
+}
+
+pub enum LValue<F: NodeF> {
+    Variable(F::Identifier),
+    Member(MemberExpression<F>),
+}
+
+pub enum AssignmentOperator {
+    Assign,
+    /*
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    ModAssign,
+    PowAssign,
+    BitAndAssign,
+    BitOrAssign,
+    BitXorAssign,
+    LeftShiftAssign,
+    RightShiftAssign,
+    UnsignedRightShiftAssign,
+    */
+}
+
+pub struct MemberExpression<F: NodeF> {
+    pub object: F::Expression,
+    pub property: Member<F>,
+}
+
+pub enum Member<F: NodeF> {
+    Computed(F::Expression),
+    Property(F::Identifier),
+}
+
+pub struct CallExpression<F: NodeF> {
+    pub callee: F::Expression,
+    pub arguments: Vec<ParameterElement<F>>,
+}
+
+pub struct ParenthesizedExpression<F: NodeF> {
+    pub expression: F::Expression
+}
+
+////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////
+/// SWC integration
+
+impl<F: NodeF> From<ast::Expr> for Expression<F> {
     fn from(expr: ast::Expr) -> Self {
         match expr {
             ast::Expr::Lit(lit) => Expression::Literal(Box::new(lit.into())),
@@ -583,15 +618,16 @@ impl From<ast::Expr> for Expression {
 }
 
 
-impl From<ast::ArrayLit> for ArrayExpression {
+impl<F: NodeF> From<ast::ArrayLit> for ArrayExpression<F> {
     fn from(array: ast::ArrayLit) -> Self {
         ArrayExpression {
-            elements: array.elems.into_iter().map(|elem| elem.map(|elem| elem.into()).unwrap_or(ParameterElement::Parameter(Expression::Literal(Box::new(Literal::Undefined))))).collect(),
+            elements: array.elems.into_iter().map(|elem| elem.map(|elem| elem.into()).unwrap_or(ParameterElement::Parameter(Expression::Literal(Box::new(Literal::Undefined)).into()))).collect(),
         }
     }
 }
 
-impl From<ast::ObjectLit> for ObjectExpression {
+
+impl<F: NodeF> From<ast::ObjectLit> for ObjectExpression<F> {
     fn from(object: ast::ObjectLit) -> Self {
         ObjectExpression {
             properties: object.props.into_iter().map(|prop| prop.into()).collect(),
@@ -599,7 +635,7 @@ impl From<ast::ObjectLit> for ObjectExpression {
     }
 }
 
-impl From<ast::PropOrSpread> for ObjectElement {
+impl<F: NodeF> From<ast::PropOrSpread> for ObjectElement<F> {
     fn from(prop: ast::PropOrSpread) -> Self {
         match prop {
             ast::PropOrSpread::Prop(prop) => (*prop).into(), 
@@ -608,13 +644,16 @@ impl From<ast::PropOrSpread> for ObjectElement {
     }
 }
 
-impl From<ast::Prop> for ObjectElement {
+impl<F: NodeF> From<ast::Prop> for ObjectElement<F> {
     fn from(prop: ast::Prop) -> Self {
         match prop {
             ast::Prop::Shorthand(ident) => ObjectElement::Shorthand(ident.into()),
             ast::Prop::KeyValue(key_value) => ObjectElement::KeyValue(key_value.key.into(), (*key_value.value).into()),
             ast::Prop::Getter(getter) => ObjectElement::Getter(getter.key.into(), getter.body.unwrap().into()),
-            ast::Prop::Setter(setter) => ObjectElement::Setter(setter.key.into(), setter.param.into(), setter.body.unwrap().into()),
+            ast::Prop::Setter(setter) => match setter.param {
+                ast::Pat::Ident(ident) => ObjectElement::Setter(setter.key.into(), ident.id.into(), setter.body.unwrap().into()),
+                _ => unimplemented!(),
+            },
             ast::Prop::Method(method) => ObjectElement::Method(method.function.into()),
             _ => unimplemented!(),
         }
@@ -630,27 +669,27 @@ impl From<ast::PropName> for Identifier {
     }
 }
 
-impl From<ast::FnExpr> for FunctionExpression {
+impl<F: NodeF> From<ast::FnExpr> for FunctionExpression<F> {
     fn from(fn_expr: ast::FnExpr) -> Self {
         FunctionExpression {
             name: fn_expr.ident.map(|ident| ident.into()),
             params: fn_expr.function.params.into_iter().map(|param| param.into()).collect(),
-            body: fn_expr.function.body.map(|x| x.into()).unwrap_or(BlockStatement{body: vec![]}),
+            body: fn_expr.function.body.expect("function body is required").into(),
         }
     }
 }
 
-impl From<ast::Function> for FunctionExpression {
+impl<F: NodeF> From<ast::Function> for FunctionExpression<F> {
     fn from(function: ast::Function) -> Self {
         FunctionExpression {
             name: None,
             params: function.params.into_iter().map(|param| param.into()).collect(),
-            body: function.body.map(|x| x.into()).unwrap_or(BlockStatement{body: vec![]}),
+            body: function.body.map(|x| x.into()).unwrap_or(BlockStatement{body: vec![]}.into()),
         }
     }
 }
 
-impl From<ast::ArrowExpr> for ArrowFunctionExpression {
+impl<F: NodeF> From<ast::ArrowExpr> for ArrowFunctionExpression<F> {
     fn from(arrow: ast::ArrowExpr) -> Self {
         if arrow.is_async || arrow.is_generator {
             unimplemented!()
@@ -665,7 +704,7 @@ impl From<ast::ArrowExpr> for ArrowFunctionExpression {
     }
 }
 
-impl From<ast::UnaryExpr> for UnaryExpression {
+impl<F: NodeF> From<ast::UnaryExpr> for UnaryExpression<F> {
     fn from(unary: ast::UnaryExpr) -> Self {
         UnaryExpression {
             operator: unary.op.into(),
@@ -688,7 +727,7 @@ impl From<ast::UnaryOp> for UnaryOperator {
     }
 }
 
-impl From<ast::UpdateExpr> for UpdateExpression {
+impl<F: NodeF> From<ast::UpdateExpr> for UpdateExpression<F> {
     fn from(update: ast::UpdateExpr) -> Self {
         UpdateExpression {
             operator: update.op.into(),
@@ -707,7 +746,7 @@ impl From<ast::UpdateOp> for UpdateOperator {
     }
 }
 
-impl From<ast::BinExpr> for BinaryExpression {
+impl<F: NodeF> From<ast::BinExpr> for BinaryExpression<F> {
     fn from(bin: ast::BinExpr) -> Self {
         BinaryExpression {
             operator: match bin.op {
@@ -743,7 +782,7 @@ impl From<ast::BinExpr> for BinaryExpression {
     }
 }
 
-impl From<ast::BinExpr> for LogicalExpression {
+impl<F: NodeF> From<ast::BinExpr> for LogicalExpression<F> {
     fn from(bin: ast::BinExpr) -> Self {
         LogicalExpression {
             operator: match bin.op {
@@ -758,7 +797,7 @@ impl From<ast::BinExpr> for LogicalExpression {
     }
 }
 
-impl From<ast::CondExpr> for ConditionalExpression {
+impl<F: NodeF> From<ast::CondExpr> for ConditionalExpression<F> {
     fn from(cond: ast::CondExpr) -> Self {
         ConditionalExpression {
             test: (*cond.test).into(),
@@ -768,15 +807,13 @@ impl From<ast::CondExpr> for ConditionalExpression {
     }
 }
 
-impl From<ast::Ident> for VariableExpression {
+impl<F: NodeF> From<ast::Ident> for VariableExpression<F> {
     fn from(ident: ast::Ident) -> Self {
-        VariableExpression {
-            name: Identifier{name: ident.sym.to_string()},
-        }
+        VariableExpression { name: ident.into() }
     }
 }
 
-impl From<ast::AssignExpr> for AssignmentExpression {
+impl<F: NodeF> From<ast::AssignExpr> for AssignmentExpression<F> {
     fn from(assign: ast::AssignExpr) -> Self {
         AssignmentExpression {
             operator: match assign.op {
@@ -801,7 +838,7 @@ impl From<ast::AssignExpr> for AssignmentExpression {
     }
 }
 
-impl From<ast::PatOrExpr> for LValue {
+impl<F: NodeF> From<ast::PatOrExpr> for LValue<F> {
     fn from(pat: ast::PatOrExpr) -> Self {
         match pat {
             ast::PatOrExpr::Expr(expr) => match *expr {
@@ -814,7 +851,7 @@ impl From<ast::PatOrExpr> for LValue {
     }
 }
 
-impl From<ast::MemberExpr> for MemberExpression {
+impl<F: NodeF> From<ast::MemberExpr> for MemberExpression<F> {
     fn from(member: ast::MemberExpr) -> Self {
         MemberExpression {
             object: (*member.obj).into(),
@@ -827,16 +864,20 @@ impl From<ast::MemberExpr> for MemberExpression {
     }
 }
 
-impl From<ast::CallExpr> for CallExpression {
+impl<F: NodeF> From<ast::CallExpr> for CallExpression<F> {
     fn from(call: ast::CallExpr) -> Self {
         CallExpression {
-            callee: call.callee.into(),
+            callee: match call.callee {
+                ast::Callee::Expr(expr) => (*expr).into(),
+                ast::Callee::Super(_) => panic!("super is not supported"), 
+                ast::Callee::Import(_) => unimplemented!("import callee"),
+            },
             arguments: call.args.into_iter().map(|arg| arg.into()).collect(),
         }
     }
 }
 
-impl From<ast::ExprOrSpread> for ParameterElement {
+impl<F: NodeF> From<ast::ExprOrSpread> for ParameterElement<F> {
     fn from(expr_or_spread: ast::ExprOrSpread) -> Self {
         if expr_or_spread.spread.is_some() {
             ParameterElement::Spread((*expr_or_spread.expr).into())
@@ -846,17 +887,7 @@ impl From<ast::ExprOrSpread> for ParameterElement {
     }
 }
 
-impl From<ast::Callee> for Expression {
-    fn from(callee: ast::Callee) -> Self {
-        match callee {
-            ast::Callee::Expr(expr) => (*expr).into(),
-            ast::Callee::Super(_) => unimplemented!(),
-            ast::Callee::Import(_) => unimplemented!(),
-        }
-    }
-}
-
-impl From<ast::ParenExpr> for ParenthesizedExpression {
+impl<F: NodeF> From<ast::ParenExpr> for ParenthesizedExpression<F> {
     fn from(paren: ast::ParenExpr) -> Self {
         ParenthesizedExpression {
             expression: (*paren.expr).into(),
