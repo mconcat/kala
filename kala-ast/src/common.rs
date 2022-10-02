@@ -22,7 +22,7 @@ impl From<ast::Ident> for Identifier {
 /// Literals
 
 pub struct NumberLiteral{
-    pub value: i64, // TODO: use decimal64
+    pub value: f64, // TODO: use decimal64
 }
 
 pub struct StringLiteral {
@@ -51,11 +51,7 @@ const MIN_SAFE_INTEGER: f64 = -9007199254740991.0;
 
 impl From<f64> for NumberLiteral {
     fn from(num: f64) -> Self {
-        if num < MIN_SAFE_INTEGER || num > MAX_SAFE_INTEGER {
-            unimplemented!("Number literal is out of range");
-        } else {
-            NumberLiteral{value: num.round() as i64}
-        }
+        NumberLiteral{value: num}
     }
 }
 

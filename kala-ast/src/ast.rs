@@ -2,8 +2,8 @@ use core::panic;
 
 use swc_ecma_ast as ast;
 
-use crate::pattern::Pattern;
-use crate::common::*;
+pub use crate::pattern::Pattern;
+pub use crate::common::*;
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -11,18 +11,20 @@ use crate::common::*;
 /// NodeF
 
 pub trait NodeF: Sized {
-    type Identifier: From<swc_ecma_ast::Ident> + From<swc_ecma_ast::PropName>;
-    type Variable;
+    type Literal: From<Literal>;
+    type Identifier: From<Identifier>;
+    type Variable: From<Identifier>;
 
-    type Statement: From<swc_ecma_ast::Stmt> + From<Statement<Self>>;
-    type Block: From<swc_ecma_ast::BlockStmt> + From<BlockStatement<Self>>;
-    type Expression: From<swc_ecma_ast::Expr> + From<Expression<Self>>;
-    type Function: From<swc_ecma_ast::Function> + From<FunctionExpression<Self>>;
+    type Statement: From<Statement<Self>>;
+    type Block: From<BlockStatement<Self>>;
+    type Expression: From<Expression<Self>>;
+    type Function: From<FunctionExpression<Self>>;
 }
 
 pub struct LexicalNodeF;
 
 impl NodeF for LexicalNodeF {
+    type Literal = Literal;
     type Identifier = Identifier;
     type Variable = Identifier;
 
@@ -30,6 +32,36 @@ impl NodeF for LexicalNodeF {
     type Block = BlockStatement<Self>;
     type Expression = Expression<Self>;
     type Function = FunctionExpression<Self>;
+}
+
+pub fn into_identifier<F: NodeF>(expr: ast::Ident) -> F::Identifier{
+    let interim: Identifier = expr.into();
+    interim.into()
+}
+
+pub fn into_variable<F: NodeF>(expr: ast::Ident) -> F::Variable {
+    let interim: Identifier = expr.into();
+    interim.into()
+}
+
+pub fn into_expression<F: NodeF>(expr: ast::Expr) -> F::Expression {
+    let interim: Expression<F> = expr.into();
+    interim.into()
+}
+
+pub fn into_statement<F: NodeF>(expr: ast::Stmt) -> F::Statement {
+    let interim: Statement<F> = expr.into();
+    interim.into()
+}
+
+pub fn into_block<F: NodeF>(expr: ast::BlockStmt) -> F::Block {
+    let interim: BlockStatement<F> = expr.into();
+    interim.into()
+}
+
+pub fn into_function<F: NodeF>(expr: ast::Function) -> F::Function {
+    let interim: FunctionExpression<F> = expr.into();
+    interim.into()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -55,7 +87,7 @@ pub struct Script<F: NodeF> {
 impl<F: NodeF> From<ast::Script> for Script<F> {
     fn from(script: ast::Script) -> Self {
         Script {
-            body: script.body.into_iter().map(|stmt| stmt.into()).collect(),
+            body: script.body.into_iter().map(|stmt| into_statement::<F>(stmt)).collect(),
         }
     }
 }
@@ -212,7 +244,7 @@ impl<F: NodeF> From<ast::Stmt> for Statement<F> {
                 //ast::Decl::TsEnum(decl) => Statement::EnumDeclaration(decl.into()),
                 _ => unimplemented!(),
             },
-            ast::Stmt::Block(stmt) => Statement::Block(Box::new(stmt.into())),
+            ast::Stmt::Block(stmt) => Statement::Block(Box::new(into_block::<F>(stmt))),
             ast::Stmt::If(stmt) => Statement::If(Box::new(stmt.into())),
             ast::Stmt::For(stmt) => Statement::For(Box::new(stmt.into())),
             ast::Stmt::ForOf(stmt) => Statement::ForOf(Box::new(stmt.into())),
@@ -248,7 +280,7 @@ impl<F: NodeF> From<ast::VarDeclarator> for VariableDeclarator<F> {
     fn from(decl: ast::VarDeclarator) -> Self {
         VariableDeclarator {
             binding: decl.name.into(),
-            init: decl.init.map(|init| (*init).into()),
+            init: decl.init.map(|init| into_expression::<F>(*init)),
         }
     }
 }
@@ -256,31 +288,31 @@ impl<F: NodeF> From<ast::VarDeclarator> for VariableDeclarator<F> {
 impl<F: NodeF> From<ast::FnDecl> for FunctionDeclaration<F> {
     fn from(decl: ast::FnDecl) -> Self {
         let mut function: FunctionExpression<F> = decl.function.into();
-        function.name = Some(decl.ident.into());
+        function.name = Some(Identifier{ name: decl.ident.sym.to_string() }.into());
         FunctionDeclaration { function: function.into() }
     }
 }
 
 impl<F: NodeF> From<ast::BlockStmt> for BlockStatement<F> {
     fn from(stmt: ast::BlockStmt) -> Self {
-        BlockStatement {
-            body: stmt.stmts.into_iter().map(|stmt| stmt.into()).collect(),
-        }
+        let bodystmts: Vec<F::Statement> = stmt.stmts.into_iter().map(|stmt| into_statement::<F>(stmt)).collect();
+
+        BlockStatement { body: bodystmts }
     }
 }
 
 impl<F: NodeF> From<ast::IfStmt> for IfStatement<F> {
     fn from(stmt: ast::IfStmt) -> Self {
         IfStatement {
-            test: (*stmt.test).into(),
-            consequent: (*stmt.cons).into(),
-            alternate: stmt.alt.map(|stmt| (*stmt).into()),
+            test: into_expression::<F>(*stmt.test),
+            consequent: into_statement::<F>(*stmt.cons),
+            alternate: stmt.alt.map(|stmt| into_statement::<F>(*stmt)),
         }
     }
 }
 
 impl<F: NodeF> From<ast::ForStmt> for ForStatement<F> {
-    fn from(stmt: ast::ForStmt) -> Self {
+    fn from(_stmt: ast::ForStmt) -> Self {
         /*
         ForStatement {
             init: stmt.init.map(|init| init.into()),
@@ -294,31 +326,34 @@ impl<F: NodeF> From<ast::ForStmt> for ForStatement<F> {
 }
 
 impl<F: NodeF> From<ast::ForOfStmt> for ForOfStatement<F> {
-    fn from(stmt: ast::ForOfStmt) -> Self {
+    fn from(_stmt: ast::ForOfStmt) -> Self {
         unimplemented!()
     }
 }
 
 impl<F: NodeF> From<ast::WhileStmt> for WhileStatement<F> {
     fn from(stmt: ast::WhileStmt) -> Self {
+        let testexpr: Expression<F> = (*stmt.test).into();
+        let bodystmt: Statement<F> = (*stmt.body).into();
         WhileStatement {
-            test: (*stmt.test).into(),
-            body: (*stmt.body).into(),
+            test: testexpr.into(),
+            body: bodystmt.into(),
         }
     }
 }
 
 impl<F: NodeF> From<ast::SwitchStmt> for SwitchStatement<F> {
     fn from(stmt: ast::SwitchStmt) -> Self {
+        let discriminantexpr: Expression<F> = (*stmt.discriminant).into();
         SwitchStatement {
-            discriminant: (*stmt.discriminant).into(),
+            discriminant: discriminantexpr.into(),
             cases: stmt.cases.into_iter().map(|case| case.into()).collect(),
         }
     }
 }
 
 impl<F: NodeF> From<ast::SwitchCase> for SwitchCase<F> {
-    fn from(case: ast::SwitchCase) -> Self {
+    fn from(_case: ast::SwitchCase) -> Self {
         /*
         SwitchCase {
             test: case.test.map(|test| Box::new(test.into())),
@@ -330,7 +365,7 @@ impl<F: NodeF> From<ast::SwitchCase> for SwitchCase<F> {
 }
 
 impl<F: NodeF> From<ast::TryStmt> for TryStatement<F> {
-    fn from(stmt: ast::TryStmt) -> Self {
+    fn from(_stmt: ast::TryStmt) -> Self {
         /*
         TryStatement {
             block: stmt.block.into(),
@@ -343,7 +378,7 @@ impl<F: NodeF> From<ast::TryStmt> for TryStatement<F> {
 }
 
 impl From<ast::BreakStmt> for BreakStatement {
-    fn from(stmt: ast::BreakStmt) -> Self {
+    fn from(_stmt: ast::BreakStmt) -> Self {
         BreakStatement {
             // TODO: label
         }
@@ -351,7 +386,7 @@ impl From<ast::BreakStmt> for BreakStatement {
 }
 
 impl From<ast::ContinueStmt> for ContinueStatement {
-    fn from(stmt: ast::ContinueStmt) -> Self {
+    fn from(_stmt: ast::ContinueStmt) -> Self {
         ContinueStatement {
             // TODO: label
         }
@@ -360,24 +395,27 @@ impl From<ast::ContinueStmt> for ContinueStatement {
 
 impl<F: NodeF> From<ast::ReturnStmt> for ReturnStatement<F> {
     fn from(stmt: ast::ReturnStmt) -> Self {
+        let argument: Option<Expression<F>> = stmt.arg.map(|arg| (*arg).into());
         ReturnStatement {
-            argument: stmt.arg.map(|arg| (*arg).into()),
+            argument: argument.map(|arg| arg.into()),
         }
     }
 }
 
 impl<F: NodeF> From<ast::ThrowStmt> for ThrowStatement<F> {
     fn from(stmt: ast::ThrowStmt) -> Self {
+        let expr: Expression<F> = (*stmt.arg).into();
         ThrowStatement {
-            argument: (*stmt.arg).into(),
+            argument: expr.into(),
         }
     }
 }
 
 impl<F: NodeF> From<ast::ExprStmt> for ExpressionStatement<F> {
     fn from(stmt: ast::ExprStmt) -> Self {
+        let expr: Expression<F> = (*stmt.expr).into();
         ExpressionStatement {
-            expression: (*stmt.expr).into(),
+            expression: expr.into(),
         }
     }
 }
@@ -639,7 +677,7 @@ impl<F: NodeF> From<ast::PropOrSpread> for ObjectElement<F> {
     fn from(prop: ast::PropOrSpread) -> Self {
         match prop {
             ast::PropOrSpread::Prop(prop) => (*prop).into(), 
-            ast::PropOrSpread::Spread(spread) => ObjectElement::Spread((*spread.expr).into())
+            ast::PropOrSpread::Spread(spread) => ObjectElement::Spread(into_expression::<F>(*spread.expr))
         }
     }
 }
@@ -647,14 +685,14 @@ impl<F: NodeF> From<ast::PropOrSpread> for ObjectElement<F> {
 impl<F: NodeF> From<ast::Prop> for ObjectElement<F> {
     fn from(prop: ast::Prop) -> Self {
         match prop {
-            ast::Prop::Shorthand(ident) => ObjectElement::Shorthand(ident.into()),
-            ast::Prop::KeyValue(key_value) => ObjectElement::KeyValue(key_value.key.into(), (*key_value.value).into()),
-            ast::Prop::Getter(getter) => ObjectElement::Getter(getter.key.into(), getter.body.unwrap().into()),
+            ast::Prop::Shorthand(ident) => ObjectElement::Shorthand(into_identifier::<F>(ident)),
+            ast::Prop::KeyValue(key_value) => ObjectElement::KeyValue(Identifier::from(key_value.key).into(), into_expression::<F>(*key_value.value)),
+            ast::Prop::Getter(getter) => ObjectElement::Getter(Identifier::from(getter.key).into(), into_block::<F>(getter.body.unwrap())),
             ast::Prop::Setter(setter) => match setter.param {
-                ast::Pat::Ident(ident) => ObjectElement::Setter(setter.key.into(), ident.id.into(), setter.body.unwrap().into()),
+                ast::Pat::Ident(ident) => ObjectElement::Setter(Identifier::from(setter.key).into(), into_identifier::<F>(ident.id), into_block::<F>(setter.body.unwrap())),
                 _ => unimplemented!(),
             },
-            ast::Prop::Method(method) => ObjectElement::Method(method.function.into()),
+            ast::Prop::Method(method) => ObjectElement::Method(into_function::<F>(method.function)),
             _ => unimplemented!(),
         }
     }
@@ -672,9 +710,9 @@ impl From<ast::PropName> for Identifier {
 impl<F: NodeF> From<ast::FnExpr> for FunctionExpression<F> {
     fn from(fn_expr: ast::FnExpr) -> Self {
         FunctionExpression {
-            name: fn_expr.ident.map(|ident| ident.into()),
+            name: fn_expr.ident.map(|ident| into_identifier::<F>(ident)),
             params: fn_expr.function.params.into_iter().map(|param| param.into()).collect(),
-            body: fn_expr.function.body.expect("function body is required").into(),
+            body: into_block::<F>(fn_expr.function.body.expect("function body is required")),
         }
     }
 }
@@ -684,7 +722,7 @@ impl<F: NodeF> From<ast::Function> for FunctionExpression<F> {
         FunctionExpression {
             name: None,
             params: function.params.into_iter().map(|param| param.into()).collect(),
-            body: function.body.map(|x| x.into()).unwrap_or(BlockStatement{body: vec![]}.into()),
+            body: function.body.map(|x| into_block::<F>(x)).unwrap_or(BlockStatement{body: vec![]}.into()),
         }
     }
 }
@@ -697,8 +735,8 @@ impl<F: NodeF> From<ast::ArrowExpr> for ArrowFunctionExpression<F> {
         ArrowFunctionExpression {
             params: arrow.params.into_iter().map(|param| param.into()).collect(),
             body: match arrow.body {
-                ast::BlockStmtOrExpr::BlockStmt(block) => ArrowFunctionBody::Block(block.into()),
-                ast::BlockStmtOrExpr::Expr(expr) => ArrowFunctionBody::Expression((*expr).into()),
+                ast::BlockStmtOrExpr::BlockStmt(block) => ArrowFunctionBody::Block(into_block::<F>(block)),
+                ast::BlockStmtOrExpr::Expr(expr) => ArrowFunctionBody::Expression(into_expression::<F>(*expr)),
             },
         }
     }
@@ -708,7 +746,7 @@ impl<F: NodeF> From<ast::UnaryExpr> for UnaryExpression<F> {
     fn from(unary: ast::UnaryExpr) -> Self {
         UnaryExpression {
             operator: unary.op.into(),
-            argument: (*unary.arg).into(),
+            argument: into_expression::<F>(*unary.arg),
         }
     }
 }
@@ -731,7 +769,7 @@ impl<F: NodeF> From<ast::UpdateExpr> for UpdateExpression<F> {
     fn from(update: ast::UpdateExpr) -> Self {
         UpdateExpression {
             operator: update.op.into(),
-            argument: (*update.arg).into(),
+            argument: into_expression::<F>(*update.arg),
             prefix: update.prefix,
         }
     }
@@ -776,8 +814,8 @@ impl<F: NodeF> From<ast::BinExpr> for BinaryExpression<F> {
                 ast::BinaryOp::LogicalOr => unreachable!("LogicalOr is not BinaryExpression"),
                 ast::BinaryOp::NullishCoalescing => unreachable!("NullishCoalescing is not BinaryExpression"),
             },
-            left: (*bin.left).into(),
-            right: (*bin.right).into(),
+            left: into_expression::<F>(*bin.left),
+            right: into_expression::<F>(*bin.right),
         }
     }
 }
@@ -791,8 +829,8 @@ impl<F: NodeF> From<ast::BinExpr> for LogicalExpression<F> {
                 ast::BinaryOp::NullishCoalescing => LogicalOperator::Coalesce,
                 _ => unimplemented!(),
             },
-            left: (*bin.left).into(),
-            right: (*bin.right).into(),
+            left: into_expression::<F>(*bin.left),
+            right: into_expression::<F>(*bin.right),
         }
     }
 }
@@ -800,16 +838,16 @@ impl<F: NodeF> From<ast::BinExpr> for LogicalExpression<F> {
 impl<F: NodeF> From<ast::CondExpr> for ConditionalExpression<F> {
     fn from(cond: ast::CondExpr) -> Self {
         ConditionalExpression {
-            test: (*cond.test).into(),
-            consequent: (*cond.cons).into(),
-            alternate: (*cond.alt).into(),
+            test: into_expression::<F>(*cond.test),
+            consequent: into_expression::<F>(*cond.cons),
+            alternate: into_expression::<F>(*cond.alt),
         }
     }
 }
 
 impl<F: NodeF> From<ast::Ident> for VariableExpression<F> {
     fn from(ident: ast::Ident) -> Self {
-        VariableExpression { name: ident.into() }
+        VariableExpression { name: into_identifier::<F>(ident) }
     }
 }
 
@@ -833,7 +871,7 @@ impl<F: NodeF> From<ast::AssignExpr> for AssignmentExpression<F> {
                 _ => unimplemented!(),
             },
             left: assign.left.into(),
-            right: (*assign.right).into(),
+            right: into_expression::<F>(*assign.right),
         }
     }
 }
@@ -842,7 +880,7 @@ impl<F: NodeF> From<ast::PatOrExpr> for LValue<F> {
     fn from(pat: ast::PatOrExpr) -> Self {
         match pat {
             ast::PatOrExpr::Expr(expr) => match *expr {
-                ast::Expr::Ident(ident) => LValue::Variable(ident.into()),
+                ast::Expr::Ident(ident) => LValue::Variable(into_identifier::<F>(ident)),
                 ast::Expr::Member(member) => LValue::Member(member.into()),
                 _ => unimplemented!(),
             },
@@ -854,10 +892,10 @@ impl<F: NodeF> From<ast::PatOrExpr> for LValue<F> {
 impl<F: NodeF> From<ast::MemberExpr> for MemberExpression<F> {
     fn from(member: ast::MemberExpr) -> Self {
         MemberExpression {
-            object: (*member.obj).into(),
+            object: into_expression::<F>(*member.obj),
             property: match member.prop {
-                ast::MemberProp::Ident(ident) => Member::Property(ident.into()),
-                ast::MemberProp::Computed(computed) => Member::Computed((*computed.expr).into()),
+                ast::MemberProp::Ident(ident) => Member::Property(into_identifier::<F>(ident)),
+                ast::MemberProp::Computed(computed) => Member::Computed(into_expression::<F>(*computed.expr)),
                 ast::MemberProp::PrivateName(_) => unimplemented!(),
             },
         }
@@ -868,7 +906,7 @@ impl<F: NodeF> From<ast::CallExpr> for CallExpression<F> {
     fn from(call: ast::CallExpr) -> Self {
         CallExpression {
             callee: match call.callee {
-                ast::Callee::Expr(expr) => (*expr).into(),
+                ast::Callee::Expr(expr) => into_expression::<F>(*expr),
                 ast::Callee::Super(_) => panic!("super is not supported"), 
                 ast::Callee::Import(_) => unimplemented!("import callee"),
             },
@@ -880,9 +918,9 @@ impl<F: NodeF> From<ast::CallExpr> for CallExpression<F> {
 impl<F: NodeF> From<ast::ExprOrSpread> for ParameterElement<F> {
     fn from(expr_or_spread: ast::ExprOrSpread) -> Self {
         if expr_or_spread.spread.is_some() {
-            ParameterElement::Spread((*expr_or_spread.expr).into())
+            ParameterElement::Spread(into_expression::<F>(*expr_or_spread.expr))
         } else {
-            ParameterElement::Parameter((*expr_or_spread.expr).into())
+            ParameterElement::Parameter(into_expression::<F>(*expr_or_spread.expr))
         }
     }
 }
@@ -890,7 +928,7 @@ impl<F: NodeF> From<ast::ExprOrSpread> for ParameterElement<F> {
 impl<F: NodeF> From<ast::ParenExpr> for ParenthesizedExpression<F> {
     fn from(paren: ast::ParenExpr) -> Self {
         ParenthesizedExpression {
-            expression: (*paren.expr).into(),
+            expression: into_expression::<F>(*paren.expr),
         }
     }
 }

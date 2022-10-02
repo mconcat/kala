@@ -58,7 +58,7 @@ impl From<ast::Pat> for Pattern {
                                 (*key_value.value).into(),
                             )
                         }
-                        ast::ObjectPatProp::Assign(assign) => {
+                        ast::ObjectPatProp::Assign(_assign) => {
                             /*
                             PropertyPattern::Optional(OptionalPattern {
                                 binding: Identifier::from(assign.key),

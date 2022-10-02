@@ -220,15 +220,6 @@ version = "0.1.0"
 dependencies = [
  "kala-ast",
  "kala-context",
- "kala-lexical",
-]
-
-[[package]]
-name = "kala-lexical"
-version = "0.1.0"
-dependencies = [
- "kala-ast",
- "kala-context",
 ]
 
 [[package]]

@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 kala-ast = { version = "0.1.0", path = "../kala-ast" }
 kala-context = { version = "0.1.0", path = "../kala-context" }
-kala-lexical = { version = "0.1.0", path = "../kala-lexical" }
+# kala-lexical = { version = "0.1.0", path = "../kala-lexical" }
 # kala-data = { version = "0.1.0", path = "../kala-data" } 

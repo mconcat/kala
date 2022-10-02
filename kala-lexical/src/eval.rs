@@ -9,6 +9,19 @@ use kala_context::context::JSContext;
 use core::panic;
 use std::cell::RefCell;
 
+pub struct EvalNodeF;
+
+impl ast::NodeF for EvalNodeF {
+    type Statement = EvalStatement;
+}
+
+pub struct EvalStatement;
+
+impl From<ast::Statement<EvalNodeF>> for EvalStatement {
+    fn from(statement: ast::Statement<EvalNodeF>) -> Self {
+        statement
+    }
+}
 
 pub fn eval_statement<Context: JSContext>(ctx: &mut Context, stmt: &ast::Statement) {
     match stmt {

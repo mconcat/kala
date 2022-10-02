@@ -1,4 +1,4 @@
-use crate::context;
+use crate::evaluation_context as context;
 #[derive(Clone, Debug, PartialEq)]
 pub enum JSValue {
     Number(i64),

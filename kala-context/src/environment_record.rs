@@ -2,8 +2,8 @@
 EnvironmentRecord provides a mapping from a variable name to the variable
 */
 
-use crate::context::JSValue;
-use crate::context::JSVariable;
+use crate::evaluation_context::JSValue;
+use crate::evaluation_context::JSVariable;
 
 
 /* 
@@ -246,7 +246,7 @@ impl<V: JSValue> EnvironmentRecord<V> {
 mod scope_tests {
     use crate::environment_record::EnvironmentRecord;
     use crate::mock::JSValue;
-    use crate::context::JSVariable;
+    use crate::evaluation_context::JSVariable;
 
     #[test]
     fn scope_test_simple() {
