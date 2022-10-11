@@ -4,17 +4,29 @@
 /// Patterns are used in variable declarations, function parameters, and
 /// destructuring assignments.
 
+use std::fmt::Debug;
+
 use crate::common::{Identifier, Literal};
 
 use swc_ecma_ast as ast;
 
-pub enum Pattern {
-    Identifier(Identifier),
-    Literal(Literal),
-    Array(ArrayPattern),
-    Object(ObjectPattern),
+pub fn into_identifier<F: PatternF>(expr: ast::Ident) -> F::Identifier{
+    let interim: Identifier = expr.into();
+    interim.into()
+}
+
+pub trait PatternF {
+    type Identifier: From<Identifier> + Debug + Clone;
+    type Literal: From<Literal> + Debug + Clone;
+}
+
+#[derive(Debug, Clone)]
+pub enum Pattern<F: PatternF> {
+    Identifier(F::Identifier),
+    Literal(F::Literal),
+    Array(ArrayPattern<F>),
+    Object(ObjectPattern<F>),
     Hole,
-    Rest(Box<Pattern>),
     // Optional(OptionalPattern),
 }
 
@@ -25,27 +37,36 @@ pub struct OptionalPattern {
 }
 */
 
-pub struct ArrayPattern {
-    pub elements: Vec<Pattern>,
+#[derive(Debug, Clone)]
+pub struct ArrayPattern<F: PatternF> {
+    pub elements: Vec<ElementPattern<F>>,
 }
 
-pub struct ObjectPattern {
-    pub properties: Vec<PropertyPattern>,
+#[derive(Debug, Clone)]
+pub enum ElementPattern<F: PatternF> {
+    Pattern(Pattern<F>),
+    Rest(Pattern<F>),
 }
 
-pub enum PropertyPattern {
-    KeyValue(Identifier, Pattern),
-    Shorthand(Identifier),
+#[derive(Debug, Clone)]
+pub struct ObjectPattern<F: PatternF> {
+    pub properties: Vec<PropertyPattern<F>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PropertyPattern<F: PatternF> {
+    KeyValue(F::Identifier, Pattern<F>),
+    Shorthand(F::Identifier),
     // Optional(OptionalPattern),
-    Rest(Pattern),
+    Rest(Pattern<F>),
 }
 
-impl From<ast::Pat> for Pattern {
+impl<F: PatternF> From<ast::Pat> for Pattern<F> {
     fn from(pat: ast::Pat) -> Self {
         match pat {
-            ast::Pat::Ident(ident) => Pattern::Identifier(Identifier::from(ident.id)),
+            ast::Pat::Ident(ident) => Pattern::Identifier(into_identifier::<F>(ident.id)),
             ast::Pat::Array(array) => Pattern::Array(ArrayPattern {
-                elements: array.elems.into_iter().map(|e| e.map(|e| e.into()).unwrap_or(Pattern::Hole)).collect(),
+                elements: array.elems.into_iter().map(|e| e.map(|e| e.into()).unwrap_or(ElementPattern::Pattern(Pattern::Hole))).collect(),
             }),
             ast::Pat::Object(object) => Pattern::Object(ObjectPattern {
                 properties: object
@@ -53,10 +74,12 @@ impl From<ast::Pat> for Pattern {
                     .into_iter()
                     .map(|p| match p {
                         ast::ObjectPatProp::KeyValue(key_value) => {
-                            PropertyPattern::KeyValue(
-                                Identifier::from(key_value.key),
-                                (*key_value.value).into(),
-                            )
+                            match key_value.key {
+                                ast::PropName::Ident(ident) => {
+                                    PropertyPattern::KeyValue(into_identifier::<F>(ident), (*key_value.value).into())
+                                },
+                                _ => unimplemented!(),
+                            }
                         }
                         ast::ObjectPatProp::Assign(_assign) => {
                             /*
@@ -78,8 +101,17 @@ impl From<ast::Pat> for Pattern {
     }
 }
 
-impl From<ast::Param> for Pattern {
+impl<F: PatternF> From<ast::Param> for Pattern<F> {
     fn from(param: ast::Param) -> Self {
         param.pat.into()
+    }
+}
+
+impl<F: PatternF> From<ast::Pat> for ElementPattern<F> {
+    fn from(pat: ast::Pat) -> Self {
+        match pat {
+            ast::Pat::Rest(rest) => ElementPattern::Rest((*rest.arg).into()),
+            _ => ElementPattern::Pattern(pat.into()),
+        }   
     }
 }

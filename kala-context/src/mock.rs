@@ -12,7 +12,7 @@ impl Default for JSValue {
 } 
 
 impl context::JSValue for JSValue {
-    type Variable = context::BaseVariable<Self>;
+    type Variable = context::EvaluationVariable<Self>;
 
     fn is_reference(&self) -> bool {
         false

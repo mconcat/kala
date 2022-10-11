@@ -1,7 +1,9 @@
 use core::panic;
+use std::fmt::Debug;
 
 use swc_ecma_ast as ast;
 
+pub use crate::pattern;
 pub use crate::pattern::Pattern;
 pub use crate::common::*;
 
@@ -10,36 +12,36 @@ pub use crate::common::*;
 ///////////////////////////////////////////////////////////////////////////////
 /// NodeF
 
-pub trait NodeF: Sized {
-    type Literal: From<Literal>;
-    type Identifier: From<Identifier>;
-    type Variable: From<Identifier>;
+pub trait NodeF: Clone + Sized {
+    type Literal: From<Literal> + Debug + Clone;
+    type Identifier: From<Identifier> + Debug + Clone;
 
-    type Statement: From<Statement<Self>>;
-    type Block: From<BlockStatement<Self>>;
-    type Expression: From<Expression<Self>>;
-    type Function: From<FunctionExpression<Self>>;
+    type Statement: From<Statement<Self>> + Debug + Clone;
+    type Block: From<BlockStatement<Self>> + Debug + Clone;
+    type Expression: From<Expression<Self>> + Debug + Clone;
+    type Function: From<FunctionExpression<Self>> + Debug + Clone;
 }
 
+
+impl<F: NodeF> pattern::PatternF for F {
+    type Identifier = <Self as NodeF>::Identifier;
+    type Literal = <Self as NodeF>::Literal;
+}
+/*
+#[derive(Debug, Clone)]
 pub struct LexicalNodeF;
 
 impl NodeF for LexicalNodeF {
     type Literal = Literal;
     type Identifier = Identifier;
-    type Variable = Identifier;
 
     type Statement = Statement<Self>;
     type Block = BlockStatement<Self>;
     type Expression = Expression<Self>;
     type Function = FunctionExpression<Self>;
 }
-
+*/
 pub fn into_identifier<F: NodeF>(expr: ast::Ident) -> F::Identifier{
-    let interim: Identifier = expr.into();
-    interim.into()
-}
-
-pub fn into_variable<F: NodeF>(expr: ast::Ident) -> F::Variable {
     let interim: Identifier = expr.into();
     interim.into()
 }
@@ -72,11 +74,13 @@ pub fn into_function<F: NodeF>(expr: ast::Function) -> F::Function {
 ////////////////////////////////////////////////////////////////////////
 /// Type definitions
 
+#[derive(Debug, Clone)]
 pub enum Program<F: NodeF> {
 //    Module(Module),
     Script(Script<F>),
 }
 
+#[derive(Debug, Clone)]
 pub struct Script<F: NodeF> {
     pub body: Vec<F::Statement>
 }
@@ -101,6 +105,7 @@ impl<F: NodeF> From<ast::Script> for Script<F> {
 ////////////////////////////////////////////////////////////////////////
 /// Type definitions
 
+#[derive(Debug, Clone)]
 pub enum Statement<F: NodeF> {
     // Declarations
     VariableDeclaration(Box<VariableDeclaration<F>>),
@@ -134,16 +139,19 @@ pub enum Statement<F: NodeF> {
 ////////////////////////////////////////////////////////////////////////
 // Declaration statements
 
+#[derive(Debug, Clone)]
 pub struct VariableDeclarator<F: NodeF> {
-    pub binding: Pattern,
+    pub binding: Pattern<F>,
     pub init: Option<F::Expression>,
 }
 
+#[derive(Debug, Clone)]
 pub struct VariableDeclaration<F: NodeF> {
     pub kind: DeclarationKind,
     pub declarators: Vec<VariableDeclarator<F>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct FunctionDeclaration<F: NodeF> {
     pub function: F::Function
 }
@@ -151,16 +159,19 @@ pub struct FunctionDeclaration<F: NodeF> {
 ////////////////////////////////////////////////////////////////////////
 /// Control flow
 
+#[derive(Debug, Clone)]
 pub struct BlockStatement<F: NodeF> {
     pub body: Vec<F::Statement>,
 }
 
+#[derive(Debug, Clone)]
 pub struct IfStatement<F: NodeF> {
     pub test: F::Expression,
     pub consequent: F::Statement,
     pub alternate: Option<F::Statement>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ForStatement<F: NodeF> {
     pub kind: DeclarationKind,
     pub init: Option<VariableDeclaration<F>>,
@@ -169,41 +180,48 @@ pub struct ForStatement<F: NodeF> {
     pub body: F::Statement,
 }
 
+#[derive(Debug, Clone)]
 pub struct ForOfStatement<F: NodeF> {
     pub kind: DeclarationKind,
     pub decl: VariableDeclarator<F>,
     pub body: F::Statement,
 }
 
+#[derive(Debug, Clone)]
 pub struct WhileStatement<F: NodeF> {
     pub test: F::Expression,
     pub body: F::Statement,
 }
 
+#[derive(Debug, Clone)]
 pub struct SwitchStatement<F: NodeF> {
     pub discriminant: F::Expression,
     pub cases: Vec<SwitchCase<F>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct SwitchCase<F: NodeF> {
     pub cases: Vec<CaseLabel<F>>,
     pub body: F::Block, // must end with a terminator
 }
 
+#[derive(Debug, Clone)]
 pub enum CaseLabel<F: NodeF> {
     Test(F::Expression),
     Default,
 }
 
+#[derive(Debug, Clone)]
 pub struct TryStatement<F: NodeF> {
     pub block: BlockStatement<F>,
-    pub handler: Option<(Pattern, BlockStatement<F>)>,
+    pub handler: Option<(Pattern<F>, BlockStatement<F>)>,
     pub finalizer: Option<BlockStatement<F>>,
 }
 
 ////////////////////////////////////////////////////////////////////////
 // Terminators
 
+#[derive(Debug, Clone)]
 pub enum Terminator<F: NodeF> {
     Break(BreakStatement),
     Continue(ContinueStatement),
@@ -211,14 +229,18 @@ pub enum Terminator<F: NodeF> {
     Throw(ThrowStatement<F>),
 }
 
+#[derive(Debug, Clone)]
 pub struct BreakStatement{}
 
+#[derive(Debug, Clone)]
 pub struct ContinueStatement{}
 
+#[derive(Debug, Clone)]
 pub struct ReturnStatement<F: NodeF> {
     pub argument: Option<F::Expression>
 }
 
+#[derive(Debug, Clone)]
 pub struct ThrowStatement<F: NodeF> {
     pub argument: F::Expression
 }
@@ -226,6 +248,7 @@ pub struct ThrowStatement<F: NodeF> {
 ////////////////////////////////////////////////////////////////////////
 /// Expression Statements
 
+#[derive(Debug, Clone)]
 pub struct ExpressionStatement<F: NodeF> {
     pub expression: F::Expression
 }
@@ -428,6 +451,7 @@ impl<F: NodeF> From<ast::ExprStmt> for ExpressionStatement<F> {
 ///////////////////////////////////////////////////////////////////////////////
 /// Type definitions
 
+#[derive(Debug, Clone)]
 pub enum Expression<F: NodeF> {
     // Literals
     Literal(Box<Literal>),
@@ -453,19 +477,23 @@ pub enum Expression<F: NodeF> {
     Parenthesized(Box<ParenthesizedExpression<F>>),
 }
 
+#[derive(Debug, Clone)]
 pub struct ArrayExpression<F: NodeF> {
     pub elements: Vec<ParameterElement<F>>,
 }
 
+#[derive(Debug, Clone)]
 pub enum ParameterElement<F: NodeF> {
     Parameter(F::Expression),
     Spread(F::Expression),
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectExpression<F: NodeF> {
     pub properties: Vec<ObjectElement<F>>,
 }
 
+#[derive(Debug, Clone)]
 pub enum ObjectElement<F: NodeF> {
     KeyValue(F::Identifier, F::Expression),
     Shorthand(F::Identifier),
@@ -475,17 +503,20 @@ pub enum ObjectElement<F: NodeF> {
     Spread(F::Expression),
 }
 
+#[derive(Debug, Clone)]
 pub struct FunctionExpression<F: NodeF> {
     pub name: Option<F::Identifier>,
-    pub params: Vec<Pattern>,
+    pub params: Vec<Pattern<F>>,
     pub body: F::Block,
 }
 
+#[derive(Debug, Clone)]
 pub struct ArrowFunctionExpression<F: NodeF> {
-    pub params: Vec<Pattern>,
+    pub params: Vec<Pattern<F>>,
     pub body: ArrowFunctionBody<F>
 }
 
+#[derive(Debug, Clone)]
 pub enum ArrowFunctionBody<F: NodeF> {
     Block(F::Block),
     Expression(F::Expression),
@@ -494,11 +525,13 @@ pub enum ArrowFunctionBody<F: NodeF> {
 ////////////////////////////////////////////////////////////////////////
 /// Operations
 
+#[derive(Debug, Clone)]
 pub struct UnaryExpression<F: NodeF> {
     pub operator: UnaryOperator,
     pub argument: F::Expression,
 }
 
+#[derive(Debug, Clone)]
 pub enum UnaryOperator {
     Void,
     TypeOf,
@@ -508,12 +541,14 @@ pub enum UnaryOperator {
     Tilde,
 }
 
+#[derive(Debug, Clone)]
 pub struct BinaryExpression<F: NodeF> {
     pub operator: BinaryOperator,
     pub left: F::Expression,
     pub right: F::Expression,
 }
 
+#[derive(Debug, Clone)]
 pub enum BinaryOperator {
     Add,
     Sub,
@@ -535,29 +570,34 @@ pub enum BinaryOperator {
     GreaterThanEqual,
 }
 
+#[derive(Debug, Clone)]
 pub struct UpdateExpression<F: NodeF> {
     pub operator: UpdateOperator,
     pub argument: F::Expression,
     pub prefix: bool,
 }
 
+#[derive(Debug, Clone)]
 pub enum UpdateOperator {
     Increment,
     Decrement,
 }
 
+#[derive(Debug, Clone)]
 pub struct LogicalExpression<F: NodeF> {
     pub operator: LogicalOperator,
     pub left: F::Expression,
     pub right: F::Expression,
 }
 
+#[derive(Debug, Clone)]
 pub enum LogicalOperator {
     And,
     Or,
     Coalesce,
 }
 
+#[derive(Debug, Clone)]
 pub struct ConditionalExpression<F: NodeF> {
     pub test: F::Expression,
     pub consequent: F::Expression,
@@ -568,21 +608,25 @@ pub struct ConditionalExpression<F: NodeF> {
 /// 
 /// Variable Expressions
 
+#[derive(Debug, Clone)]
 pub struct VariableExpression<F: NodeF> {
     pub name: F::Identifier
 }
 
+#[derive(Debug, Clone)]
 pub struct AssignmentExpression<F: NodeF> {
     pub operator: AssignmentOperator,
     pub left: LValue<F>,
     pub right: F::Expression,
 }
 
+#[derive(Debug, Clone)]
 pub enum LValue<F: NodeF> {
     Variable(F::Identifier),
     Member(MemberExpression<F>),
 }
 
+#[derive(Debug, Clone)]
 pub enum AssignmentOperator {
     Assign,
     /*
@@ -601,21 +645,25 @@ pub enum AssignmentOperator {
     */
 }
 
+#[derive(Debug, Clone)]
 pub struct MemberExpression<F: NodeF> {
     pub object: F::Expression,
     pub property: Member<F>,
 }
 
+#[derive(Debug, Clone)]
 pub enum Member<F: NodeF> {
     Computed(F::Expression),
     Property(F::Identifier),
 }
 
+#[derive(Debug, Clone)]
 pub struct CallExpression<F: NodeF> {
     pub callee: F::Expression,
     pub arguments: Vec<ParameterElement<F>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ParenthesizedExpression<F: NodeF> {
     pub expression: F::Expression
 }

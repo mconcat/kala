@@ -1,3 +1,8 @@
+use kala_context::environment_record::EnvironmentRecord;
+use crate::{value::JSValue, lexical::InterpreterF, context::InterpreterContext};
+use kala_ast::ast;
+use crate::lexical;
+
 #[derive(Debug, Clone)]
 pub enum Prototype {
     Function(PrototypeFunction), // function object
@@ -10,41 +15,38 @@ pub enum Prototype {
     // Struct(), // known type struct object, inferred or from type annotation
 }
 
-impl PartialEq for Prototype {
-    fn eq(&self, other: &Self) -> bool {
-        match self {
-            Prototype::Function(x, _) => false, // XXX
-            Prototype::Array(x) => match other {
-                Prototype::Array(y) => x == y,
-                _ => false,
-            },
-            /*
-            Prototype::Error(x, _) => match other {
-                Prototype::Error(y, _) => x == y,
-                _ => false,
-            },
-            */
-            _ => false,
-        }
-    }
-}
-
+#[derive(Debug, Clone)]
 pub struct PrototypeFunction {
     environment: EnvironmentRecord<JSValue>,
     identifier: Option<String>,
     parameters: Vec<String>, // TODO: add binding pattern
-    body: ast::Statement, // Either a block or a single expression
+    body: ast::Statement<InterpreterF>, // Either a block or a single expression
 }
 
 impl PrototypeFunction {
-    fn new(
+    pub fn new(
         env: EnvironmentRecord<JSValue>,
-        code: ast::FunctionExpression,
+        code: lexical::Function,
     ) -> Self {
+        unimplemented!()
+    }
+
+    pub fn call(&self, ctx: &mut InterpreterContext, args: Vec<JSValue>) -> Option<JSValue> {
         unimplemented!()
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PrototypeArray {
-    elements: Vec<JSValue>
+    pub elements: Vec<JSValue>
+}
+
+impl PrototypeArray {
+    pub fn at(&self, index: usize) -> JSValue {
+        self.elements.get(index).cloned().unwrap_or(JSValue::undefined())
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
 }

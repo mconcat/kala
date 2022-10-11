@@ -12,10 +12,8 @@ pub trait JSVariable<V: JSValue>: Clone {
   //  fn is_capture(&self) -> bool;
 }
 
-use std::arch::aarch64::ST;
 use std::rc::Rc;
 use std::cell::{Ref, RefCell};
-use kala_ast::ast::{self, WhileStatement, SwitchCase, TryStatement, BreakStatement, ContinueStatement, ReturnStatement};
 
 pub type DeclarationKind = kala_ast::common::DeclarationKind;
 
@@ -43,7 +41,7 @@ pub enum EvaluationVariable<V: JSValue> {
     Variable(Rc<RefCell<Variable<V>>>),
 }
 
-impl<V: JSValue> EvaluationVariable<V> {
+impl<V: JSValue> JSVariable<V> for  EvaluationVariable<V> {
     fn new(value: V, mutable: bool) -> Self {
         EvaluationVariable::Variable(Rc::new(RefCell::new(Variable::new(value, mutable))))
     }
