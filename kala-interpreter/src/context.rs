@@ -3,6 +3,10 @@ use crate::{value::JSValue, literal::Literal, lexical};
 pub struct InterpreterContext;
 
 impl InterpreterContext {
+    pub fn new() -> Self {
+        InterpreterContext
+    }
+
     pub fn enter_scope(&mut self) {
         unimplemented!()
     }

@@ -5,3 +5,4 @@ pub mod eval;
 pub mod declare;
 pub mod context;
 pub mod literal;
+mod interpreter_test;

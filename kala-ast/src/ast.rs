@@ -41,6 +41,11 @@ impl NodeF for LexicalNodeF {
     type Function = FunctionExpression<Self>;
 }
 */
+pub fn into_literal<F: NodeF>(literal: ast::Lit) -> F::Literal {
+    let interim: Literal = literal.into();
+    interim.into()
+}
+
 pub fn into_identifier<F: NodeF>(expr: ast::Ident) -> F::Identifier{
     let interim: Identifier = expr.into();
     interim.into()
@@ -454,7 +459,7 @@ impl<F: NodeF> From<ast::ExprStmt> for ExpressionStatement<F> {
 #[derive(Debug, Clone)]
 pub enum Expression<F: NodeF> {
     // Literals
-    Literal(Box<Literal>),
+    Literal(Box<F::Literal>),
     Array(Box<ArrayExpression<F>>),
     Object(Box<ObjectExpression<F>>),
     Function(Box<FunctionExpression<F>>),
@@ -675,7 +680,7 @@ pub struct ParenthesizedExpression<F: NodeF> {
 impl<F: NodeF> From<ast::Expr> for Expression<F> {
     fn from(expr: ast::Expr) -> Self {
         match expr {
-            ast::Expr::Lit(lit) => Expression::Literal(Box::new(lit.into())),
+            ast::Expr::Lit(lit) => Expression::Literal(Box::new(into_literal::<F>(lit))),
             ast::Expr::Array(array) => Expression::Array(Box::new(array.into())),
             ast::Expr::Object(object) => Expression::Object(Box::new(object.into())),
             ast::Expr::Fn(fn_expr) => Expression::Function(Box::new(fn_expr.into())),
@@ -707,7 +712,7 @@ impl<F: NodeF> From<ast::Expr> for Expression<F> {
 impl<F: NodeF> From<ast::ArrayLit> for ArrayExpression<F> {
     fn from(array: ast::ArrayLit) -> Self {
         ArrayExpression {
-            elements: array.elems.into_iter().map(|elem| elem.map(|elem| elem.into()).unwrap_or(ParameterElement::Parameter(Expression::Literal(Box::new(Literal::Undefined)).into()))).collect(),
+            elements: array.elems.into_iter().map(|elem| elem.map(|elem| elem.into()).unwrap_or(ParameterElement::Parameter(Expression::Literal(Box::new(Literal::Undefined.into())).into()))).collect(),
         }
     }
 }

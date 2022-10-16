@@ -18,7 +18,7 @@ use kala_ast::ast;
 pub struct JSBoolean(bool);
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct JSString(String);
+pub struct JSString(pub String);
 
 impl JSString {
     fn concat(&mut self, other: &Self) -> &mut Self {

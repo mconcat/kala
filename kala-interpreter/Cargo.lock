@@ -34,9 +34,9 @@ dependencies = [
 
 [[package]]
 name = "ast_node"
-version = "0.8.3"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a614981a880a40522cf6fbe8b1a8365eb253655939f812a9db03e8ba4e2cb1f"
+checksum = "cf94863c5fdfee166d0907c44e5fee970123b2b7307046d35d1e671aa93afbba"
 dependencies = [
  "darling",
  "pmutil",
@@ -528,9 +528,9 @@ dependencies = [
 
 [[package]]
 name = "string_enum"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f584cc881e9e5f1fd6bf827b0444aa94c30d8fe6378cf241071b5f5700b2871f"
+checksum = "994453cd270ad0265796eb24abf5540091ed03e681c5f3c12bc33e4db33253e1"
 dependencies = [
  "pmutil",
  "proc-macro2",
@@ -547,9 +547,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "swc_atoms"
-version = "0.4.14"
+version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1106fb9b9fde9bd37b9e36ecc05bc1fa9f8ace6f425391ff2ec1141e041e8bd2"
+checksum = "f5ffecde9d1a937a61b4799478d598121b539eb7da6127c16af86a044017e1e5"
 dependencies = [
  "once_cell",
  "rustc-hash",
