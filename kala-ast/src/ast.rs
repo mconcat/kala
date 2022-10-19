@@ -265,7 +265,7 @@ impl<F: NodeF> From<ast::Stmt> for Statement<F> {
     fn from(stmt: ast::Stmt) -> Self {
         match stmt {
             ast::Stmt::Decl(decl) => match decl {
-                ast::Decl::Var(decl) => Statement::VariableDeclaration(Box::new(decl.into())),
+                ast::Decl::Var(decl) => Statement::VariableDeclaration(Box::new((*decl).into())),
                 ast::Decl::Fn(decl) => Statement::FunctionDeclaration(Box::new(decl.into())),
                 //ast::Decl::TsInterface(decl) => Statement::InterfaceDeclaration(decl.into()),
                 //ast::Decl::TsTypeAlias(decl) => Statement::TypeAliasDeclaration(decl.into()),
@@ -278,7 +278,7 @@ impl<F: NodeF> From<ast::Stmt> for Statement<F> {
             ast::Stmt::ForOf(stmt) => Statement::ForOf(Box::new(stmt.into())),
             ast::Stmt::While(stmt) => Statement::While(Box::new(stmt.into())),
             ast::Stmt::Switch(stmt) => Statement::Switch(Box::new(stmt.into())),
-            ast::Stmt::Try(stmt) => Statement::Try(Box::new(stmt.into())),
+            ast::Stmt::Try(stmt) => Statement::Try(Box::new((*stmt).into())),
             ast::Stmt::Break(stmt) => Statement::Break(Box::new(stmt.into())),
             ast::Stmt::Continue(stmt) => Statement::Continue(Box::new(stmt.into())),
             ast::Stmt::Return(stmt) => Statement::Return(Box::new(stmt.into())),
@@ -315,7 +315,7 @@ impl<F: NodeF> From<ast::VarDeclarator> for VariableDeclarator<F> {
 
 impl<F: NodeF> From<ast::FnDecl> for FunctionDeclaration<F> {
     fn from(decl: ast::FnDecl) -> Self {
-        let mut function: FunctionExpression<F> = decl.function.into();
+        let mut function: FunctionExpression<F> = (*decl.function).into();
         function.name = Some(Identifier{ name: decl.ident.sym.to_string() }.into());
         FunctionDeclaration { function: function.into() }
     }
@@ -462,7 +462,7 @@ pub enum Expression<F: NodeF> {
     Literal(Box<F::Literal>),
     Array(Box<ArrayExpression<F>>),
     Object(Box<ObjectExpression<F>>),
-    Function(Box<FunctionExpression<F>>),
+    Function(Box<F::Function>),
     ArrowFunction(Box<ArrowFunctionExpression<F>>),
 
     // Operations
@@ -683,7 +683,7 @@ impl<F: NodeF> From<ast::Expr> for Expression<F> {
             ast::Expr::Lit(lit) => Expression::Literal(Box::new(into_literal::<F>(lit))),
             ast::Expr::Array(array) => Expression::Array(Box::new(array.into())),
             ast::Expr::Object(object) => Expression::Object(Box::new(object.into())),
-            ast::Expr::Fn(fn_expr) => Expression::Function(Box::new(fn_expr.into())),
+            ast::Expr::Fn(fn_expr) => Expression::Function(Box::new(into_function::<F>(*fn_expr.function))),
             ast::Expr::Arrow(arrow) => Expression::ArrowFunction(Box::new(arrow.into())),
 
             ast::Expr::Unary(unary) => Expression::Unary(Box::new(unary.into())),
@@ -741,11 +741,11 @@ impl<F: NodeF> From<ast::Prop> for ObjectElement<F> {
             ast::Prop::Shorthand(ident) => ObjectElement::Shorthand(into_identifier::<F>(ident)),
             ast::Prop::KeyValue(key_value) => ObjectElement::KeyValue(Identifier::from(key_value.key).into(), into_expression::<F>(*key_value.value)),
             ast::Prop::Getter(getter) => ObjectElement::Getter(Identifier::from(getter.key).into(), into_block::<F>(getter.body.unwrap())),
-            ast::Prop::Setter(setter) => match setter.param {
+            ast::Prop::Setter(setter) => match *setter.param {
                 ast::Pat::Ident(ident) => ObjectElement::Setter(Identifier::from(setter.key).into(), into_identifier::<F>(ident.id), into_block::<F>(setter.body.unwrap())),
                 _ => unimplemented!(),
             },
-            ast::Prop::Method(method) => ObjectElement::Method(into_function::<F>(method.function)),
+            ast::Prop::Method(method) => ObjectElement::Method(into_function::<F>(*method.function)),
             _ => unimplemented!(),
         }
     }

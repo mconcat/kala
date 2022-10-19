@@ -9,13 +9,21 @@ use crate::lexical::InterpreterF;
 use crate::literal::{Literal, BooleanLiteral, NumberLiteral, StringLiteral};
 use crate::prototype::{PrototypeFunction, PrototypeArray};
 use crate::prototype::Prototype;
+use crate::literal;
 
 use kala_context::environment_record::EnvironmentRecord;
 use kala_context::evaluation_context::{self, EvaluationVariable};
 use kala_ast::ast;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct JSBoolean(bool);
+pub struct JSBoolean(pub bool);
+
+impl JSBoolean {
+    pub fn not(&mut self) -> &mut Self {
+        self.0 = !self.0;
+        self
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct JSString(pub String);
@@ -32,6 +40,9 @@ impl JSString {
 pub struct JSObject {
     prototype: Option<Prototype>, // none if simple Object
     properties: BTreeMap<String, JSValue>,
+}
+
+impl JSObject {
 }
 
 impl PartialEq for JSObject {
@@ -148,6 +159,12 @@ impl JSNumber {
         */
     }
 
+    pub fn negate(&mut self) {
+        match self {
+            JSNumber::SMI(a) => *a = -*a
+        }
+    }
+
     pub fn unsigned_right_shift(&mut self, other: &mut Self) {
         match (self, other) {
             (JSNumber::SMI(a), JSNumber::SMI(b)) => *a = (*a as u32 >> *b as u32) as i32
@@ -209,6 +226,19 @@ impl ToString for JSValue {
 }
 
 impl JSValue {
+    /*
+    pub fn equal_internal(&self, other: &Self) -> bool {
+        match (self, other) {
+            (JSValue::Undefined, JSValue::Undefined) => true,
+            (JSValue::Boolean(a), JSValue::Boolean(b)) => a == b,
+            (JSValue::Number(a), JSValue::Number(b)) => a.equal(b),
+            (JSValue::String(a), JSValue::String(b)) => a == b,
+            (JSValue::Object(a), JSValue::Object(b)) => a.borrow().equal_internal(b.borrow()),
+            _ => false,
+        }
+    }
+    */
+
     pub fn undefined() -> Self {
         JSValue::Undefined
     }
@@ -229,6 +259,14 @@ impl JSValue {
     }
 
     pub fn as_boolean(&self) -> Option<&JSBoolean> {
+        if let JSValue::Boolean(val) = self {
+            Some(val)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_mut_boolean(&mut self) -> Option<&mut JSBoolean> {
         if let JSValue::Boolean(val) = self {
             Some(val)
         } else {
@@ -304,11 +342,34 @@ impl JSValue {
         }
     }
     
-    pub fn get_property(&self, key: &lexical::Identifier) -> Option<JSValue> {
+    pub fn get_property(&self, key: &Identifier) -> Option<JSValue> {
+        match self {
+            JSValue::Object(obj) => {
+                let obj = obj.borrow();
+                if let Some(val) = obj.properties.get(&key.id) {
+                    Some(val.clone())
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        }
+    }
+
+    pub fn get_computed_property(&self, key: &JSValue) -> Option<JSValue> {
         match self {
             JSValue::Object(obj) => {
                 let mut obj = obj.borrow_mut();
-                obj.properties.get(&key.id).cloned()
+                // try accessing array if key is number 
+                if let JSValue::Number(JSNumber::SMI(n)) = key {
+                    if let Some(Prototype::Array(PrototypeArray{elements})) = &obj.prototype {
+                        if let Some(val) = elements.get(*n as usize) {
+                            return Some(val.clone());
+                        }
+                    }
+                }
+                // access object properties
+                obj.properties.get(&key.to_string()).cloned()
             }
             _ => None,
         }

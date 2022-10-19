@@ -26,6 +26,19 @@ pub enum Literal {
    // Bigint(BigintLiteral),
 }
 
+impl ToString for Literal {
+    fn to_string(&self) -> String {
+        match self {
+            Literal::Undefined => "undefined".to_string(),
+            Literal::Number(num) => match num {
+                NumberLiteral::SMI(i) => i.to_string(),
+            },
+            Literal::Boolean(BooleanLiteral(b)) => b.to_string(),
+            Literal::String(s) => format!("\"{}\"", s.0.clone()),
+        }
+    }
+}
+
 impl From<kala_ast::ast::Literal> for Literal {
     fn from(literal: kala_ast::ast::Literal) -> Self {
         match literal {

@@ -372,18 +372,18 @@ impl Eval {
     }
     
     fn eval_unary(&mut self, unary: &mut ast::UnaryExpression<F>) -> Option<JSValue> {
-        unimplemented!()
-        /*
-        let mut operand = self.expression(&mut unary.operand);
+        let mut argument = self.expression(&mut unary.argument)?;
         match unary.operator {
-            ast::UnaryOperator::Minus => operand.negate(),
-            ast::UnaryOperator::Plus => operand.positive(),
-            ast::UnaryOperator::Tilde => operand.bit_not(),
-            ast::UnaryOperator::TypeOf => operand.type_of(),
-            ast::UnaryOperator::Void => JSValue::Undefined,
-            ast::UnaryOperator::Bang => operand.not(),
+            ast::UnaryOperator::Minus => { argument.as_mut_number()?.negate(); },
+            // ast::UnaryOperator::Plus => argument.as_mut_number()?.positive(),
+            // ast::UnaryOperator::Tilde => argument.bit_not(),
+            // ast::UnaryOperator::TypeOf => operand.type_of(),
+            // ast::UnaryOperator::Void => JSValue::Undefined,
+            ast::UnaryOperator::Bang => { argument.as_mut_boolean()?.not(); },
+            _ => unimplemented!(),
         }
-        */
+
+        Some(argument)
     }
     
     
@@ -467,18 +467,19 @@ impl Eval {
     
     fn eval_member(&mut self, expr: &mut ast::MemberExpression<F>) -> Option<JSValue> {
         let object = self.expression(&mut expr.object)?;
-        let property = match &mut expr.property {
-            ast::Member::Property(ident) => ident.clone(),
+        match &mut expr.property {
+            ast::Member::Property(ident) => {
+                object.get_property(ident)
+            },
             ast::Member::Computed(expr) => {
-                let value = self.expression(expr)?.to_string();
-                Identifier::new(value)
-            }
-        };
-        object.get_property(&property)
+                let property = self.expression(expr)?;
+                object.get_computed_property(&property)
+            },
+        }
     }
     
-    fn eval_function(&mut self, expr: &mut ast::FunctionExpression<F>) -> Option<JSValue> {
-        unimplemented!()
+    fn eval_function(&mut self, expr: &mut lexical::Function) -> Option<JSValue> {
+        Some(JSValue::function(self.ctx.function_environment(), expr.clone()))
     }
     
     fn eval_arrow_function(&mut self, expr: &mut ast::ArrowFunctionExpression<F>) -> Option<JSValue> {

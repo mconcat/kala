@@ -1,7 +1,7 @@
 use kala_ast::ast::{NodeF, ParameterElement};
 use kala_ast::ast;
 use crate::context::InterpreterContext;
-use crate::literal::Literal;
+use crate::literal::*;
 use crate::value::JSValue;
 
 #[derive(Clone, Debug)]
@@ -163,6 +163,22 @@ impl Expression {
         Self {
             expression: ast::Expression::Literal(Box::new(literal)),
         }
+    }
+
+    pub fn string(s: String) -> Self {
+        Self::literal(Literal::String(StringLiteral(s)))
+    }
+    
+    pub fn number(n: i32) -> Self {
+        Self::literal(Literal::Number(NumberLiteral::SMI(n)))
+    }
+
+    pub fn boolean(b: bool) -> Self {
+        Self::literal(Literal::Boolean(BooleanLiteral(b)))
+    }
+
+    pub fn undefined() -> Self {
+        Self::literal(Literal::Undefined)
     }
 
     pub fn array(elems: Vec<Expression>) -> Self {

@@ -1,10 +1,14 @@
-use crate::{value::JSValue, literal::Literal, lexical};
-
-pub struct InterpreterContext;
+use crate::{value::JSValue, literal::Literal, lexical::{Identifier}};
+use kala_context::environment_record::EnvironmentRecord;
+pub struct InterpreterContext {
+    environment: EnvironmentRecord<JSValue>,
+}
 
 impl InterpreterContext {
     pub fn new() -> Self {
-        InterpreterContext
+        InterpreterContext {
+            environment: EnvironmentRecord::new(),
+        }
     }
 
     pub fn enter_scope(&mut self) {
@@ -15,11 +19,11 @@ impl InterpreterContext {
         unimplemented!()
     }
 
-    pub fn declare_mutable_binding(&mut self, binding: &lexical::Identifier, value: &JSValue) -> bool {
+    pub fn declare_mutable_binding(&mut self, binding: &Identifier, value: &JSValue) -> bool {
         unimplemented!()
     }
 
-    pub fn declare_immutable_binding(&mut self, binding: &lexical::Identifier, value: &JSValue) -> bool {
+    pub fn declare_immutable_binding(&mut self, binding: &Identifier, value: &JSValue) -> bool {
         unimplemented!()
     }
 
@@ -59,12 +63,16 @@ impl InterpreterContext {
         unimplemented!()
     }
 
-    pub fn get_binding_value(&mut self, binding: &lexical::Identifier) -> Option<JSValue> {
+    pub fn get_binding_value(&mut self, binding: &Identifier) -> Option<JSValue> {
         unimplemented!()
     }
 
-    pub fn set_binding_value(&mut self, binding: &lexical::Identifier, value: &JSValue) -> bool {
+    pub fn set_binding_value(&mut self, binding: &Identifier, value: &JSValue) -> bool {
         unimplemented!()
+    }
+
+    pub fn function_environment(&mut self, captures: Vec<Identifier>) -> Option<EnvironmentRecord<JSValue>> {
+        self.environment.closure(captures)
     }
 }
 
