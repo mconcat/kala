@@ -5,28 +5,28 @@ use kala_context::environment_record::EnvironmentRecord;
 use crate::context::{InterpreterContext, CompletionSignal};
 use crate::declare::{*, self};
 use crate::value::JSValue;
-use crate::lexical::{InterpreterF as F, Identifier};
-use crate::lexical;
+use crate::node::{InterpreterF as F, Identifier};
+use crate::node;
 use crate::literal::{Literal, NumberLiteral};
 
-pub struct Eval{
-    pub ctx: InterpreterContext,
+pub struct Eval<'a> {
+    pub ctx: &'a mut InterpreterContext,
 }
 
-impl Eval {
-    pub fn new(ctx: InterpreterContext) -> Self {
+impl<'a> Eval<'a> {
+    pub fn new(ctx: &'a mut InterpreterContext) -> Self {
         Eval {
             ctx,
         }
     }
 
-    pub fn statement(&mut self, stmt: &mut lexical::Statement) {
+    pub fn statement(&mut self, stmt: &mut node::Statement) {
         let mut stmt = &mut stmt.statement;
         match &mut stmt {
             ast::Statement::VariableDeclaration(stmt) => self.eval_variable_declaration(stmt),
             ast::Statement::FunctionDeclaration(stmt) => self.eval_function_declaration(stmt),
     
-            ast::Statement::Block(stmt) => self.eval_block(&mut stmt.block),
+            ast::Statement::Block(stmt) => self.block(&mut stmt.block),
     
             ast::Statement::If(stmt) => self.eval_if(stmt),
             ast::Statement::For(stmt) => self.eval_for(stmt),
@@ -52,9 +52,9 @@ impl Eval {
                 if value.is_none() {
                     unimplemented!("TODO: handle error")
                 }
-                declare_binding(&mut self.ctx, &stmt.kind, &decl.binding, &value.unwrap());
+                declare_binding(&mut self.ctx, stmt.kind.is_mutable(), &decl.binding, &value);
             } else {
-                declare_binding(&mut self.ctx, &stmt.kind, &decl.binding, &JSValue::undefined());
+                declare_binding(&mut self.ctx, stmt.kind.is_mutable(), &decl.binding, &None);
             }
         }
     }
@@ -63,10 +63,10 @@ impl Eval {
         let function_env = EnvironmentRecord::new(); 
         // TODO: add captured variables to function_env
         let value = JSValue::function(function_env, stmt.function.clone());
-        declare_binding_identifier(&mut self.ctx, &ast::DeclarationKind::Const, &stmt.function.function.name.as_ref().unwrap(), &value);
+        self.ctx.declare_immutable_binding(stmt.function.function.name.as_ref().unwrap(), &value);
     }
     
-    fn eval_block(&mut self, block: &mut ast::BlockStatement<F>) {
+    pub fn block(&mut self, block: &mut ast::BlockStatement<F>) {
         self.ctx.enter_scope();
         for stmt in block.body.iter_mut() {
             self.statement(stmt);
@@ -258,7 +258,7 @@ impl Eval {
             ast::Expression::Update(update) => self.eval_update(update),
             ast::Expression::Member(index) => self.eval_member(index),
             ast::Expression::Assignment(assign) => self.eval_assignment(assign),
-            ast::Expression::Function(func) => self.eval_function(func),
+            ast::Expression::Function(func) => self.function(func),
             ast::Expression::ArrowFunction(func) => self.eval_arrow_function(func),
             ast::Expression::Parenthesized(paren) => self.expression(&mut paren.expression),
         }
@@ -303,7 +303,7 @@ impl Eval {
     }
     
     #[inline]
-    fn eval_variable(&mut self, ident: &mut lexical::Identifier) -> Option<JSValue> {
+    fn eval_variable(&mut self, ident: &mut node::Identifier) -> Option<JSValue> {
         self.ctx.get_binding_value(&ident)
     }
     
@@ -478,8 +478,8 @@ impl Eval {
         }
     }
     
-    fn eval_function(&mut self, expr: &mut lexical::Function) -> Option<JSValue> {
-        Some(JSValue::function(self.ctx.function_environment(), expr.clone()))
+    pub fn function(&mut self, expr: &mut node::Function) -> Option<JSValue> {
+        Some(JSValue::function(self.ctx.function_environment(expr.capture_variables())?, expr.clone()))
     }
     
     fn eval_arrow_function(&mut self, expr: &mut ast::ArrowFunctionExpression<F>) -> Option<JSValue> {

@@ -2,9 +2,16 @@
 EnvironmentRecord provides a mapping from a variable name to the variable
 */
 
+use std::fmt::Display;
+use std::hash::Hash;
+
 use crate::evaluation_context::JSValue;
 use crate::evaluation_context::JSVariable;
 
+use core::fmt::Debug;
+
+use std::rc::Rc;
+use std::cell::RefCell;
 
 /* 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -93,19 +100,27 @@ use hashbrown::HashMap;
 // Binding: variables that are visible in the current scope.
 // Recovery: shadowed parent scope variables
 #[derive(Debug, Clone)]
-pub struct EnvironmentRecord<V: JSValue> {
+pub struct EnvironmentRecord<K: Eq + Hash + Clone + Debug, V: JSValue> {
+    global_binding: Rc<RefCell<HashMap<K, V::Variable>>>,
+
     // binding is a map from variable name to its ScopedVariable
     // the binding should hold the ScopedVariables in perspective of the innermost scope.
-    binding: HashMap<String, (V::Variable, usize)>,
-    recovery: Vec<Vec<(String, Option<(V::Variable, usize)>)>>, // TODO: linearlize
+    binding: HashMap<K, (V::Variable, usize)>,
+    recovery: Vec<Vec<(K, Option<(V::Variable, usize)>)>>, // TODO: linearlize
 }
 
-impl<V: JSValue> EnvironmentRecord<V> {
-    pub fn new() -> Self {
+impl<K: Eq + Hash + Clone + Debug, V: JSValue> EnvironmentRecord<K, V> {
+    pub fn new(global_binding: Rc<RefCell<HashMap<K, <V as JSValue>::Variable>>>) -> Self {
         EnvironmentRecord {
+            global_binding,
+            
             binding: HashMap::new(),
             recovery: vec![vec![]],
         }
+    }
+
+    pub fn empty_global_binding() -> Rc<RefCell<HashMap<K, <V as JSValue>::Variable>>> {
+        Rc::new(RefCell::new(HashMap::new()))
     }
 
     // enters a block scope
@@ -128,10 +143,10 @@ impl<V: JSValue> EnvironmentRecord<V> {
             }
         }
     }
-
+    
     // creates a new scope for function closure with provided capture variables
-    pub fn closure(&mut self, captures: Vec<String>) -> Option<Self> {
-        let mut env = EnvironmentRecord::new();
+    pub fn closure(&mut self, captures: Vec<K>) -> Option<Self> {
+        let mut env = EnvironmentRecord::new(Rc::clone(&self.global_binding));
         for capture in captures {
             if let Some((var, depth)) = self.binding.get_mut(&capture) {
                 var.capture();
@@ -143,40 +158,56 @@ impl<V: JSValue> EnvironmentRecord<V> {
         Some(env)
     }
 
+    pub fn closure_with_global_capture(&mut self) -> Self {
+        let mut env = EnvironmentRecord::new(Rc::clone(&self.global_binding));
+    
+        // super inefficient, capture only required variables later
+        for (k, (var, depth)) in self.binding.iter() {
+            var.capture();
+            env.binding.insert(k.clone(), (var.clone(), 0));
+        }
+
+        env
+    }
+
     #[inline]
     pub fn depth(&self) -> usize {
         self.recovery.len()
     }
 
-    fn add_recover_variable(&mut self, name: String, value: Option<(V::Variable, usize)>) {
+    fn add_recover_variable(&mut self, name: K, value: Option<(V::Variable, usize)>) {
         self.recovery.last_mut().unwrap().push((name, value));
     }
 
 
     #[inline]
-    pub fn resolve_binding(&self, name: &String) -> V {
-        self.binding.get(name).map(|(var, _)| var.get().clone()).unwrap_or_default()
-    }
-
-    #[inline]
-    pub fn get_immutable_binding(&self, name: &String) -> Result<&V::Variable, String> {
-        self.binding.get(name).map(|(var, _)| var).ok_or(format!("ReferenceError: {} is not defined", name))
+    fn resolve_binding(&self, name: &K) -> Result<&V::Variable, String> {
+        self.binding.get(name).map(|(var, _)| var).or_else(|| self.global_binding.borrow().get(name)).ok_or_else(|| format!("ReferenceError: {:?} is not defined", name))
     }
 
     // variable_mut should be de
     #[inline]
-    pub fn get_mutable_binding(&mut self, name: &String) -> Result<&mut V::Variable, String> {
-        self.binding.get_mut(name).ok_or(format!("ReferenceError: {} is not defined", name))
-        .and_then(|(var, _)| if var.is_mutable() { Ok(var) } else { Err(format!("Cannot assign to constant variable {}", name)) })
+    fn resolve_mutable_binding(&self, name: &K) -> Result<&mut V::Variable, String> {
+        self.resolve_binding(name).and_then(|var| var.as_mutable().ok_or_else(|| format!("Cannot assign to constant variable {:?}", name)))
     }
+
+    /*
+    pub fn get_immutable_binding(&self, name: &K) -> Result<V, String> {
+        self.resolve_binding(name).map(|var| var.get().clone())
+    }
+
+    pub fn get_mutable_binding(&self, name: &K) -> Result<&mut V, String> {
+        self.resolve_mutable_binding(name).map(|var| var.get())
+    }
+    */
    
-    fn initialize_binding(&mut self, name: &String, value: Option<V>, mutable: bool) -> Result<(), String> {
+    fn initialize_binding(&mut self, name: &K, value: Option<V>, mutable: bool) -> Result<(), String> {
         let existing = self.binding.get_mut(name).cloned();
         match existing {
             Some((var, depth)) => {
                 // redeclaration of local binding is not allowed
                 if depth == self.depth() {
-                    return Err(format!("SyntaxError: redeclaration of formal parameter \"{}\"", name))
+                    return Err(format!("SyntaxError: redeclaration of formal parameter \"{:?}\"", name))
                 }
                 // add shadowing variable to recovery
                 self.add_recover_variable(name.clone(), Some((var, depth)));
@@ -192,16 +223,16 @@ impl<V: JSValue> EnvironmentRecord<V> {
         Ok(())
     }
 
-    pub fn initialize_mutable_binding(&mut self, name: &String, value: Option<V>) -> Result<(), String> {
+    pub fn initialize_mutable_binding(&mut self, name: &K, value: Option<V>) -> Result<(), String> {
         self.initialize_binding(name, value, true)
     }
 
-    pub fn initialize_immutable_binding(&mut self, name: &String, value: Option<V>) -> Result<(), String> {
-        self.initialize_binding(name, value, false)
+    pub fn initialize_immutable_binding(&mut self, name: &K, value: V) -> Result<(), String> {
+        self.initialize_binding(name, Some(value), false)
     }
 
-    pub fn set_mutable_binding(&mut self, name: &String, value: V) -> Result<(), String> {
-        self.get_mutable_binding(name).map(|var| var.set(value))
+    pub fn set_mutable_binding(&mut self, name: &K, value: V) -> Result<(), String> {
+        self.resolve_binding(name).map(|var| var.set(value))
     }
 /*
     pub fn declare(&mut self, name: &String, kind: ast::DeclarationKind, value: Option<JSValue>) -> Result<(), String> {
@@ -250,28 +281,26 @@ mod scope_tests {
 
     #[test]
     fn scope_test_simple() {
-        let scope = &mut EnvironmentRecord::new();
+        let scope = &mut EnvironmentRecord::new(EnvironmentRecord::empty_global_binding());
 
-        let declare_let = |scope: &mut EnvironmentRecord<JSValue>, name: &str, value: Option<JSValue>| {
+        let declare_let = |scope: &mut EnvironmentRecord<String, JSValue>, name: &str, value: Option<JSValue>| {
             scope.initialize_mutable_binding(&name.to_string(), value);
         };
 
-        let declare_const = |scope: &mut EnvironmentRecord<JSValue>, name: &str, value: Option<JSValue>| {
+        let declare_const = |scope: &mut EnvironmentRecord<String, JSValue>, name: &str, value: JSValue| {
             scope.initialize_immutable_binding(&name.to_string(), value);
         };
 
-        let set_var = |scope: &mut EnvironmentRecord<JSValue>, name: &str, value: JSValue| {
-            scope.get_mutable_binding(&name.to_string())
-                .map(|v| v.set(value))
-                .unwrap();
+        let set_var = |scope: &mut EnvironmentRecord<String, JSValue>, name: &str, value: JSValue| {
+            scope.resolve_binding(&name.to_string()).map(|v| v.set(value)).unwrap()
         };
 
-        let assert_error = |scope: &mut EnvironmentRecord<JSValue>, name: &str| {
-            assert!(scope.get_mutable_binding(&name.to_string()).is_err());
+        let assert_set_error = |scope: &mut EnvironmentRecord<String, JSValue>, name: &str| {
+            assert!(scope.resolve_binding(&name.to_string()).unwrap().is_mutable() == false)
         };
 
-        let assert_var = |scope: &mut EnvironmentRecord<JSValue>, name: &str, value: JSValue| {
-            assert_eq!(scope.resolve_binding(&name.to_string()), value);
+        let assert_var = |scope: &mut EnvironmentRecord<String, JSValue>, name: &str, value: JSValue| {
+            assert_eq!(scope.resolve_binding(&name.to_string()).unwrap().get(), value);
         };
 
         /*

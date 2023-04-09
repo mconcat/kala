@@ -3,15 +3,15 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor, Shl, Shr, Not, Neg};
 
-use crate::context::InterpreterContext;
-use crate::lexical::{self, Identifier};
-use crate::lexical::InterpreterF;
+use crate::context::{InterpreterContext, EnvironmentRecord};
+use crate::node::{self, Identifier};
+use crate::node::InterpreterF;
 use crate::literal::{Literal, BooleanLiteral, NumberLiteral, StringLiteral};
 use crate::prototype::{PrototypeFunction, PrototypeArray};
 use crate::prototype::Prototype;
 use crate::literal;
 
-use kala_context::environment_record::EnvironmentRecord;
+
 use kala_context::evaluation_context::{self, EvaluationVariable};
 use kala_ast::ast;
 
@@ -202,6 +202,7 @@ impl JSNumber {
     }
 }
 
+// JSValue can be cloned without large overhead
 #[derive(Clone, Debug, PartialEq)]
 pub enum JSValue  {
     Undefined,
@@ -324,7 +325,7 @@ impl JSValue {
         })))
     }
 
-    pub fn function(env: EnvironmentRecord<JSValue>, code: lexical::Function) -> Self {
+    pub fn function(env: EnvironmentRecord, code: node::Function) -> Self {
         JSValue::Object(Rc::new(RefCell::new(JSObject{
             prototype: Some(Prototype::Function(PrototypeFunction::new(env, code.clone()))),
             properties: BTreeMap::new(),
@@ -375,7 +376,7 @@ impl JSValue {
         }
     }
 
-    pub fn set_property(&mut self, key: &lexical::Identifier, value: JSValue) {
+    pub fn set_property(&mut self, key: &node::Identifier, value: JSValue) {
         match self {
             JSValue::Object(obj) => {
                 let mut obj = obj.borrow_mut();
@@ -400,11 +401,11 @@ impl JSValue {
         }
     }
 
-    pub fn call(&self, ctx: &mut InterpreterContext, args: Vec<JSValue>) -> Option<JSValue> {
+    pub fn call(&mut self, ctx: &mut InterpreterContext, args: Vec<JSValue>) -> Option<JSValue> {
         match self {
             JSValue::Object(obj) => {
-                let obj = obj.borrow();
-                if let Some(Prototype::Function(func)) = &obj.prototype {
+                let mut obj = obj.borrow_mut();
+                if let Some(Prototype::Function(func)) = &mut obj.prototype {
                     func.call(ctx, args)
                 } else {
                     None 

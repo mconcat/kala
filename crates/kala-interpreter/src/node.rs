@@ -1,8 +1,7 @@
 use kala_ast::ast::{NodeF, ParameterElement};
 use kala_ast::ast;
-use crate::context::InterpreterContext;
 use crate::literal::*;
-use crate::value::JSValue;
+
 
 #[derive(Clone, Debug)]
 pub struct InterpreterF;
@@ -14,7 +13,7 @@ pub struct InterpreterF;
 // - function internal ID, e.g. "#1()"
 // - any other short circuiting runtime optimization
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)] // todo: manually implement
 pub struct Identifier {
     pub id: String,
     pub opt: Option<OptimizedIdentifier>,
@@ -38,7 +37,7 @@ impl Identifier {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum OptimizedIdentifier {
     // TODO
 }
@@ -132,12 +131,16 @@ impl Statement {
 
 #[derive(Clone, Debug)]
 pub struct Block {
+    pub free_variables: Option<Vec<Identifier>>,
+
     pub block: ast::BlockStatement<InterpreterF>,
 }
 
 impl From<ast::BlockStatement<InterpreterF>> for Block {
     fn from(block: ast::BlockStatement<InterpreterF>) -> Self {
         Block {
+            free_variables: None,
+
             block,
         }
     }
@@ -146,10 +149,68 @@ impl From<ast::BlockStatement<InterpreterF>> for Block {
 impl Block {
     pub fn new(body: Vec<Statement>) -> Self {
         Self {
+            free_variables: None,
             block: ast::BlockStatement {
                 body,
             }
         }
+    }
+
+    pub fn update_free_variables(&mut self) {
+        let mut free_variables = Vec::new();
+
+        for statement in &self.block.body {
+            match &statement.statement {
+                ast::Statement::VariableDeclaration(declaration) => {
+                    for declarator in &declaration.declarators {
+                        match &declarator.init {
+                            Some(init) => {
+                                free_variables.extend(init.free_variables());
+                            },
+                            None => {},
+                        }
+                    }
+                },
+                ast::Statement::FunctionDeclaration(declaration) => {
+                    free_variables.extend(declaration.function.free_variables());
+                },
+                ast::Statement::Block(block) => {
+                    free_variables.extend(block.free_variables());
+                },
+                ast::Statement::If(if_statement) => {
+                    free_variables.extend(if_statement.test.free_variables());
+                    free_variables.extend(if_statement.consequent.free_variables());
+                    if let Some(alternate) = &if_statement.alternate {
+                        free_variables.extend(alternate.free_variables());
+                    }
+                },
+                ast::Statement::While(while_statement) => {
+                    free_variables.extend(while_statement.test.free_variables());
+                    free_variables.extend(while_statement.body.free_variables());
+                },
+                ast::Statement::Break(_) => {},
+                ast::Statement::Continue(_) => {},
+                ast::Statement::Return(return_statement) => {
+                    if let Some(argument) = &return_statement.argument {
+                        free_variables.extend(argument.free_variables());
+                    }
+                },
+                ast::Statement::Expression(expression_statement) => {
+                    free_variables.extend(expression_statement.expression.free_variables());
+                },
+                _ => unimplemented!(),
+            }
+        }
+
+        self.free_variables = Some(free_variables);
+    }
+
+    pub fn free_variables(&mut self) -> &Vec<Identifier> {
+        if self.free_variables.is_none() {
+            self.update_free_variables();
+        }
+    
+        self.free_variables.as_ref().unwrap()
     }
 }
 
@@ -205,11 +266,11 @@ impl Expression {
 
     pub fn function(name: Option<Identifier>, params: Vec<ast::Pattern<InterpreterF>>, body: Block) -> Self {
         Self {
-            expression: ast::Expression::Function(Box::new(ast::FunctionExpression {
+            expression: ast::Expression::Function(Box::new(Function::new(
                 name,
                 params,
                 body,
-            })),
+            ))),
         }
     }
 
@@ -352,6 +413,10 @@ impl Function {
                 body,
             },
         }
+    }
+
+    pub fn captured_variables(&mut self) -> Vec<Identifier> {
+        self.function.body.lexical_variables();
     }
 }
 /* 

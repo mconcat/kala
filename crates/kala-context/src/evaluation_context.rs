@@ -8,6 +8,7 @@ pub trait JSVariable<V: JSValue>: Clone {
     fn set(&mut self, value: V);
 
     fn is_mutable(&self) -> bool;
+    fn as_mutable(&self) -> Option<&mut Self>;
   //  fn is_value(&self) -> bool;
   //  fn is_capture(&self) -> bool;
 }
