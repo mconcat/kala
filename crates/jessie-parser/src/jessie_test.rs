@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
     use crate::jessie_types::PropDef;
-    use crate::json_parser::*;
     use crate::jessie_types::*;
-    use crate::jessie_parser::expr;
+    use crate::jessie_parser::expression;
     use crate::parser::ParserState;
+    use crate::lexer::*;
     
     fn expr_test_cases() -> Vec<(&'static str, Expr)> {
         vec![
@@ -65,9 +65,15 @@ mod tests {
         expr_test_cases().iter().for_each(|case| {
             println!("===========");
             println!("test for {}", case.0);
-            let mut state = ParserState::new(case.0.to_string());
-            let result = expr(&mut state);
+            let mut lexer_state = ParserState::new(Str(case.0));
+            println!("lexer_state: {:?}", lexer_state);
+            let tokenstream = lex(&mut lexer_state).unwrap();
+            println!("tokenstream: {:?}", tokenstream);
+            let mut state = ParserState::new(VecToken(tokenstream));
+
+            let result = expression(&mut state);
             assert_eq!(result, Ok(case.1.clone()));
+            println!("success, result: {:?}", result);
         });
     }
 }

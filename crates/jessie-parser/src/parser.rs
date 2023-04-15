@@ -1,6 +1,4 @@
 use core::fmt::Debug;
-use std::{fmt::Display, thread::panicking};
-use crate::jessie_scope::Scope;
 pub enum Never {
 
 }
@@ -114,30 +112,31 @@ pub trait Node {
     fn parse(state: &mut ParserState) -> Result<Self, String> where Self: Sized;
 }
 */
+
+
 pub trait ArrayLike {
-    type Element: PartialEq+Debug;
+    type Element: PartialEq+Debug+Clone;
 
     fn get(&self, index: usize) -> Option<Self::Element>;
     fn len(&self) -> usize;
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ParserState<T: ArrayLike> {
+pub struct ParserState<T: ArrayLike+Clone+Debug> {
     pub input: T,
     pub pos: usize,
-    pub scope: Scope,
 }
 
-impl<T: ArrayLike> ParserState<T> {
+impl<T: ArrayLike+Clone+Debug> ParserState<T> {
     pub fn new(input: T) -> Self {
         Self {
             input,
             pos: 0,
-            scope: Scope::empty(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
+        println!("is_empty: {} >= {}", self.pos, self.input.len());
         self.pos >= self.input.len()
     }
 
@@ -165,14 +164,15 @@ impl<T: ArrayLike> ParserState<T> {
     }
 
     pub fn proceed(&mut self) -> Option<T::Element> {
+        println!("proceed {:?}", self.input.get(self.pos));
         let result = self.input.get(self.pos);
         if result.is_some() {
             self.pos += 1;
         }
         result
     }
-
     pub fn try_proceed(&mut self, c: T::Element) -> bool {
+        println!("try_proceed {:?} {:?}", c.clone(), self.lookahead_1());
         if self.lookahead_1() == Some(c) {
             self.proceed();
             true
@@ -182,15 +182,17 @@ impl<T: ArrayLike> ParserState<T> {
     }
 
     pub fn consume_1(&mut self, c: T::Element) -> Result<(), String> {
-        if self.lookahead_1() == Some(c) {
+        println!("consume_1 {:?} {:?}", c.clone(), self.lookahead_1());
+        if self.lookahead_1() == Some(c.clone()) {
             self.proceed();
             Ok(())
         } else {
-            Err(format!("Expected {:?}, but got {:?}", c, self.lookahead_1()))
+            Err(format!("Expected {:?}, but got {:?}", c.clone(), self.lookahead_1()))
         }
     }
 
     pub fn consume(&mut self, s: T) -> Result<(), String> {
+        println!("consume {:?} {:?}", s.clone(), self.lookahead_1());
         let pos = self.pos;
 
         for i in 0..s.len() {
@@ -248,6 +250,7 @@ impl<T: ArrayLike> ParserState<T> {
     }
 */
 
+/* 
     // attempt to parse, but if it fails, rewind the parser state
     // it does not backup or rollback any other state than pos
     pub fn attempt<R>(&mut self, f: impl Fn(&mut Self) -> Result<R, String>) -> Result<R, String> {
@@ -260,6 +263,7 @@ impl<T: ArrayLike> ParserState<T> {
             }
         }
     }
+    */
 
 /*
     pub fn consume_keyword(&mut self, s: T) -> Result<(), String> {
@@ -274,6 +278,7 @@ impl<T: ArrayLike> ParserState<T> {
     }
 */
 
+/* 
     pub fn try_consume_then<R>(&mut self, s: T, consequent: impl Fn(&mut Self) -> Result<R, String>, alternate: impl Fn(&mut Self) -> Result<R, String>) -> Result<R, String> {
         let pos = self.pos;
         match self.consume(s) {
@@ -284,9 +289,11 @@ impl<T: ArrayLike> ParserState<T> {
             }
         }
     }
+    */
 
     // backtrack the parser state to the last successful attempt
     // it backs up and rolls back including any other state than pos
+    /* 
     pub fn backtrack<R>(&mut self, f: impl Fn(&mut Self) -> Result<R, String>) -> Result<R, String> {
         self.attempt(f) // TODO
     }
@@ -300,11 +307,12 @@ impl<T: ArrayLike> ParserState<T> {
         self.pos = pos;
         result
     }
-
+*/
     pub fn proceed_then<R>(&mut self, r: R) -> Result<R, String> {
         self.proceed();
         Ok(r)
     }
+    
 /* 
     // used to parse variable names in context of declarations
     pub pub fn def_var(&mut self) -> Result<String, String> {
@@ -326,9 +334,5 @@ impl<T: ArrayLike> ParserState<T> {
 
     }
     */
-
-    pub fn current_scope(&mut self) -> &mut Scope {
-        &mut self.scope
-    }
 }
 

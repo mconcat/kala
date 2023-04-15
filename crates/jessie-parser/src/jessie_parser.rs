@@ -1,25 +1,12 @@
-use std::borrow::BorrowMut;
-
-use crate::lexer::{self, repeated_elements, Token, enclosed_element};
 use crate::parser::{self, ArrayLike};
-use crate::{jessie_types::*, json_types};
-// use crate::json_parser::{self, parse_string, parse_null, parse_false, parse_number_or_bigint, parse_true, parse_undefined};
+use crate::lexer::{self, Token, VecToken, repeated_elements, enclosed_element};
+use crate::jessie_types::*;
 use crate::jessie_operation::*;
-use crate::jessie_scope::{Variable, VariableInternal};
 
-impl ArrayLike for Vec<Token> {
-    type Element = lexer::Token;
+type ParserState = parser::ParserState<VecToken>;
 
-    fn get(&self, index: usize) -> Option<Self::Element> {
-        self.get(index)
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-type ParserState = parser::ParserState<Vec<Token>>;
+///////////////////////
+// Module
 
 pub fn module_body(state: &mut ParserState) -> Result<ModuleBody, String> {
     let mut items = Vec::new();
@@ -41,7 +28,7 @@ pub fn module_decl(state: &mut ParserState) -> Result<ModuleDecl, String> {
 }
 
 pub fn hardened_expr(state: &mut ParserState) -> Result<HardenedExpr, String> {
-    Ok(HardenedExpr(expr(state)?))
+    Ok(HardenedExpr(expression(state)?))
 }
 
 pub fn module_binding(state: &mut ParserState) -> Result<ModuleBinding, String> {
@@ -61,10 +48,13 @@ pub fn module_binding(state: &mut ParserState) -> Result<ModuleBinding, String> 
     }
 }
 
+///////////////////////
+// Patterns, Bindings, Definitions
+
 pub fn binding_pattern(state: &mut ParserState) -> Result<Pattern, String> {
     match state.lookahead_1() {
-        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(x, optional_type_ann(state))),
-        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(x, optional_type_ann(state))),
+        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(x, None/*TODO */)),
+        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(x, None/*TODO */)),
         _ => Err("Expected binding pattern".to_string()),
     }
 }
@@ -76,7 +66,7 @@ pub fn pattern(state: &mut ParserState) -> Result<Pattern, String> {
         Some(Token::LeftBracket) | Some(Token::LeftBrace) => binding_pattern(state),
         Some(Token::Comma) | Some(Token::RightBracket) => Ok(Pattern::Hole), // Not sure if its the right way...
         _ => // data_literal(state).map(|x| Pattern::DataLiteral(x)).or_else(|_| {
-            ident(state).map(|x| Pattern::Variable(x, optional_type_ann(state)))
+            identifier(state).map(|x| Pattern::Variable(x, None/*TODO */))
         //}),
     }
 }
@@ -84,7 +74,7 @@ pub fn pattern(state: &mut ParserState) -> Result<Pattern, String> {
 pub fn param(state: &mut ParserState) -> Result<Pattern, String> {
     if state.lookahead_1() == Some(Token::DotDotDot) {
         state.consume_1(Token::DotDotDot)?;
-        return pattern(state).map(|x| Pattern::Rest(Box::new(x), optional_type_ann(state)))
+        return pattern(state).map(|x| Pattern::Rest(Box::new(x), None/*TODO */))
     }
 
     let pat = pattern(state)?;
@@ -94,8 +84,8 @@ pub fn param(state: &mut ParserState) -> Result<Pattern, String> {
         }
         
         if state.try_proceed(Token::Equal) {
-            let expr = expr(state)?;
-            return Ok(Pattern::Optional(x.clone(), Box::new(expr), optional_type_ann(state)))
+            let expr = expression(state)?;
+            return Ok(Pattern::Optional(x.clone(), Box::new(expr), optional_type_ann(state)?))
         }
     }
 
@@ -107,7 +97,7 @@ pub fn prop_param(state: &mut ParserState) -> Result<PropParam, String> {
         return pattern(state).map(|x| PropParam::Rest(x))
     }
 
-    let key = ident(state)?;
+    let key = identifier(state)?;
 
     match state.lookahead_1() {
         Some(Token::Colon) => {
@@ -117,305 +107,15 @@ pub fn prop_param(state: &mut ParserState) -> Result<PropParam, String> {
         },
         Some(Token::Equal) => {
             state.proceed();
-            let expr = expr(state)?;
+            let expr = expression(state)?;
             Ok(PropParam::Optional(key, expr))
         }
         _ => Ok(PropParam::Shorthand(key)),
     }
 }
 
-fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, String> {
-    let args = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
-    if state.try_proceed(Token::FatArrow) {
-        match state.lookahead_1() {
-            Some(Token::LeftBrace) => return Ok(Expr::ArrowFunc(Box::new(Function(None, args, None/*TODO */, block(state)?)))),
-            _ => unimplemented!("Arrow functions without block body are not supported yet")
-        }    
-    } else {
-        match args.as_slice() {
-            &[p] => match p {
-                Pattern::Variable(x, ann) => {
-                    if ann.is_some() {
-                        unimplemented!("Type annotations should not be in parenthesized expressions")
-                    }
-                    Ok(Expr::Variable(x))
-                },
-                Pattern::ArrayPattern(xs, ann) => {
-                    unimplemented!("array literal in parenthesized expressions is not supported yet")
-                },
-                Pattern::RecordPattern(xs, ann) => {
-                    unimplemented!("record literal in parenthesized expressions is not supported yet")
-                },
-                _ => Err("=> expected".to_string()),
-            }
-            _ => Err("Grouped expressions are not valid syntax in Jessie".to_string()),
-        }
-    }
-}
-
-fn function_or_cond_expr(state: &mut ParserState) -> Result<Expr, String> {
-    if state.try_proceed(Token::Function) {
-        let name = if let Some(Token::Identifier(name)) = state.lookahead_1() {
-            state.proceed();
-            Some(name)
-        } else {
-            None
-        };
-
-        let args = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true)?;
-
-        let ret_type = optional_type_ann(state);
-
-        let body = block(state)?;
-
-        Ok(Expr::FunctionExpr(Box::new(Function(name, args, ret_type, body))))
-    } else {
-        // jump to arithmetic expression parsing directly, as it is a variable(a primary expr)
-        assignment_or_cond_expr(state)
-    }
-}
-/*
-fn typeof_or_cond_expr(state: &mut ParserState) -> Result<Expr, String> {
-    // Same comment with above. also, because this is a prefix operator, 
-    // it should recognize (, {, [, ` as valid trailing characters too.
-    // for example, "typeof{}" is a valid expression.
-    // TODO
-    if state.try_proceed(Token::TypeOf) {
-        let rest = unary_expr(state)?;
-        Ok(Expr::UnaryExpr(Box::new(unary_expr_with_push(state, UnaryOp::TypeOf)?)))
-    } else {
-        assignment_or_cond_expr(state)
-    }
-}
-*/
-fn assignment_or_cond_expr(state: &mut ParserState) -> Result<Expr, String> {
-    /*
-    if let Ok(result) = state.attempt(|state| {
-        // TODO: this is inefficient but to optimize it we need to
-        // change cond_expr into pratt parser.
-        // using attempt instead of backtrack may cause memory leak or something,
-        // because lvalue can be parsed twice, and registered in scope twice,
-        // but the allocated lvalue is not freed, etc etc...
-        // idk deal with it later
-        let lvalue = lvalue(state)?;
-        let op = assign_op(state);
-        if let Ok(op) = op {
-            // at this point, we know it's an assignment expression, not cond expr.
-            let rvalue = expr(state)?;
-            Ok(Expr::Assignment(Box::new(Assignment(lvalue, op, rvalue))))
-        } else {
-
-        }
-        let rvalue = expr(state)?;
-        Ok(Expr::Assignment(Box::new(Assignment(lvalue, op, rvalue))))
-    }) {
-        Ok(result)
-    } else {
-        cond_expr(state)
-    }
-    */
-}
-
-// assignExpr =
-//   | ArrowFunc
-//   | ParenedExpr
-//   | FunctionExpr
-//   | CondExpr // = CondExpr | BinaryExpr | UnaryExpr | CallExpr
-//   | DataStructure
-//   | QuasiExpr
-//   | UseVariable
-//   | LValue PostOp
-//   | LValue AssignOp AssignExpr
-pub fn expr(state: &mut ParserState) -> Result<Expr, String> {
-    match state.lookahead_1() {
-        // First parse parenthesized expressions, and then look for arrow symbol after. If it's an arrow, parse an arrow function. If not, parse a parenthesized expression, and take that as the primary expression, fallthrough to the last case.
-        Some(Token::LeftParen) => arrow_or_paren_expr(state),
-
-        // If the first identifier is "function", parse a function expression. 
-        Some(Token::Function) => function_expr(state).map(|x| Expr::FunctionExpr(Box::new(x))),
-    
-        // If the first identifier is "typeof", parse a typeof expression. Else, treat it as a variable, and fallthrough to the last case.
-        // Some('t') => typeof_or_cond_expr(state),
-
-        // - Find if a unary operator is present
-        Some(Token::Tilde) |
-        Some(Token::Bang) |
-        Some(Token::TypeOf) |
-        Some(Token::Plus) |
-        Some(Token::Minus) => cond_expr(state),
-
-        // - If not, try to parse a lvalue. If if succeeds, try to parse an assignment operator. If it fails, take the lvalue as a primary expression(=in case of index/field access, treat it as a callExpr with corresponding memberPostOp) and fallthrough to the next case.
-        // - Try to parse a primary expression(or lvaue correspondence if fallthrough). If it fails, the expression is invalid. If it succeeds, lookahead the next token. If it is one of binary operators, or callPostOp, jump into the corresponding parser function. If not, return the primary expression.
-        _ => assignment_or_cond_expr(state)
-    }
-
-// RD version for reference
-/*
-    state.attempt(arrow_func).map(|x| Expr::ArrowFunc(Box::new(x))).or_else(|_| 
-        state.attempt(function_expr).map(|x| Expr::FunctionExpr(Box::new(x))).or_else(|_| 
-            state.attempt(assignment).map(|x| Expr::Assignment(Box::new(x))).or_else(|_| 
-                state.attempt(cond_expr).or_else(|_| 
-                    primary_expr(state)
-                )
-            )
-        )
-    )
-    */
-}
-/* 
-pub fn assignment(state: &mut ParserState) -> Result<Assignment, String> {
-    println!("assignment");
-    let lvalue = lvalue(state)?;
-    state.consume_whitespace();
-    let op = assign_op(state)?;
-    state.consume_whitespace();
-    let expr = expr(state)?;
-    Ok(Assignment(lvalue, op, expr))
-}
-*/
-
-pub fn assign_op(state: &mut ParserState) -> Result<AssignOp, String> {
-    match state.lookahead_1() {
-        Some(Token::Equal) => state.proceed_then(AssignOp::Assign),
-        Some(Token::PlusEqual) => state.proceed_then(AssignOp::AssignAdd),
-        Some(Token::MinusEqual) => state.proceed_then(AssignOp::AssignSub),
-        Some(Token::AsteriskEqual) => state.proceed_then(AssignOp::AssignMul),
-        Some(Token::SlashEqual) => state.proceed_then(AssignOp::AssignDiv),
-        Some(Token::PercentEqual) => state.proceed_then(AssignOp::AssignMod),
-        _ => Err("sadf".to_string())
-    }
-    /*
-    match state.lookahead_1() {
-        Some('=') => {
-            match state.lookahead_2() { // exclude binary operator cases that could start with =
-                Some('=') | Some('>') => { // do we need to take care of arrow here?? idk, better safe than sorry
-                    Err("sadf".to_string())
-                }
-                _ => {
-                    state.consume("=")?;
-                    Ok(AssignOp::Assign)
-                }
-            }
-        },
-        Some('+') => {
-            state.consume("+=")?;
-            Ok(AssignOp::AssignAdd)
-        },
-        Some('-') => {
-            state.consume("-=")?;
-            Ok(AssignOp::AssignSub)
-        },
-        Some('*') => {
-            match state.lookahead_2() {
-                Some('*') => {
-                    state.consume("**=")?;
-                    Ok(AssignOp::AssignExp)
-                },
-                Some('=') => {
-                    state.consume("*=")?;
-                    Ok(AssignOp::AssignMul)
-                },
-                _ => Err("sadf".to_string())
-            }
-        },
-        Some('/') => {
-            state.consume("/=")?;
-            Ok(AssignOp::AssignDiv)
-        },
-        Some('%') => {
-            state.consume("%=")?;
-            Ok(AssignOp::AssignMod)
-        },
-        Some('<') => {
-            state.consume("<<=")?;
-            Ok(AssignOp::AssignLShift)
-        },
-        Some('>') => {
-            match state.lookahead_3() {
-                Some('=') => {
-                    state.consume(">>=")?;
-                    Ok(AssignOp::AssignRShift)
-                },
-                Some('>') => {
-                    state.consume(">>>=")?;
-                    Ok(AssignOp::AssignURShift)
-                },
-                _ => Err("Expected >> or >>>".to_string()),
-            }
-        },
-        Some('&') => {
-            state.consume("&=")?;
-            Ok(AssignOp::AssignBitAnd)
-        },
-        Some('|') => {
-            state.consume("|=")?;
-            Ok(AssignOp::AssignBitOr)
-        },
-        Some('^') => {
-            state.consume("^=")?;
-            Ok(AssignOp::AssignBitXor)
-        },
-        _ => Err("Expected assignment operator".to_string()),
-    }
-    */
-}
-
-// lookaheads
-// '(' => arrow func or paren expr
-// '{' => purerecord
-// '[' => purearray
-// true, false, null, undefined, number, string => pureexpr
-// other => variable
-pub fn pure_expr(state: &mut ParserState) -> Result<Expr, String> {
-    unimplemented!("pure_expr")
-
-// RD parser for reference
-    /*
-    state.attempt(arrow_func).map(|x| Expr::ArrowFunc(Box::new(x))).or_else(|_| 
-        state.attempt(json_parser::pure_expr).map(|x| x.into()).or_else(|_| 
-            state.attempt(|state| {
-                state.consume("(")?;
-                state.consume_whitespace();
-                let expr = pure_expr(state)?;
-                state.consume_whitespace();
-                state.consume(")")?;
-                Ok(Expr::ParenedExpr(Box::new(expr)))
-            }).or_else(|_| 
-                ident(state).map(|x| Expr::Variable(x))
-            )
-        )
-    )
-    */
-}
-
-pub fn lvalue(state: &mut ParserState) -> Result<LValue, String> {
-    let lval = primary_expr(state)?;
-
-    match state.lookahead_1() {
-        Some(Token::LeftBracket) => {
-            state.proceed();
-            let index = expr(state)?;
-            state.consume_1(Token::RightBracket)?;
-            Ok(LValue::Index(lval, index))
-        },
-        Some(Token::Dot) => {
-            state.proceed();
-            let name = ident(state)?;
-            Ok(LValue::Member(lval, name))
-        },
-        _ => {
-            match lval {
-                Expr::Variable(name) => Ok(LValue::Variable(name)), // TODO
-                _ => Err("Expected lvalue".to_string()),
-            }
-        }
-    }
-}
-
-// lookaheads
-// '{' => block_or_record
-// const, let, function, if, while, try, continue, break, return, throw
-// else go to expression
+///////////////////////
+// Statements
 
 // statementItem
 pub fn statement(state: &mut ParserState) -> Result<Statement, String> {
@@ -424,24 +124,15 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, String> {
         Some(Token::LeftBrace) => block(state).map(Statement::Block), // TODO: implement statement level record literal?
         Some(Token::Const) => {
             state.proceed();
-            declaration_body(state, DeclarationKind::Const).map(Statement::Declaration)
+            declaration(state, DeclarationKind::Const).map(Statement::Declaration)
         },
         Some(Token::Let) => {
             state.proceed();
-            declaration_body(state, DeclarationKind::Let).map(Statement::Declaration)
+            declaration(state, DeclarationKind::Let).map(Statement::Declaration)
         },
-        Some(Token::Function) => {
-            state.proceed();
-            function_decl_body(state).map(Statement::FunctionDeclaration)
-        },
-        Some(Token::If) => {
-            state.proceed();
-            if_statement(state).map(Statement::IfStatement)
-        },
-        Some(Token::While) => {
-            state.proceed();
-            while_statement(state).map(Statement::WhileStatement)
-        },
+        Some(Token::Function) => function_decl(state).map(Statement::FunctionDeclaration),
+        Some(Token::If) => if_statement(state).map(Statement::IfStatement),
+        Some(Token::While) => while_statement(state).map(Statement::WhileStatement),
         Some(Token::Try) => {
             unimplemented!("try statement")
             //state.proceed();
@@ -449,7 +140,9 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, String> {
         },
         Some(Token::Throw) => {
             state.proceed();
-            expr(state).map(Statement::Throw)
+            let res = expression(state).map(Statement::Throw);
+            state.consume_1(Token::Semicolon)?;
+            res
         },
         Some(Token::Continue) => {
             state.proceed();
@@ -466,55 +159,66 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, String> {
             if state.try_proceed(Token::Semicolon) {
                 Ok(Statement::Return(None))
             } else {
-                let e = expr(state)?;
+                let e = expression(state)?;
                 state.consume_1(Token::Semicolon)?;
                 Ok(Statement::Return(Some(e)))
             }
         },
-        _ => expr_statement(state)
+        _ => {
+            let e = expression(state)?;
+            state.consume_1(Token::Semicolon)?;
+            Ok(Statement::ExprStatement(e))
+        }
     }
-/*
-    state.attempt(block).map(|x| Statement::Block(x)).or_else(|_| 
-        state.attempt(if_statement).map(|x| Statement::IfStatement(x)).or_else(|_| 
-            state.attempt(breakable_statement).map(|x| Statement::BreakableStatement(x)).or_else(|_| 
-                state.attempt(terminator).map(|x| Statement::Terminator(x)).or_else(|_| 
-                    //state.attempt(try_statement).map(|x| Statement::TryStatement(x)).or_else(|_| 
-                        state.attempt(expr_statement).map(|x| Statement::ExprStatement(x))
-                    // )
-                )
-            )
-        )
-    )
-    */
 }
 
-pub fn expr_statement(state: &mut ParserState) -> Result<Statement, String> {
-    // TODO: cantStartExprStatement
-    let result = expr(state)?;
-    state.consume_1(Token::Semicolon)?;
-    Ok(Statement::ExprStatement(result))
+fn function_decl(state: &mut ParserState) -> Result<Function, String> {
+    state.consume_1(Token::Function)?;
+    let name = identifier(state)?;
+    function_internal(state, Some(name))
+}
+
+fn declaration(state: &mut ParserState, kind: DeclarationKind) -> Result<Declaration, String> {
+    repeated_elements(state, None, Token::Semicolon, &binding, false).map(|x| Declaration { kind, bindings: x })
+}
+
+pub fn binding(state: &mut ParserState) -> Result<Binding, String> {
+    match state.lookahead_1() {
+        Some(Token::LeftBrace) | Some(Token::LeftBracket) => {
+            let pattern = binding_pattern(state)?;
+            state.consume_1(Token::Equal)?;
+            let expr = expression(state)?;
+            Ok(Binding::PatternBinding(pattern, expr))
+        },
+        _ => {
+            let name = identifier(state)?;
+            let expr = if state.try_proceed(Token::Equal) {
+                Some(expression(state)?)
+            } else {
+                None
+            };
+            Ok(Binding::VariableBinding(name, expr))
+        }
+    }
 }
 
 pub fn block(state: &mut ParserState) -> Result<Block, String> {
     state.consume_1(Token::LeftBrace)?;
 
-    let mut statements = Vec::new();
-    while state.lookahead_1() != Some(Token::RightBrace) { // is it memory safe??
+    let mut statements = vec![];
+    while state.lookahead_1() != Some(Token::RightBrace) {
         statements.push(statement(state)?);
     }
 
-    Ok(Block::new(statements))
+    state.consume_1(Token::RightBrace)?;
+
+    Ok(Block { statements })
 }
 
-pub fn if_statement(state: &mut ParserState) -> Result<IfStatement, String> {
+fn if_statement(state: &mut ParserState) -> Result<IfStatement, String> {
     state.consume_1(Token::If)?;
-    if_statement_body(state)
-}
-
-fn if_statement_body(state: &mut ParserState) -> Result<IfStatement, String> {
-    // assume that "if" keyword is already consumed
     state.consume_1(Token::LeftParen)?;
-    let condition = expr(state)?;
+    let condition = expression(state)?;
     state.consume_1(Token::RightParen)?;
     let consequent = block(state)?;
 
@@ -531,322 +235,169 @@ fn if_statement_body(state: &mut ParserState) -> Result<IfStatement, String> {
     Ok(IfStatement { condition, consequent, alternate })
 }
 
-
 pub fn while_statement(state: &mut ParserState) -> Result<WhileStatement, String> {
     state.consume_1(Token::While)?;
-    while_statement_body(state)
-}
-
-pub fn while_statement_body(state: &mut ParserState) -> Result<WhileStatement, String> {
-    // assume that "while" keyword is already consumed
     state.consume_1(Token::LeftParen)?;
-    let condition = expr(state)?;
+    let condition = expression(state)?;
     state.consume_1(Token::RightParen)?;
     let body = block(state)?;
 
     Ok(WhileStatement { condition, body })
 }
-/*
-pub fn terminator(state: &mut ParserState) -> Result<Terminator, String> {
-    println!("terminator");
+
+
+///////////////////////
+// Expressions
+
+// Top level expression parser. Same with AssignExpr.
+// assignExpr =
+//   | ArrowFunc
+//   | ParenedExpr
+//   | FunctionExpr
+//   | CondExpr // = CondExpr | BinaryExpr | UnaryExpr | CallExpr
+//   | DataStructure
+//   | QuasiExpr
+//   | UseVariable
+//   | LValue PostOp
+//   | LValue AssignOp AssignExpr
+pub fn expression(state: &mut ParserState) -> Result<Expr, String> {
     match state.lookahead_1() {
-        Some('c') => {
-            state.consume("continue")?;
-            state.consume_whitespace();
-            state.consume(";")?;
-            Ok(Terminator::Continue)
-        },
-        Some('b') => {
-            state.consume("break")?;
-            state.consume_whitespace();
-            state.consume(";")?;
-            Ok(Terminator::Break)
-        },
-        Some('r') => {
-            println!("return start");
-            state.consume("return")?;
-            println!("return consumed");
-            let arg = state.attempt(|state| {
-                state.consume_whitespace();
-                state.consume(";")?;
-                Ok(None)
-            }).or_else(|_| {
-                // TODO: no newline for return argument
-                state.lookahead_whitespace_nonident()?;
-                state.consume_whitespace();
-                let arg = expr(state)?;
-                state.consume(";")?;
-                Ok::<Option<Expr>, String>(Some(arg))
-            })?;
-            println!("return end");
-            Ok(Terminator::Return(arg))
-        },
-        Some('t') => {
-            state.consume("throw")?;
-            state.lookahead_whitespace_nonident()?; // TODO: no newline
-            state.consume_whitespace();
-            let expr = expr(state)?;
-            state.consume(";")?;
-            Ok(Terminator::Throw(expr))
-        },
-        _ => Err("Expected terminator".to_string()),
-    }
-}
-*/
-pub fn declaration_body(state: &mut ParserState, kind: DeclarationKind) -> Result<Declaration, String> {
-    // assume that "let" or "const" keyword is already consumed
-    /*
-    let kind = match state.lookahead_1() {
-        Some('l') => state.consume("let").map(|_| DeclarationKind::Let),
-        Some('c') => state.consume("const").map(|_| DeclarationKind::Const),
-        _ => Err("Expected 'let' or 'const'".to_string()),
-    }?;
-    */
+        // Function expression
+        // function f(x) { return x + 1; }
+        Some(Token::Function) => function_expr(state).map(|x| Expr::FunctionExpr(Box::new(x))),
 
-    let bindings = repeated_elements(state, None, Token::Semicolon, &binding, false)?;
+        // Parenthesized expression or arrow function
+        // (x + y)
+        // (x, y) => x + y
+        Some(Token::LeftParen) => arrow_or_paren_expr(state),
 
-    Ok(Declaration { kind, bindings })
-}
-
-pub fn binding(state: &mut ParserState) -> Result<Binding, String> {
-    match state.lookahead_1() {
-        Some(Token::LeftBrace) | Some(Token::LeftBracket) => {
-            let pattern = binding_pattern(state)?;
-            state.consume_1(Token::Equal)?;
-            let expr = expr(state)?;
-            Ok(Binding::PatternBinding(pattern, expr))
-        },
-        _ => {
-            let name = ident(state)?;
-            let expr = state.attempt(|state| {
-                state.consume_1(Token::Equal)?;
-                expr(state)
-            }).ok();
-            Ok(Binding::VariableBinding(name, expr))
-        }
-    }
-}
-// TODO: move to lexer
-/* 
-pub fn reserved_word(state: &mut ParserState) -> Result<ReservedWord, String> {
-    match state.lookahead_1() {
-        Some('n') => state.consume("null").map(|_| ReservedWord::Null),
-        Some('f') => state.consume("false").map(|_| ReservedWord::False),
-        Some('t') => state.consume("true").map(|_| ReservedWord::True),
-        Some('a') => match state.lookahead_2() {
-            Some('s') => state.consume("async").map(|_| ReservedWord::Async),
-            Some('r') => state.consume("arguments").map(|_| ReservedWord::Arguments),
-            _ => Err("Expected 'async' or 'arguments'".to_string()), 
-        },
-        Some('e') => state.consume("eval").map(|_| ReservedWord::Eval),
-        Some('g') => state.consume("get").map(|_| ReservedWord::Get),
-        Some('s') => state.consume("set").map(|_| ReservedWord::Set),
-        _ => Err("Expected reserved word'".to_string()),
+        _ => assign_or_cond_or_primary_expression(state),
     }
 }
 
-pub fn reserved_keyword(state: &mut ParserState) -> Result<ReservedKeyword, String> {
-    let reserved_word = match state.lookahead_1() {
-        Some('c') => state.consume("class").map(|_| ReservedKeyword::Class),
-        Some('d') => {
-            match state.lookahead_2() {
-                Some('e') => state.consume("delete").map(|_| ReservedKeyword::Delete),
-                Some('o') => state.consume("do").map(|_| ReservedKeyword::Do),
-                _ => Err("Expected 'delete' or 'do'".to_string()),
-            }
-        },
-        Some('e') => state.consume("extends").map(|_| ReservedKeyword::Extends),
-        Some('i') => {
-            match state.lookahead_2() {
-                Some('n') => {
-                    match state.lookahead_3() {
-                        Some('s') => state.consume("instanceof").map(|_| ReservedKeyword::InstanceOf),
-                        Some(' ') => state.consume("in").map(|_| ReservedKeyword::In),
-                        _ => Err("Expected 'instanceof' or 'in'".to_string()),
-                    }
-                },
-                _ => Err("Expected 'instanceof' or 'in'".to_string()),
-            }
-        },
-        Some('n') => state.consume("new").map(|_| ReservedKeyword::New),
-        Some('s') => state.consume("super").map(|_| ReservedKeyword::Super),
-        Some('t') => state.consume("this").map(|_| ReservedKeyword::This),
-        Some('v') => state.consume("var").map(|_| ReservedKeyword::Var),
-        Some('w') => state.consume("with").map(|_| ReservedKeyword::With),
-        Some('y') => state.consume("yield").map(|_| ReservedKeyword::Yield),
-        _ => Err("Expected a reserved keyword".to_string()),
-    }?;
-
-    state.lookahead_whitespace_nonident()?;
-
-    Ok(reserved_word)
-}
-
-pub fn keyword(state: &mut ParserState) -> Result<Keyword, String> {
-    let keyword = match state.lookahead_1() {
-        Some('b') => state.consume("break").map(|_| Keyword::Break),
-        Some('c') => {
-            match state.lookahead_2() {
-                Some('a') => match state.lookahead_3() {
-                    Some('s') => state.consume("case").map(|_| Keyword::Case),
-                    Some('t') => state.consume("catch").map(|_| Keyword::Catch),
-                    _ => Err("Expected 'case' or 'catch'".to_string()),
-                },
-                Some('o') => match state.lookahead_4() {
-                    Some('s') => state.consume("const").map(|_| Keyword::Const),
-                    Some('t') => state.consume("continue").map(|_| Keyword::Continue),
-                    _ => Err("Expected 'const' or 'continue'".to_string()),
-                },
-                _ => Err("Expected 'case', 'catch', 'const', or 'continue'".to_string()),
-            }
-        },
-        Some('d') => {
-            match state.lookahead_3() {
-                Some('b') => state.consume("debugger").map(|_| Keyword::Debugger),
-                Some('f') => state.consume("default").map(|_| Keyword::Default),
-                _ => Err("Expected 'debugger' or 'default'".to_string()),
-            }
-        },
-        Some('e') => {
-            match state.lookahead_2() {
-                Some('l') => state.consume("else").map(|_| Keyword::Else),
-                Some('x') => state.consume("export").map(|_| Keyword::Export),
-                _ => Err("Expected 'else' or 'export'".to_string()),
-            }
-        },
-        Some('f') => {
-            match state.lookahead_2() {
-                Some('i') => state.consume("finally").map(|_| Keyword::Finally),
-                Some('o') => state.consume("for").map(|_| Keyword::For),
-                Some('u') => state.consume("function").map(|_| Keyword::Function),
-                _ => Err("Expected 'finally', 'for', or 'function'".to_string()),
-            }
-        },
-        Some('i') => {
-            match state.lookahead_2() {
-                Some('f') => state.consume("if").map(|_| Keyword::If),
-                Some('m') => state.consume("import").map(|_| Keyword::Import),
-                _ => Err("Expected 'if' or 'import'".to_string()),
-            }
-        },
-        Some('r') => state.consume("return").map(|_| Keyword::Return),
-        Some('s') => state.consume("switch").map(|_| Keyword::Switch),
-        Some('t') => {
-            match state.lookahead_2() {
-                Some('h') => state.consume("throw").map(|_| Keyword::Throw),
-                Some('r') => state.consume("try").map(|_| Keyword::Try),
-                Some('y') => state.consume("typeof").map(|_| Keyword::TypeOf),
-                _ => Err("Expected 'throw', 'try', or 'typeof'".to_string()),
-            }
-        },
-        Some('v') => state.consume("void").map(|_| Keyword::Void),
-        Some('w') => state.consume("while").map(|_| Keyword::While),
-        _ => Err("Expected a keyword".to_string()),
-    };
-
-    if keyword.is_err() {
-        return keyword
+pub fn call_and_unary_op(state: &mut ParserState) -> Result<(Expr, bool), String> {
+    // 1. UnaryOp fast path
+    let mut preops = vec![];
+    while let Ok(preop) = unary_op(state) {
+        preops.push(preop)
     }
 
-    state.lookahead_whitespace_nonident()?;
+    // 2. Leftmost PrimaryExpression
+    let expr = primary_expr(state)?;
 
-    keyword
+    // 2-1. MemberPostOp fast path
+    // If the leftmost node has CallPostOps(but without Call), it could be either an AssignExpr or a CondExpr(CallExpr).
+    call_expr_internal(state, expr)
 }
 
-pub fn future_reserved_word(state: &mut ParserState) -> Result<FutureReservedWord, String> {
-    match state.lookahead_1() {
-        Some('a') => state.consume("await").map(|_| FutureReservedWord::Await),
-        Some('e') => state.consume("enum").map(|_| FutureReservedWord::Enum),
-        Some('i') => {
-            match state.lookahead_2() {
-                Some('m') => state.consume("implements").map(|_| FutureReservedWord::Implements),
-                Some('n') => state.consume("interface").map(|_| FutureReservedWord::Interface),
-                _ => Err("Expected 'implements' or 'interface'".to_string()),
-            }
-        },
-        Some('p') => {
-            match state.lookahead_2() {
-                Some('a') => state.consume("package").map(|_| FutureReservedWord::Package),
-                Some('r') => state.consume("protected").map(|_| FutureReservedWord::Protected),
-                // TODO: private
-                Some('u') => state.consume("public").map(|_| FutureReservedWord::Public), 
-                _ => Err("Expected 'package' or 'protected'".to_string()),
-            }
-        },
-        _ => Err("Expected a future reserved word".to_string()),
-    }   
-}
-*/
-fn array(state: &mut ParserState) -> Result<Array, String> {
-    repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &element, false).map(|elements| Array(elements))
-}
+fn assign_or_cond_or_primary_expression(state: &mut ParserState) -> Result<Expr, String> {
+    // Leftmost node of the assignment expression could be either PrimaryExpression or Variable.
+    // Leftmost node of the conditional expression could be either UnaryOp(in case of UpdateExpr) or PrimaryExpression(in case of CallExpr).
 
-fn record(state: &mut ParserState) -> Result<Record, String> {
-    repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_def, false).map(|properties| Record(properties))
-}
+    // We take the following approach:
+    // 1. Try parsing a UnaryOp. If it succeeds, we know that we are parsing an CondExpr(with an UnaryExpr as the leftmost node). Power operator should not be parsed in this case. Return UnaryExpr parsing result.
+    // 2. Try parsing a PrimaryExpression. If it succeeds, we know that we are parsing either an AssignExpr or a CondExpr(with a PrimaryExpression as the leftmost node).
+    // 2-1. Try parsing a MemberPostOp. If it succeeds, we know that we are parsing either an AssignExpr or a CondExpr(with a CallExpr as the leftmost node). If it fails, check if the PrimaryExpression is a variable. If it is not, we are parsing a CondExpr. Return CondExpr parsing result. Otherwise, proceed to 3.
+    // 3. Try parsing an AssignOp. If it succeeds, we know that we are parsing an AssignExpr. Coerce the primary expression to a LValue and return the AssignExpr parsing result. If it fails, we are parsing a CondExpr.
+    // 4. Try parsing an ternary/binary operator. If it succeeds, we know that we are parsing a CondExpr. Return CondExpr parsing result.
+    // 5. If we reach here, we are parsing a PrimaryExpression. Return the parsing result.
+    // TODO: support quasi expression
 
-/* TODO: move to lexer
-pub fn data_literal(state: &mut ParserState) -> Result<Expr, String> {
-    let lit = json_parser::data_literal(state)?.into();
-    Ok(Expr::DataLiteral(match lit {
-        DataLiteral::Number(ref n) => {
-            if state.lookahead_1() == Some('n') {
-                state.proceed();
-                DataLiteral::Bigint(n.clone())
-            } else {
-                lit
-            }
-        }
-        _ => lit
-    }))
-}
 
-pub fn data_structure(state: &mut ParserState) -> Result<Expr, String> {
-    let result = match state.lookahead_1() {
-        Some('n') | Some('f') | Some('t') | Some('0'..='9') | Some('"') => {
-            data_literal(state)
-        }
-        Some('[') => {
-            array(state).map(Expr::Array)
-        }
-        Some('{') => {
-            record(state).map(Expr::Record)
-        }
-        Some('u') => {
-            state.consume("undefined").map(|_| Expr::DataLiteral(DataLiteral::Undefined))
-        }
-        None => Err("Unexpected EOF".to_string()),
-        _ => Err("Expected a data literal, array, record, or undefined".to_string()),
-    };
+    let (expr, only_member_post_op) = call_and_unary_op(state)?;
 
-    state.consume_whitespace();
+    if let Expr::UnaryExpr(_) = expr {
+        // If the preops exist, we are parsing a CondExpr(UnaryExpr as leftmost). Apply preops to the leftmost node and jump to CondExpr.
+        return cond_expr_with_leftmost_no_power(state, expr)
+    } else if let Expr::CallExpr(_) = expr {
+        // If a CallPostOp is found, it could be either an AssignExpr or a CondExpr(CallExpr).
 
-    result
-}
-*/
-/* 
-enum IdentOrCandidate {
-    Ident(String),
-    Candidate(String),
-}
+        // continue
+    } else if let Expr::Variable(_) = expr {
+        // If the leftmost node is a variable, and there is no CallPostOp, it could be either an AssignExpr or a CondExpr(Variable).
 
-// takes one possible candidate
-fn ident_or_candidate(state: &mut ParserState, candidate: &str) -> Result<IdentOrCandidate, String> {
-    let mut ident = String::new();
-    let mut lookahead = state.lookahead_1();
-    while lookahead.is_some() && lookahead.unwrap().is_ascii_alphanumeric() {
-        ident.push(lookahead.unwrap());
-        state.proceed();
-        lookahead = state.lookahead_1();
-    }
-
-    if ident == candidate {
-        Ok(IdentOrCandidate::Candidate(ident))
+        // continue
     } else {
-        Ok(IdentOrCandidate::Ident(ident))
-    }    
+        // Otherwise, it is a CondExpr(PrimaryExpression).
+
+        return cond_expr_with_leftmost(state, expr)
+    }
+
+    // 3. AssignExpr parsing
+    if let Some(op) = assign_op(state) {
+        if let Some(lvalue) = expr.try_into_lvalue() {
+            let right = expression(state)?;
+            return Ok(Expr::Assignment(Box::new(Assignment ( lvalue, op, right ))));
+        } else {
+            return Err("Invalid left-hand side in assignment".to_string());
+        }
+    }
+
+    // 4. CondExpr parsing
+    if lookahead_operator(state) {
+        return cond_expr_with_leftmost(state, expr);
+    }
+
+    // 5. PrimaryExpression or CallExpr
+    Ok(expr)
 }
-*/
+
+fn assign_op(state: &mut ParserState) -> Option<AssignOp> {
+    match state.lookahead_1() {
+        Some(Token::Equal) => {
+            state.proceed();
+            Some(AssignOp::Assign)
+        },
+        Some(Token::PlusEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignAdd)
+        },
+        Some(Token::MinusEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignSub)
+        },
+        Some(Token::AsteriskEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignMul)
+        },
+        Some(Token::SlashEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignDiv)
+        },
+        Some(Token::PercentEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignMod)
+        },
+        /*
+        Some(Token::CaretEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignExp)
+        },
+        Some(Token::AmpersandEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignAnd)
+        },
+        Some(Token::PipeEqual) => {
+            state.proceed();
+            Some(AssignOp::AssignOr)
+        },
+        Some(Token::LeftShiftEqual) => {
+            state.proceed();
+            Some(AssignOp::)
+        },
+        Some(Token::RightShiftEqual) => {
+            state.proceed();
+            Some(AssignOp::RightShiftEqual)
+        },
+        Some(Token::UnsignedRightShiftEqual) => {
+            state.proceed();
+            Some(AssignOp::UnsignedRightShiftEqual)
+        },
+        */
+        _ => None,
+    }
+}
+
 // Lookaheads: 
 // '(' => Paren
 // '`' => Quasi // TODO
@@ -865,7 +416,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, String> {
     match state.lookahead_1() {
         Some(Token::LeftParen) => {
             state.proceed();
-            let e = expr(state)?;
+            let e = expression(state)?;
             state.consume_1(Token::RightParen)?;
             Ok(Expr::ParenedExpr(Box::new(e)))
         },
@@ -882,57 +433,82 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, String> {
         Some(Token::Function) => function_expr(state).map(|x| Expr::FunctionExpr(Box::new(x))),
         _ => use_variable(state).map(|x| Expr::Variable(x)),
     }
-/*
-    state.attempt(data_structure).map(|data| data.into()).or_else(|_| {
+}
+
+fn function_expr(state: &mut ParserState) -> Result<Function, String> {
+    state.consume_1(Token::Function)?;
+    let name = if let Some(Token::Identifier(name)) = state.lookahead_1() {
+        state.proceed();
+        Some(name)
+    } else {
+        None
+    };
+    function_internal(state, name)
+}
+
+fn function_internal(state: &mut ParserState, name: Option<String>) -> Result<Function, String> {
+    let args = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
+    // TODO: spread parameter can only come at the end
+    match state.lookahead_1() {
+        Some(Token::LeftBrace) => Ok(Function(name, args, None/*TODO */, block(state)?)),
+        _ => unimplemented!("Function expressions without block body are not supported yet")
+    }
+}
+
+fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, String> {
+    let args = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
+    if state.try_proceed(Token::FatArrow) {
         match state.lookahead_1() {
-            Some('(') => {
-                state.consume("(")?;
-                state.consume_whitespace();
-                let expr = expr(state)?;
-                state.consume(")")?;
-                state.consume_whitespace();
-                Ok(Expr::ParenedExpr(Box::new(expr)))
-            },
-            Some('`') => Err("QuasiExpr not implemented".to_string()),
-            _ => Ok(ident(state).map(|x| {
-                Expr::Variable(x)
-            })?),
+            Some(Token::LeftBrace) => return Ok(Expr::ArrowFunc(Box::new(Function(None, args, None/*TODO */, block(state)?)))),
+            _ => unimplemented!("Arrow functions without block body are not supported yet")
+        }    
+    } else {
+        match &args[..] {
+            [p] => match p {
+                Pattern::Variable(x, ann) => {
+                    if ann.is_some() {
+                        unimplemented!("Type annotations should not be in parenthesized expressions")
+                    }
+                    Ok(Expr::Variable(x.to_string()))
+                },
+                Pattern::ArrayPattern(xs, ann) => {
+                    unimplemented!("array literal in parenthesized expressions is not supported yet")
+                },
+                Pattern::RecordPattern(xs, ann) => {
+                    unimplemented!("record literal in parenthesized expressions is not supported yet")
+                },
+                _ => Err("=> expected".to_string()),
+            }
+            _ => Err("Grouped expressions are not valid syntax in Jessie".to_string()),
         }
-    })*/
+    }
+}
+
+pub fn array(state: &mut ParserState) -> Result<Array, String> {
+    let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &element, true)?;
+    Ok(Array(elements))
 }
 
 pub fn element(state: &mut ParserState) -> Result<Element, String> {
     if state.try_proceed(Token::DotDotDot) {
-        let expr = expr(state)?;
+        let expr = expression(state)?;
         Ok(Element::Spread(expr))
     } else {
-        let expr = expr(state)?;
+        let expr = expression(state)?;
         Ok(Element::Expr(expr))
     }
 }
 
+pub fn record(state: &mut ParserState) -> Result<Record, String> {
+    let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_def, true)?;
+    Ok(Record(props))
+}
+
 pub fn pure_prop_def(state: &mut ParserState) -> Result<PropDef, String> {
     if state.try_proceed(Token::DotDotDot) {
-        let expr = expr(state)?;
+        let expr = expression(state)?;
         Ok(PropDef::Spread(expr))
-    }
-    // copilot generated these lines, didnt understand 
-    /*  
-    else if state.lookahead_1() == Some('[') {
-        state.consume("[")?;
-        state.consume_whitespace();
-        let prop_name = prop_name(state)?;
-        state.consume("]")?;
-        state.consume_whitespace();
-        if state.lookahead_1() == Some('(') {
-            let method_def = method_def(state)?;
-            Ok(PurePropDef::MethodDef(method_def))
-        } else {
-            Ok(PurePropDef::Parent(json::PurePropDef::Shorthand(prop_name)))
-        }
-    }
-    */
-    else {
+    } else {
         let prop_name = prop_name(state)?;
         if state.lookahead_1() == Some(Token::LeftParen) {
             unimplemented!()
@@ -948,36 +524,15 @@ pub fn pure_prop_def(state: &mut ParserState) -> Result<PropDef, String> {
 
 pub fn prop_def(state: &mut ParserState) -> Result<PropDef, String> {
     if state.try_proceed(Token::DotDotDot) {
-        let expr = expr(state)?;
+        let expr = expression(state)?;
         Ok(PropDef::Spread(expr))
     }
-    // copilot generated these lines, didnt understand 
-    /*  
-    else if state.lookahead_1() == Some('[') {
-        state.consume("[")?;
-        state.consume_whitespace();
-        let prop_name = prop_name(state)?;
-        state.consume("]")?;
-        state.consume_whitespace();
-        state.consume(":")?;
-        state.consume_whitespace();
-        let expr = expr(state)?;
-        Ok(PropDef::KeyValue(prop_name, expr))
-    } else if state.lookahead_1() == Some('*') {
-        state.consume("*")?;
-        state.consume_whitespace();
-        let prop_name = prop_name(state)?;
-        state.consume(":")?;
-        state.consume_whitespace();
-        let expr = expr(state)?;
-        Ok(PropDef::KeyValue(prop_name, expr))
-    */
     else if state.lookahead_1() == Some(Token::QuasiQuote) {
         Err("QuasiExpr not implemented".to_string())
     } else {
         let prop_name = prop_name(state)?;
         if state.try_proceed(Token::Colon) {
-            let expr = expr(state)?;
+            let expr = expression(state)?;
             Ok(PropDef::KeyValue(prop_name, expr))
         } else {
             Ok(PropDef::Shorthand(prop_name))
@@ -985,21 +540,43 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, String> {
     }
 }
 
-pub fn cond_expr(state: &mut ParserState) -> Result<Expr, String> {
-    println!("condexpr");
-    let or_else_expr = or_else_expr(state)?;
-    if state.try_proceed(Token::Question) {
-        let expr1 = expr(state)?;
-        state.consume_1(Token::Colon)?;
-        let expr2 = expr(state)?;
-        Ok(Expr::CondExpr(Box::new(CondExpr(or_else_expr, expr1, expr2))))
+pub fn arg(state: &mut ParserState) -> Result<Arg, String> {
+    // TODO: spread parameter can only come at the end
+    if state.try_proceed(Token::DotDotDot) {
+        let e = expression(state)?;
+        Ok(Arg::Spread(e))
     } else {
-        Ok(or_else_expr)
+        let expr = expression(state)?;
+        Ok(Arg::Expr(expr))
     }
 }
-pub fn or_else_expr(state: &mut ParserState) -> Result<Expr, String> {
-    println!("orelseexpr");
-    let mut result = and_then_expr(state)?;
+
+///////////////////////////
+// Arithmetic expressions
+// From this points, all `_with_leftmost` functions are expected to take the `left` argument already parsed as an CallExpr.
+
+pub fn cond_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, String> {
+    if state.try_proceed(Token::Question) {
+        let expr1 = expression(state)?;
+        state.consume_1(Token::Colon)?;
+        let expr2 = expression(state)?;
+        Ok(Expr::CondExpr(Box::new(CondExpr(result, expr1, expr2))))
+    } else {
+        Ok(result)
+    }
+}
+
+pub fn cond_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let or_else_expr = or_else_expr_with_leftmost(state, left)?;
+    cond_expr_internal(state, or_else_expr)
+}
+
+pub fn cond_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let or_else_expr = or_else_expr_with_leftmost_no_power(state, left)?;
+    cond_expr_internal(state, or_else_expr)
+}
+
+fn or_else_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, String> {
     while state.try_proceed(Token::BarBar) {
         let and_then_expr2 = and_then_expr(state)?;
         result = Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Or, result, and_then_expr2)))
@@ -1007,24 +584,115 @@ pub fn or_else_expr(state: &mut ParserState) -> Result<Expr, String> {
     Ok(result)
 }
 
-pub fn and_then_expr(state: &mut ParserState) -> Result<Expr, String> {
-    println!("andthenexpr");
-    let mut result = eager_expr(state)?;
-    while state.try_proceed(Token::AmpersandAmpersand) {
+pub fn or_else_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = and_then_expr_with_leftmost(state, left)?;
+    or_else_expr_internal(state, result)
+}
+
+pub fn or_else_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = and_then_expr_with_leftmost_no_power(state, left)?;
+    or_else_expr_internal(state, result)
+}
+
+fn and_then_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, String> {
+    while state.try_proceed(Token::AmpAmp) {
         let eager_expr2 = eager_expr(state)?;
         result = Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::And, result, eager_expr2)))
     }
     Ok(result)
 }
 
-pub fn eager_expr(state: &mut ParserState) -> Result<Expr, String> {
-    let mut result = shift_expr(state)?;
+pub fn and_then_expr(state: &mut ParserState) -> Result<Expr, String> {
+    let mut result = eager_expr(state)?;
+    and_then_expr_internal(state, result)
+}
+
+pub fn and_then_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = eager_expr_with_leftmost(state, left)?;
+    and_then_expr_internal(state, result)
+}
+
+pub fn and_then_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = eager_expr_with_leftmost_no_power(state, left)?;
+    and_then_expr_internal(state, result)
+}
+
+pub fn eager_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, String> {
     while let Some(la) = state.lookahead_1() {
         match la {
-            Token::LAngle => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::LessThan, result, shift_expr(state)?))))?,
-            Token::RAngle => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::GreaterThan, result, shift_expr(state)?))))?,
-            Token::LAngleEqual => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::LessThanEqual, result, shift_expr(state)?))))?,
-            Token::RAngleEqual => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::GreaterThanEqual, result, shift_expr(state)?))))?,
+            Token::LAngle => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::LessThan, result, shift_expr(state)?)))
+            },
+            Token::RAngle => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::GreaterThan, result, shift_expr(state)?)))
+            },
+            Token::LAngleEqual => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::LessThanEqual, result, shift_expr(state)?)))
+            },
+            Token::RAngleEqual => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::GreaterThanEqual, result, shift_expr(state)?)))
+            },
+            Token::EqualEqualEqual => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::StrictEqual, result, shift_expr(state)?)))
+            },
+            Token::BangEqualEqual => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::StrictNotEqual, result, shift_expr(state)?)))
+            },
+            Token::Ampersand => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseAnd, result, shift_expr(state)?)))
+            },
+            Token::Bar => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseOr, result, shift_expr(state)?)))
+            },
+            Token::Caret => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseXor, result, shift_expr(state)?)))
+            }, 
+            _ => break,
+        }
+    }
+
+    Ok(result)
+}
+
+pub fn eager_expr(state: &mut ParserState) -> Result<Expr, String> {
+    let mut result = shift_expr(state)?;
+    eager_expr_internal(state, result)
+}
+
+pub fn eager_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = shift_expr_with_leftmost(state, left)?;
+    eager_expr_internal(state, result)
+}
+
+pub fn eager_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = shift_expr_with_leftmost_no_power(state, left)?;
+    eager_expr_internal(state, result)
+}
+
+fn shift_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, String> {
+    while let Some(la) = state.lookahead_1() {
+        match la {
+            Token::LAngleLAngle => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseLeftShift, result, add_expr(state)?)))
+            },
+            Token::RAngleRAngle => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseRightShift, result, add_expr(state)?)))
+            },
+            Token::RAngleRAngleRAngle => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseUnsignedRightShift, result, add_expr(state)?)))
+            },
             _ => break,
         }
     }
@@ -1034,11 +702,30 @@ pub fn eager_expr(state: &mut ParserState) -> Result<Expr, String> {
 
 pub fn shift_expr(state: &mut ParserState) -> Result<Expr, String> {
     let mut result = add_expr(state)?;
+    shift_expr_internal(state, result)
+}
+
+pub fn shift_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = add_expr_with_leftmost(state, left)?;
+    shift_expr_internal(state, result)
+}
+
+pub fn shift_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = add_expr_with_leftmost_no_power(state, left)?;
+    shift_expr_internal(state, result)
+}
+
+pub fn add_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, String> {
     while let Some(la) = state.lookahead_1() {
         match la {
-            Token::LAngleLAngle => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseLeftShift, result, add_expr(state)?))))?,
-            Token::RAngleRAngle => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseRightShift, result, add_expr(state)?))))?,
-            Token::RAngleRAngleRAngle => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseUnsignedRightShift, result, add_expr(state)?))))?, 
+            Token::Plus => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Add, result, mult_expr(state)?)))
+            },
+            Token::Minus => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Sub, result, mult_expr(state)?)))
+            },
             _ => break,
         }
     }
@@ -1048,11 +735,36 @@ pub fn shift_expr(state: &mut ParserState) -> Result<Expr, String> {
 
 pub fn add_expr(state: &mut ParserState) -> Result<Expr, String> {
     let mut result = mult_expr(state)?;
+    add_expr_internal(state, result)
+}
+
+pub fn add_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = mult_expr_with_leftmost(state, left)?;
+    add_expr_internal(state, result)
+}
+
+pub fn add_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = mult_expr_with_leftmost_no_power(state, left)?;
+    add_expr_internal(state, result)
+}
+
+pub fn mult_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, String> {
+    let mut result = pow_expr(state)?;
     while let Some(la) = state.lookahead_1() {
         match la {
-            Token::Plus => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Add, result, mult_expr(state)?))))?,
-            Token::Minus => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Sub, result, mult_expr(state)?))))?,
-            _ => break,
+            Token::Asterisk => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Mul, result, pow_expr(state)?)))
+            },
+            Token::Slash => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Div, result, pow_expr(state)?)))
+            },
+            Token::Percent => result = {
+                state.proceed();
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Mod, result, pow_expr(state)?)))
+            },
+           _ => break,
         }
     }
 
@@ -1061,258 +773,185 @@ pub fn add_expr(state: &mut ParserState) -> Result<Expr, String> {
 
 pub fn mult_expr(state: &mut ParserState) -> Result<Expr, String> {
     let mut result = pow_expr(state)?;
-    while let Some(la) = state.lookahead_1() {
-        match la {
-            Token::Asterisk => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Mul, result, pow_expr(state)?))))?,
-            Token::Slash => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Div, result, pow_expr(state)?))))?,
-            Token::Percent => result = state.proceed_then(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Mod, result, pow_expr(state)?))))?,
-            _ => break,
-        }
+    mult_expr_internal(state, result)
+}
+
+pub fn mult_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = pow_expr_with_leftmost(state, left)?;
+    mult_expr_internal(state, result)
+}
+
+pub fn mult_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    let mut result = pow_expr_with_leftmost_no_power(state, left)?;
+    mult_expr_internal(state, result)
+}
+
+fn pow_expr_internal(state: &mut ParserState, result: Expr) -> Result<Expr, String> {
+    // the case where the leftmost expression is NOT a UnaryExpression. 
+
+    if let Some(la) = state.lookahead_1() {
+        if la != Token::AsteriskAsterisk {
+            return Ok(result)
+        } 
+    } else {
+        return Ok(result)
     }
 
-    Ok(result)
+    state.proceed(); // consume the power operator
+
+    let right = pow_expr(state)?;
+    Ok(Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Pow, result, right))))
 }
 
-pub fn pow_expr(state: &mut ParserState) -> Result<Expr, String> {
-    // TODO. for now just route to unaryexpr.
-    Ok(unary_expr(state)?)
+fn pow_expr(state: &mut ParserState) -> Result<Expr, String> {
+    let (left, _) = call_and_unary_op(state)?;
+    if let Expr::UnaryExpr(_) = left {
+        // Not a UnaryExpression, so we can parse the power expression.
+        pow_expr_with_leftmost(state, left)
+    } else {
+        // Is a UnaryExpression, so we cannot parse the power expression.
+        pow_expr_with_leftmost_no_power(state, left)
+    }
 }
 
-pub fn unary_expr(state: &mut ParserState) -> Result<Expr, String> {
-    // TODO, for now just route to callexpr.
-    call_expr(state)
+fn pow_expr_with_leftmost(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    // the leftmost expression is already parsed as an UpdateExpression, and the power operator can come after.
+    pow_expr_internal(state, left)
 }
 
-pub fn call_post_op(state: &mut ParserState) -> Result<CallPostOp, String> {
+fn pow_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Result<Expr, String> {
+    // the leftmost expression is already parsed as a UnaryExpression, and the power operator cannot come after.
+    // so we can skip the power expression parsing.
+    if let Some(Token::AsteriskAsterisk) = state.lookahead_1() {
+        Err("Unexpected token **".to_string())
+    } else {
+        Ok(left)
+    }
+}
+
+fn call_post_op(state: &mut ParserState) -> Result<CallPostOp, String> {
     match state.lookahead_1() {
-        Some(Token::LeftBracket) | Some(Token::Dot) => Ok(CallPostOp(MemberPostOp(member_post_op(state)?))),
-        Some(Token::LeftParen) => repeated_elements(state, Some(Token::LeftParen), Token::RightBrace, &arg, true).map(|args| CallPostOp::Call(args)),
-        _ => Err(format!("Expected '[' or '.' or '('. Got: {:?}", state.lookahead_1()))
-    }
-}
-
-pub fn call_expr(state: &mut ParserState) -> Result<Expr, String> { 
-    println!("callexpr");
-    let mut result = primary_expr(state)?;
-    loop { // I don't like having an infinite loop here...
-        match call_post_op(state) {
-            Ok(op) => result = Expr::CallExpr(Box::new(CallExpr{ expr: result, post_op: op })),
-            Err(_) => break,
-        }
-    }
-    Ok(result)
-}
-
-pub fn member_post_op(state: &mut ParserState) -> Result<MemberPostOp, String> {
-    match state.lookahead_1() {
-        Some(Token::LeftBracket) => enclosed_element(state, Token::LeftBracket, Token::RightBracket, &expr).map(|e| MemberPostOp::Index(e)),
+        Some(Token::LeftParen) => repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &arg, true).map(CallPostOp::Call),
+        Some(Token::LeftBracket) => enclosed_element(state, Token::LeftBracket, Token::RightBracket, &expression).map(|x| CallPostOp::MemberPostOp(MemberPostOp::Index(x))),
         Some(Token::Dot) => {
             state.proceed();
-            let id = ident(state)?;
-            Ok(MemberPostOp::Member(id))
+            let ident = identifier(state)?;
+            Ok(CallPostOp::MemberPostOp(MemberPostOp::Member(ident)))
         },
-        _ => Err(format!("Expected '[' or '.'. Got: {:?}", state.lookahead_1()))
+        _ => Err("Unexpected token".to_string()),
     }
 }
 
-pub fn arg(state: &mut ParserState) -> Result<Arg, String> {
-    if state.try_proceed(Token::DotDotDot) {
-        let e = expr(state)?;
-        Ok(Arg::Spread(e))
-    } else {
-        let expr = expr(state)?;
-        Ok(Arg::Expr(expr))
-    }
-}
-/*
-pub fn args(state: &mut ParserState) -> Result<Vec<Arg>, String> {
-    state.consume("(")?;
-    let mut args = vec![];
-    if state.lookahead_1() == Some(')') {
-        return Ok(args);
-    }
-    loop {
-        args.push(arg(state)?);
-        // TODO: check EOF
-        if state.lookahead_1() == Some(')') {
-            break;
+fn call_expr_internal(state: &mut ParserState, mut expr: Expr) -> Result<(Expr, bool), String> { 
+    let mut only_member_post_op = true;
+
+    while let Ok(post_op) = call_post_op(state) {
+        match post_op {
+            CallPostOp::Call(_) => { only_member_post_op = false },
+            CallPostOp::MemberPostOp(_) => {},
         }
-        state.consume(",")?;
-        state.consume_whitespace();
-    }
-    Ok(args)
-}
-*/
-pub fn function_decl(state: &mut ParserState) -> Result<Function, String> {
-    state.consume_1(Token::Function)?;
-    function_decl_body(state)
-}
-
-fn function_decl_body(state: &mut ParserState) -> Result<Function, String> {
-    let name = ident(state)?;
-    let params = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, false/*Check it*/)?;
-    let body = block(state)?;
-    Ok(Function(Some(name), params, optional_type_ann(state), body))
-}
-
-pub fn function_expr(state: &mut ParserState) -> Result<Function, String> {
-    state.consume_1(Token::Function)?;
-    function_expr_body(state)
-}
-
-fn function_expr_body(state: &mut ParserState) -> Result<Function, String> {
-    println!("1");
-    let name = state.attempt(|state| {
-        def_variable(state)
-    }).ok();
-    println!("2");
-    let params = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, false/*Check it*/)?;
-    println!("3");
-    let body = block(state)?;
-    println!("4");
-    Ok(Function(name, params, optional_type_ann(state), body))
-}
-
-pub fn arrow_func(state: &mut ParserState) -> Result<Function, String> {
-    println!("arrow_func");
-    let params = match state.lookahead_1() {
-        Some(Token::LeftParen) => repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, false/*Check it*/)?,
-        _ => Err("unimplemented")?,//TODO // ident(state).map(|x| vec![ArrowParam(x)]),
-    };
-
-    // TODO: no_newline
-    state.consume_1(Token::FatArrow)?;
-
-    let body = match state.lookahead_1() {
-        Some(Token::LeftBrace) => block(state)?,
-        _ => Err("unimplemented")?, // TODO: expr(state),
-    };
-    
-    Ok(Function(None, params, optional_type_ann(state), body))
-}
-
-fn optional_type_ann(state: &mut ParserState) -> Option<TypeAnn> {
-    None // TODO
-}
-
-// use_variable, def_variable, def_function all parses ident(),
-// but additionally do the hoisting/scoping work
-// TODO: they should be rolled back in case of attempt(). 
-
-fn use_variable(state: &mut ParserState) -> Result<Variable, String> {
-    // check the following:
-    // 1. the variable is defined in the current scope => use it.
-    // 2. the variable is defined in the parent scope. => push it to preaccess with the parent as candidate
-    // 3. the variable is not defined => push it to preaccess
-    let name = ident(state)?;
-
-    let scope = state.current_scope();
-
-    if let Some(var) = scope.get_local_binding(&name) {
-        return Ok(var)
+        expr = Expr::CallExpr(Box::new(CallExpr { expr, post_op }));
     }
 
-    if let Some(var) = scope.get_parent_binding(&name) {
-        let local_var = scope.make_possibly_preaccess_variable(&name, var);
-        return Ok(local_var)
-    }
-    
-    Ok(scope.make_preaccess_variable(&name))
+    Ok((expr, only_member_post_op))
 }
 
-fn def_variable(state: &mut ParserState) -> Result<Variable, String> {
-    // check the following:
-    // 1. the variable is already defined in the current scope => error
-    // 2. the variable is preaccessed in the current scope => hoist(but unitialized)
-    // 3. else, bind it.
+pub fn call_expr_with_leftmost(state: &mut ParserState, mut expr: Expr) -> Result<Expr, String> {
+    // with_leftmost functions take the leftmost expression already parsed as a CallExpression. We can just return it.
 
-    let name = ident(state)?;
+    // I believe rust compiler will take care of it
+    Ok(expr)
+} 
 
-    let scope = state.current_scope();
-
-    if let Some(mut var) = scope.get_local_binding(&name) {
-        if var.is_declared() {
-            return Err(format!("Variable {} is already defined in the current scope", name))
-        }
-
-        *var.borrow_mut() = scope.define_variable(&name);
-        return Ok(var)
-    }
-
-    Ok(scope.define_variable(&name))
+pub fn call_expr(state: &mut ParserState) -> Result<Expr, String> {
+    let expr = primary_expr(state)?;
+    let (result, _) = call_expr_internal(state, expr)?;
+    Ok(result)
 }
 
-fn def_function(state: &mut ParserState) -> Result<Variable, String> {
-    // check the following:
-    // 1. the function is already defined in the current scope => error
-    // 2. the variable is preaccessed in the current scope => bind it(value hoisting),
-    // 3. else, just bind it
 
-    let name = ident(state)?;
 
-    let scope = state.current_scope();
-
-    if let Some(mut var) = scope.get_local_binding(&name) {
-        if var.is_declared() {
-            return Err(format!("Function {} is already defined in the current scope", name))
-        }
-
-        // bind it to the existing Rc pointer. this will bind to all the existing
-        // reference from the current scope.
-        // TODO: this still not does value hoisting(only reference hositing)
-        // make it work.... somehow idk
-        *var.borrow_mut() = scope.define_variable(&name);
-        return Ok(var)
-    }
-
-    Ok(scope.define_variable(&name))
-}
-
-fn prop_name(state: &mut ParserState) -> Result<PropName, String> {
-    // TODO: datastructure propname
-    ident(state).map(|name| PropName::Ident(name ))
-}
-
-fn ident(state: &mut ParserState) -> Result<String, String> {
-    if let Some(Token::Identifier(id)) = state.lookahead_1() {
-        state.proceed();
-        Ok(id)
-    } else {
-        Err("Expected identifier".to_string())
-    }
-}
-
-/*
-// ident prevents reserved_keyword, reserved_word, future_reserved_word
-// TODO: move to lexer
-fn ident(state: &mut ParserState) -> Result<String, String> {
-    // could be optimized
-    state.prevent(reserved_keyword)?;
-    state.prevent(reserved_word)?;
-    state.prevent(future_reserved_word)?;
-
-    // copilot wrote, check and test later
-    // seems like [a-zA-Z][a-zA-Z0-9]*
-    let mut ident = String::new();
-
+pub fn unary_op(state: &mut ParserState) -> Result<UnaryOp, String> {
     match state.lookahead_1() {
-        Some(x) if x.is_ascii_alphabetic() => {
-            ident.push(x);
-            state.proceed();
-        }
-        _ => return Err("Expected identifier".to_string()),
+        Some(Token::Plus) => state.proceed_then(UnaryOp::Pos),
+        Some(Token::Minus) => state.proceed_then(UnaryOp::Neg),
+        Some(Token::Bang) => state.proceed_then(UnaryOp::Not),
+        Some(Token::Tilde) => state.proceed_then(UnaryOp::BitNot),
+        Some(Token::TypeOf) => state.proceed_then(UnaryOp::TypeOf),
+        _ => Err("Unexpected token".to_string()),
     }
+}
 
-    while let Some(x) = state.lookahead_1() {
-        if x.is_ascii_alphanumeric() {
-            ident.push(x);
-            state.proceed();
-        } else {
-            break;
-        }
+fn lookahead_operator(state: &mut ParserState) -> bool {
+    match state.lookahead_1() {
+        Some(Token::Question) |
+        Some(Token::Plus) |
+        Some(Token::Minus) |
+        Some(Token::Asterisk) |
+        Some(Token::Slash) |
+        Some(Token::Percent) |
+        Some(Token::AsteriskAsterisk) |
+        Some(Token::Ampersand) |
+        Some(Token::Bar) |
+        Some(Token::Caret) |
+        Some(Token::LAngle) |
+        Some(Token::RAngle) |
+        Some(Token::LAngleEqual) |
+        Some(Token::RAngleEqual) |
+        Some(Token::EqualEqualEqual) |
+        Some(Token::BangEqualEqual) |
+        Some(Token::LAngleLAngle) |
+        Some(Token::RAngleRAngle) |
+        Some(Token::RAngleRAngleRAngle) |
+        Some(Token::AmpAmp) |
+        Some(Token::BarBar) |
+        Some(Token::QuestionQuestion) => true,
+        _ => false,
     }
+}
+
+///////////////////////////
+// Basic components
+
+pub fn identifier(state: &mut ParserState) -> Result<String, String> {
+    match state.lookahead_1() {
+        Some(Token::Identifier(s)) => {
+            state.proceed();
+            Ok(s)
+        },
+        _ => Err("Unexpected token".to_string()),
+    }
+}
+
+pub fn def_variable(state: &mut ParserState) -> Result<String, String> {
+    let ident = identifier(state)?;
+    // let type_ann = optional_type_ann(state)?;
     Ok(ident)
 }
 
+pub fn use_variable(state: &mut ParserState) -> Result<String, String> {
+    let ident = identifier(state)?;
+    Ok(ident)
+}
 
-*/
+pub fn optional_type_ann(state: &mut ParserState) -> Result<Option<TypeAnn>, String> {
+    Ok(None)
+}
+
+pub fn prop_name(state: &mut ParserState) -> Result<PropName, String> {
+    match state.lookahead_1() {
+        Some(Token::Identifier(s)) => {
+            state.proceed();
+            Ok(PropName::Ident(s))
+        },
+        Some(Token::String(s)) => {
+            state.proceed();
+            Ok(PropName::String(s))
+        },
+        Some(Token::Number(s)) => {
+            state.proceed();
+            Ok(PropName::Number(s))
+        },
+        _ => Err("Unexpected token".to_string()),
+    }
+}

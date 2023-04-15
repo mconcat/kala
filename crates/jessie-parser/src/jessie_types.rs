@@ -4,34 +4,35 @@
 use std::fmt::Debug;
 
 
-use crate::{jessie_scope::{Scope, Variable}};
+// use crate::{jessie_scope::{Scope, Variable}};
 use crate::jessie_operation::*;
-use crate::json_types;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Array(pub Vec<Element>);
-
+/* 
 impl From<json_types::Array> for Array {
     fn from(arr: json_types::Array) -> Self {
         Array(arr.0.into_iter().map(|e| e.into()).collect())
     }
 }
+*/
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Record(pub Vec<PropDef>);
-
+/* 
 impl From<json_types::Record> for Record {
     fn from(rec: json_types::Record) -> Self {
         Record(rec.0.into_iter().map(|e| e.into()).collect())
     }
 }
+*/
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Element {
     Expr(Expr),
     Spread(Expr),
 }
-
+/* 
 impl From<json_types::Element> for Element {
     fn from(el: json_types::Element) -> Self {
         match el {
@@ -39,6 +40,7 @@ impl From<json_types::Element> for Element {
         }
     }
 }
+*/
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DataLiteral {
@@ -50,7 +52,7 @@ pub enum DataLiteral {
     Undefined,
     Bigint(String),
 }
-
+/*
 impl From<json_types::DataLiteral> for DataLiteral {
     fn from(lit: json_types::DataLiteral) -> Self {
         match lit {
@@ -62,6 +64,7 @@ impl From<json_types::DataLiteral> for DataLiteral {
         }
     }
 }
+*/
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropDef {
@@ -71,6 +74,7 @@ pub enum PropDef {
     Spread(Expr),
 }
 
+/*
 impl From<json_types::PropDef> for PropDef {
     fn from(pd: json_types::PropDef) -> Self {
         match pd {
@@ -78,6 +82,7 @@ impl From<json_types::PropDef> for PropDef {
         }
     }
 }
+*/
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypeAnn{}
@@ -88,7 +93,7 @@ pub enum PropName {
     Number(String),
     Ident(String),
 }
-
+/* 
 impl From<json_types::PropName> for PropName {
     fn from(pn: json_types::PropName) -> Self {
         match pn {
@@ -98,6 +103,7 @@ impl From<json_types::PropName> for PropName {
         }
     }
 }
+*/
 
 
 
@@ -130,7 +136,7 @@ pub struct HardenedExpr(pub Expr); // TODO
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ModuleBinding {
-    VariableBinding(Variable, Option<HardenedExpr>),
+    VariableBinding(String, Option<HardenedExpr>),
     PatternBinding(/*Binding*/Pattern, HardenedExpr),
 }
 
@@ -199,9 +205,16 @@ pub enum Expr {
     CallExpr(Box<CallExpr>),
     // QuasiExpr()
     ParenedExpr(Box<Expr>),
-    Variable(Variable),
+    Variable(String),
 }
 
+impl Expr {
+    pub fn try_into_lvalue(self) -> Option<LValue> {
+        unimplemented!()
+    }
+}
+
+/* 
 impl From<json_types::DataStructure> for Expr {
     fn from(ds: json_types::DataStructure) -> Self {
         match ds {
@@ -211,6 +224,7 @@ impl From<json_types::DataStructure> for Expr {
         }
     }
 }
+*/
 
 impl From<LValue> for Expr {
     fn from(lv: LValue) -> Self {
@@ -297,7 +311,7 @@ pub enum Statement {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
-    pub local_scope: Scope,
+    //pub local_scope: Scope,
 
     pub statements: Vec<Statement>,
 }
@@ -305,7 +319,7 @@ pub struct Block {
 impl Block {
     pub fn new(statements: Vec<Statement>) -> Self {
         Block {
-            local_scope: Scope::empty(), // TODO 
+     //       local_scope: Scope::empty(), // TODO 
             statements,
         }
     }
