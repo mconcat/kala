@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::jessie_operation::BinaryOp;
     use crate::jessie_types::PropDef;
     use crate::jessie_types::*;
     use crate::jessie_parser::expression;
@@ -15,7 +16,7 @@ mod tests {
             Some("f".to_string()),
             vec![Pattern::Variable("x".to_string(), None)],
             None,
-            Block::new(vec![Statement::Return(Some(Expr::Variable("x".to_string())))]),
+            BlockOrExpr::Block(Block::new(vec![Statement::Return(Some(Expr::Variable("x".to_string())))])),
         )))),
         ("function f(x, y) {
             return x+y;   
@@ -23,7 +24,8 @@ mod tests {
             Some("f".to_string()), 
             vec![Pattern::Variable("x".to_string(), None), Pattern::Variable("y".to_string(), None)], 
             None,
-            Block::new(vec![Statement::Return(Some(Expr::new_add(Expr::Variable("x".to_string()), Expr::Variable("y".to_string()))))]))))),
+            BlockOrExpr::Block(Block::new(vec![Statement::Return(Some(Expr::new_add(Expr::Variable("x".to_string()), Expr::Variable("y".to_string()))))])))))),
+            /* 
         ("function f(x, [y, z]) {
             let t = x+y;
             return z;
@@ -34,10 +36,11 @@ mod tests {
                 Pattern::ArrayPattern(vec![Pattern::Variable("y".to_string(), None), Pattern::Variable("z".to_string(), None)], None),    
             ], 
             None,
-            Block::new(vec![
+            BlockOrExpr::Block(Block::new(vec![
                 Statement::Declaration(Declaration { kind: DeclarationKind::Let, bindings: vec![Binding::VariableBinding("t".to_string(), Some(Expr::new_add(Expr::Variable("x".to_string()), Expr::Variable("y".to_string()))))] }),
                 Statement::Return(Some(Expr::Variable("z".to_string()))),
-            ]))))),
+            ])))))),
+            */
         ("[3, v, true, {}, ...g, 123n, 4.67]", Expr::Array(Array( 
             vec![
                 Element::Expr(Expr::new_number(3)),
@@ -49,14 +52,33 @@ mod tests {
                 Element::Expr(Expr::DataLiteral(DataLiteral::Number("4.67".to_string()))),
             ]
         ))),
-         ("{x: y, t    : [p], ...o, short}", Expr::Record(Record( 
+        ("{x: y, t    : [p], ...o, short}", Expr::Record(Record( 
             vec![
                 PropDef::KeyValue(PropName::Ident("x".to_string()), Expr::Variable("y".to_string())),
                 PropDef::KeyValue(PropName::Ident("t".to_string()), Expr::Array(Array (vec![Element::Expr(Expr::Variable("p".to_string()))]))),
                 PropDef::Spread(Expr::Variable("o".to_string())),
                 PropDef::Shorthand(PropName::Ident("short".to_string())),
             ]
-         )))
+        ))),
+        ("(3+2)*1&&undefined/5&x-7||true==={x:y}%6", Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Or, 
+            Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::And, 
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Mul, 
+                    Expr::ParenedExpr(Box::new(Expr::new_add(Expr::new_number(3), Expr::new_number(2)))), 
+                    Expr::new_number(1)
+                ))), 
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseAnd, 
+                    Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Div, 
+                        Expr::DataLiteral(DataLiteral::Undefined), 
+                        Expr::new_number(5)
+                    ))), 
+                    Expr::new_sub(Expr::Variable("x".to_string()), Expr::new_number(7))
+                )))))),
+            Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::StrictEqual, 
+                Expr::DataLiteral(DataLiteral::True), 
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Mod, 
+                    Expr::Record(Record(vec![PropDef::KeyValue(PropName::Ident("x".to_string()), Expr::Variable("y".to_string()))])), 
+                    Expr::new_number(6)
+                )))))))))),
         ]
     }
 

@@ -177,7 +177,22 @@ impl Pattern {
     }
 }
 
-
+impl From<Expr> for Pattern {
+    fn from(value: Expr) -> Self {
+        // Expression can be converted to pattern only if it is 
+        // - a variable
+        // - an assignment to a variable
+        // - array compatible with destructuring
+        // - object compatible with destructuring
+        match value {
+            Expr::Variable(name) => Pattern::Variable(name, None),
+            Expr::Assignment(assign) => unimplemented!("optional"),
+            Expr::Array(arr) => unimplemented!("array"),
+            Expr::Record(rec) => unimplemented!("record"), 
+            _ => panic!("Cannot convert expr to pattern"),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropParam {
@@ -187,6 +202,7 @@ pub enum PropParam {
     Shorthand(String),
 }
 
+// paren, function, literal, array, record, variable
 
 // PrimaryExpr, Operator Expressions(CondExpr, BinaryExpr, UnaryExpr, CallExpr), AssignExpr
 // are all collapsed into single Expr type.
@@ -244,6 +260,10 @@ impl Expr {
     pub fn new_add(l: Expr, r: Expr) -> Self {
         Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Add, l, r)))
     }
+
+    pub fn new_sub(l: Expr, r: Expr) -> Self {
+        Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Sub, l, r)))
+    }
 }
 
 
@@ -285,6 +305,22 @@ pub enum LValue {
     Index(Expr, Expr),
     Member(Expr, String),
     Variable(String),
+}
+
+impl From<Expr> for LValue {
+    fn from(value: Expr) -> Self {
+        match value {
+            Expr::Variable(name) => LValue::Variable(name),
+            Expr::CallExpr(call) => {
+                match call.post_op {
+                    CallPostOp::MemberPostOp(MemberPostOp::Index(index)) => LValue::Index(call.expr, index),
+                    CallPostOp::MemberPostOp(MemberPostOp::Member(member)) => LValue::Member(call.expr, member),
+                    _ => panic!("Invalid LValue"),
+                }
+            },
+            _ => panic!("Invalid LValue"),
+        }
+    }
 }
 
 // StatementItem in Jessie
@@ -438,10 +474,15 @@ pub enum PurePropDef {
 
 
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum BlockOrExpr {
+    Block(Block),
+    Expr(Expr),
+}
 
 // Function is used for function declaration, function expressions, and arrow functions.
 #[derive(Debug, PartialEq, Clone)]
-pub struct Function(pub Option<String>, pub Vec<Pattern/*Param*/>, pub Option<TypeAnn>, pub Block/*TODO: OrExpr for arrow*/);
+pub struct Function(pub Option<String>, pub Vec<Pattern/*Param*/>, pub Option<TypeAnn>, pub BlockOrExpr);
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BinaryExpr(pub BinaryOp, pub Expr, pub Expr);

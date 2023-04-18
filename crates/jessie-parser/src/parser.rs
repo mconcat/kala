@@ -1,7 +1,33 @@
 use core::fmt::Debug;
-pub enum Never {
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParserError<C: Sized> {
+    // A token is expected to be followed,
+    // but a different token found.
+    ExpectedToken(String, C),
+
+    // Not a valid syntax in Jessie.
+    InvalidExpression(String),
+
+    // Valid syntax, but not implemented yet.
+    Unimplemented(String),
 }
+
+
+pub fn err_expected<R, C>(message: &'static str, actual: C) -> Result<R, ParserError<C>> {
+    Err(ParserError::ExpectedToken(message.to_string(), actual))
+}
+
+
+pub fn err_invalid<R, C>(message: &'static str) -> Result<R, ParserError<C>> {
+    Err(ParserError::InvalidExpression(message.to_string()))
+}
+
+pub fn err_unimplemented<R, C>(message: &'static str) -> Result<R, ParserError<C>> {
+    Err(ParserError::Unimplemented(message.to_string()))
+}
+
+
 /* 
 pub trait ParserState: CombinatoryParser+Sized {
     pub fn get_parser(&mut self) -> &mut CombinatoryParserImpl; 
@@ -136,7 +162,7 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        println!("is_empty: {} >= {}", self.pos, self.input.len());
+//        println!("is_empty: {} >= {}", self.pos, self.input.len());
         self.pos >= self.input.len()
     }
 
@@ -181,13 +207,13 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         }
     }
 
-    pub fn consume_1(&mut self, c: T::Element) -> Result<(), String> {
+    pub fn consume_1(&mut self, c: T::Element) -> Result<(), ParserError<Option<T::Element>>> {
         println!("consume_1 {:?} {:?}", c.clone(), self.lookahead_1());
         if self.lookahead_1() == Some(c.clone()) {
             self.proceed();
             Ok(())
         } else {
-            Err(format!("Expected {:?}, but got {:?}", c.clone(), self.lookahead_1()))
+            err_expected("consume_1", /*c.clone(),*/ self.lookahead_1())
         }
     }
 
@@ -308,9 +334,14 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         result
     }
 */
-    pub fn proceed_then<R>(&mut self, r: R) -> Result<R, String> {
+    pub fn proceed_then<R, C>(&mut self, r: R) -> Result<R, C> {
         self.proceed();
         Ok(r)
+    }
+
+    pub fn proceed_with<R>(&mut self, r: R) -> R {
+        self.proceed();
+        r
     }
     
 /* 
