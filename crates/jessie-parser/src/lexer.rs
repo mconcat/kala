@@ -3,8 +3,6 @@
 use std::fmt::Debug;
 
 use crate::parser::{ParserState, ArrayLike, ParserError, err_expected};
-use crate::jessie_types::*;
-use crate::jessie_operation::*;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Str<'a>(pub &'a str);

@@ -17,12 +17,22 @@ impl<V: Sized+Clone+Debug+PartialEq> Trie<V> {
         }
     }
 
-    pub fn insert(&mut self, key: &String, value: V) {
-        self.root.insert(&mut key.chars(), value);
+    pub fn insert(&mut self, key: &String, value: V) -> Option<V> {
+        self.root.insert(&mut key.chars(), value)
     }
 
     pub fn get(&mut self, key: &String) -> Option<V> {
         self.root.reference(&mut key.chars()).map(|v| v.clone())
+    }
+
+    pub fn has(&mut self, key: &String) -> bool {
+        self.root.reference(&mut key.chars()).is_some()
+    }
+
+    pub fn iterate(&self) -> Vec<(String, V)> {
+        let mut result = vec![];
+        self.root.iterate(&mut "".to_string(), &mut result);
+        result
     }
 }
 
@@ -95,24 +105,45 @@ impl<V: Sized+Clone+Debug+PartialEq> TrieNode<V> {
         *self = result;
     }
 
-    fn insert<'a>(&mut self, key: &mut Chars<'a>, new_value: V) {
+    fn insert<'a>(&mut self, key: &mut Chars<'a>, new_value: V) -> Option<V> {
         for (i, c) in self.extension.chars().enumerate() {
             match key.next() {
                 Some(seek) if seek == c => {},
-                _ => return self.make_branch(i, key.as_str(), new_value),
+                _ => {
+                    self.make_branch(i, key.as_str(), new_value);
+                    return None
+                }
             }
         }
             
         match key.next() {
             Some(seek) => match self.branch.binary_search_by_key(&seek, |(k, _)| *k) {
                 Ok(i) => self.branch.get_mut(i).unwrap().1.insert(key, new_value),
-                Err(i) => self.branch.insert(i, (seek, Box::new(TrieNode{
-                    extension: key.as_str().to_string(),
-                    value: Some(new_value),
-                    branch: vec![],      
-                }))),
+                Err(i) => {
+                    self.branch.insert(i, (seek, Box::new(TrieNode{
+                        extension: key.as_str().to_string(),
+                        value: Some(new_value),
+                        branch: vec![],      
+                    })));
+                    None
+                },
             },
-            None => { self.value = Some(new_value) },
+            None => { 
+                let old_value = self.value.take();
+                self.value = Some(new_value);
+                old_value
+            },
+        }
+    }
+    
+    fn iterate<'a>(&self, prefix: &mut String, result: &mut Vec<(String, V)>) {
+        let mut prefix = prefix.clone();
+        prefix.push_str(&self.extension);
+        if let Some(value) = &self.value {
+            result.push((prefix.clone(), value.clone()));
+        }
+        for (_, child) in &self.branch {
+            child.iterate(&mut prefix.clone(), result);
         }
     }
 }

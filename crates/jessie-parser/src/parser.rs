@@ -1,4 +1,7 @@
 use core::fmt::Debug;
+use jessie_ast::{Block, DeclarationKind};
+
+use crate::jessie_scope::BlockScope;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {
@@ -11,6 +14,9 @@ pub enum ParserError<C: Sized> {
 
     // Valid syntax, but not implemented yet.
     Unimplemented(String),
+
+    // Scoping error.
+    ScopeError(String, String),
 }
 
 
@@ -27,6 +33,9 @@ pub fn err_unimplemented<R, C>(message: &'static str) -> Result<R, ParserError<C
     Err(ParserError::Unimplemented(message.to_string()))
 }
 
+pub fn err_scope<R, C>(message: &'static str, var: String) -> Result<R, ParserError<C>> {
+    Err(ParserError::ScopeError(message.to_string(), var))
+}
 
 /* 
 pub trait ParserState: CombinatoryParser+Sized {
@@ -151,6 +160,7 @@ pub trait ArrayLike {
 pub struct ParserState<T: ArrayLike+Clone+Debug> {
     pub input: T,
     pub pos: usize,
+    pub scope: BlockScope,
 }
 
 impl<T: ArrayLike+Clone+Debug> ParserState<T> {
@@ -158,6 +168,7 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         Self {
             input,
             pos: 0,
+            scope: BlockScope::new(),
         }
     }
 
@@ -167,6 +178,7 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
     }
 
     pub fn lookahead_1(&self) -> Option<T::Element> {
+        println!("lookahead 1 {:?}", self.input.get(self.pos));
         self.input.get(self.pos)
     }
 
@@ -231,6 +243,20 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         }
 
         Ok(())
+    }
+
+    pub fn enter_block_scope(&mut self) -> BlockScope {
+        std::mem::replace(&mut self.scope, BlockScope::new())
+    }
+
+    pub fn exit_block_scope(&mut self, parent_scope: BlockScope) -> (Vec<(String, DeclarationKind)>, Vec<String>) {
+        let scope = std::mem::replace(&mut self.scope, parent_scope);
+        scope.extract()
+    }
+
+    pub fn exit_merge_block_scope(&mut self, parent_scope: BlockScope) {
+        let scope = std::mem::replace(&mut self.scope, parent_scope);
+        scope.merge_into(&mut self.scope);
     }
 
     /*

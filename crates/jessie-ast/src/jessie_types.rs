@@ -93,7 +93,7 @@ pub enum PropName {
     Number(String),
     Ident(String),
 }
-/* 
+/*
 impl From<json_types::PropName> for PropName {
     fn from(pn: json_types::PropName) -> Self {
         match pn {
@@ -122,22 +122,20 @@ pub enum ModuleItem {
     ModuleDecl(ModuleDecl)
 }
 
-
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct ModuleDecl(pub Vec<ModuleBinding>);
 
 
-
+/* 
 #[derive(Debug, PartialEq, Clone)]
 pub struct HardenedExpr(pub Expr); // TODO
-
+*/
 
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ModuleBinding {
-    VariableBinding(String, Option<HardenedExpr>),
-    PatternBinding(/*Binding*/Pattern, HardenedExpr),
+    VariableBinding(String, Option</*Hardened*/Expr>),
+    PatternBinding(/*Binding*/Pattern, /*Hardened*/Expr),
 }
 
 
@@ -350,13 +348,17 @@ pub struct Block {
     //pub local_scope: Scope,
 
     pub statements: Vec<Statement>,
+    pub declarations: Vec<(String, DeclarationKind)>,
+    pub uses: Vec<String>,
 }
 
 impl Block {
-    pub fn new(statements: Vec<Statement>) -> Self {
+    pub fn new(statements: Vec<Statement>, declarations: Vec<(String, DeclarationKind)>, uses: Vec<String>) -> Self {
         Block {
      //       local_scope: Scope::empty(), // TODO 
             statements,
+            declarations,
+            uses,
         }
     }
 }
@@ -375,28 +377,11 @@ pub enum ElseArm {
     ElseIf(Box<IfStatement>),
 }
 
-
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum BreakableStatement {
-    // TODO
-
-}
-
-
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct WhileStatement {
     pub condition: Expr,
     pub body: Block,
 }
-
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Terminator {
-
-}
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum StatementItem {
@@ -405,11 +390,12 @@ pub enum StatementItem {
     Statement(Statement),
 }
 
-
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DeclarationKind {
     Let,
     Const,
+    Argument,
+    Function,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -418,46 +404,11 @@ pub struct Declaration {
     pub bindings: Vec<Binding>,
 }
 
-
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum Binding {
     VariableBinding(String, Option<Expr>),
     PatternBinding(/*Binding*/Pattern, Expr),
 }
-
-
-
-// TODO: combine reserved_words, future_reserved_words, keywords to boost 
-// reserved word check in identifiers
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ReservedWord {
-
-}
-
-
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ReservedKeyword {
-
-}
-
-
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Keyword {
-
-}
-
-
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum FutureReservedWord {
-
-}
-
-
 /*
 #[derive(Debug, PartialEq, Clone)]
 pub enum PurePropDef {
@@ -468,28 +419,59 @@ pub enum PurePropDef {
 }
 */
 
-
-
-
-
-
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum BlockOrExpr {
-    Block(Block),
-    Expr(Expr),
+    Block(Vec<Statement>),
+    Expr(Expr), // only appears for arrow functions
 }
 
 // Function is used for function declaration, function expressions, and arrow functions.
 #[derive(Debug, PartialEq, Clone)]
-pub struct Function(pub Option<String>, pub Vec<Pattern/*Param*/>, pub Option<TypeAnn>, pub BlockOrExpr);
+pub struct Function{
+    pub name: Option<String>,
+    pub parameters: Vec<Pattern/*Param*/>,
+    pub typeann: Option<TypeAnn>,
+    
+    // block body
+    pub statements: Vec<Statement>,
+
+    // arrow function expression body
+    pub expression: Option<Expr>,
+
+    pub declarations: Vec<(String, DeclarationKind)>,
+    pub uses: Vec<String>,
+}
+
+impl Function {
+    pub fn from_body(name: Option<String>, parameters: Vec<Pattern>, typeann: Option<TypeAnn>, block_or_expr: BlockOrExpr, declarations: Vec<(String, DeclarationKind)>, uses: Vec<String>) -> Self {
+        match block_or_expr {
+            BlockOrExpr::Block(statements) => Function {
+                name,
+                parameters,
+                typeann,
+                statements,
+                expression: None,
+                declarations,
+                uses,
+            },
+            BlockOrExpr::Expr(expression) => Function {
+                name,
+                parameters,
+                typeann,
+                statements: vec![],
+                expression: Some(expression),
+                declarations,
+                uses,
+            },
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BinaryExpr(pub BinaryOp, pub Expr, pub Expr);
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CondExpr(pub Expr, pub Expr, pub Expr);
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct UnaryExpr {

@@ -1,31 +1,37 @@
 #[cfg(test)]
 mod tests {
-    use crate::jessie_operation::BinaryOp;
-    use crate::jessie_types::PropDef;
-    use crate::jessie_types::*;
     use crate::jessie_parser::expression;
     use crate::parser::ParserState;
     use crate::lexer::*;
-    
+    use jessie_ast::*;
+
     fn expr_test_cases() -> Vec<(&'static str, Expr)> {
         vec![
         ("undefined", Expr::DataLiteral(DataLiteral::Undefined)),
         ("3", Expr::new_number(3)),
         ("5+6", Expr::new_add(Expr::new_number(5), Expr::new_number(6))),
-        ("function f(x) { return x; }", Expr::FunctionExpr(Box::new(Function(
-            Some("f".to_string()),
-            vec![Pattern::Variable("x".to_string(), None)],
-            None,
-            BlockOrExpr::Block(Block::new(vec![Statement::Return(Some(Expr::Variable("x".to_string())))])),
-        )))),
+        ("function f(x) { return x; }", Expr::FunctionExpr(Box::new(Function{
+            name: Some("f".to_string()),
+            parameters: vec![Pattern::Variable("x".to_string(), None)],
+            typeann: None,
+            statements: vec![Statement::Return(Some(Expr::Variable("x".to_string())))],
+            expression: None,
+            declarations: vec![],
+            uses: vec!["x".to_string()],
+        }))),
         ("function f(x, y) {
             return x+y;   
-        }", Expr::FunctionExpr(Box::new(Function(
-            Some("f".to_string()), 
-            vec![Pattern::Variable("x".to_string(), None), Pattern::Variable("y".to_string(), None)], 
-            None,
-            BlockOrExpr::Block(Block::new(vec![Statement::Return(Some(Expr::new_add(Expr::Variable("x".to_string()), Expr::Variable("y".to_string()))))])))))),
+        }", Expr::FunctionExpr(Box::new(Function{
+            name: Some("f".to_string()), 
+            parameters: vec![Pattern::Variable("x".to_string(), None), Pattern::Variable("y".to_string(), None)], 
+            typeann: None,
+            statements: vec![Statement::Return(Some(Expr::new_add(Expr::Variable("x".to_string()), Expr::Variable("y".to_string()))))],
+            expression: None,
+            declarations: vec![],
+            uses: vec!["x".to_string(), "y".to_string()],
+        }))),
             /* 
+            // Excluded due to destructing parameter
         ("function f(x, [y, z]) {
             let t = x+y;
             return z;
