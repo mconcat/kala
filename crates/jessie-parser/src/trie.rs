@@ -137,14 +137,16 @@ impl<V: Sized+Clone+Debug+PartialEq> TrieNode<V> {
     }
     
     fn iterate<'a>(&self, prefix: &mut String, result: &mut Vec<(String, V)>) {
-        let mut prefix = prefix.clone();
         prefix.push_str(&self.extension);
         if let Some(value) = &self.value {
             result.push((prefix.clone(), value.clone()));
         }
-        for (_, child) in &self.branch {
-            child.iterate(&mut prefix.clone(), result);
+        for (divergence, child) in &self.branch {
+            prefix.push(*divergence);
+            child.iterate(prefix, result);
+            prefix.pop(); 
         }
+        prefix.truncate(prefix.len() - self.extension.len());
     }
 }
 

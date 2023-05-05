@@ -2,6 +2,7 @@
 
 
 use std::fmt::Debug;
+use std::rc::Rc;
 
 
 // use crate::{jessie_scope::{Scope, Variable}};
@@ -324,12 +325,11 @@ impl From<Expr> for LValue {
 // StatementItem in Jessie
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
-    Declaration(Declaration),
-    FunctionDeclaration(Function),
-    Block(Block),
-    IfStatement(IfStatement),
+    Declaration(Rc<Declaration>),
+    Block(Box<Block>),
+    IfStatement(Box<IfStatement>),
     // ForStatement(ForStatement),
-    WhileStatement(WhileStatement),
+    WhileStatement(Box<WhileStatement>),
     Continue,
     Break,
     Return(Option<Expr>),
@@ -338,9 +338,11 @@ pub enum Statement {
     ExprStatement(Expr),
 }
 
-
-
-
+#[derive(Debug, PartialEq, Clone)]
+pub struct Scope {
+    pub declarations: Option<Box<Vec<Rc<Declaration>>>>,
+    pub uses: Vec<(String, Option<Rc<Declaration>>)>,
+}
 
 
 #[derive(Debug, PartialEq, Clone)]
@@ -348,17 +350,15 @@ pub struct Block {
     //pub local_scope: Scope,
 
     pub statements: Vec<Statement>,
-    pub declarations: Vec<(String, DeclarationKind)>,
-    pub uses: Vec<String>,
+    pub scope: Scope,
 }
 
 impl Block {
-    pub fn new(statements: Vec<Statement>, declarations: Vec<(String, DeclarationKind)>, uses: Vec<String>) -> Self {
+    pub fn new(statements: Vec<Statement>, scope: Scope) -> Self {
         Block {
      //       local_scope: Scope::empty(), // TODO 
             statements,
-            declarations,
-            uses,
+            scope,
         }
     }
 }
@@ -383,13 +383,6 @@ pub struct WhileStatement {
     pub body: Block,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum StatementItem {
-    Declaration(Declaration),
-    FunctionDecl(Function),
-    Statement(Statement),
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DeclarationKind {
     Let,
@@ -399,9 +392,11 @@ pub enum DeclarationKind {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Declaration {
-    pub kind: DeclarationKind,
-    pub bindings: Vec<Binding>,
+pub enum Declaration {
+    Let(Vec<Binding>),
+    Const(Vec<Binding>),
+    Function(Box<Function>),
+    Parameters(Vec<Pattern>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -429,7 +424,7 @@ pub enum BlockOrExpr {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function{
     pub name: Option<String>,
-    pub parameters: Vec<Pattern/*Param*/>,
+    pub parameters: Rc<Declaration>, // must be Parameters, TODO
     pub typeann: Option<TypeAnn>,
     
     // block body
@@ -438,12 +433,11 @@ pub struct Function{
     // arrow function expression body
     pub expression: Option<Expr>,
 
-    pub declarations: Vec<(String, DeclarationKind)>,
-    pub uses: Vec<String>,
+    pub scope: Scope,
 }
 
 impl Function {
-    pub fn from_body(name: Option<String>, parameters: Vec<Pattern>, typeann: Option<TypeAnn>, block_or_expr: BlockOrExpr, declarations: Vec<(String, DeclarationKind)>, uses: Vec<String>) -> Self {
+    pub fn from_body(name: Option<String>, parameters: Rc<Declaration>, typeann: Option<TypeAnn>, block_or_expr: BlockOrExpr, scope: Scope) -> Self {
         match block_or_expr {
             BlockOrExpr::Block(statements) => Function {
                 name,
@@ -451,8 +445,7 @@ impl Function {
                 typeann,
                 statements,
                 expression: None,
-                declarations,
-                uses,
+                scope,
             },
             BlockOrExpr::Expr(expression) => Function {
                 name,
@@ -460,8 +453,7 @@ impl Function {
                 typeann,
                 statements: vec![],
                 expression: Some(expression),
-                declarations,
-                uses,
+                scope,
             },
         }
     }

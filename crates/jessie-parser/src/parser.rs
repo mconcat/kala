@@ -1,5 +1,6 @@
 use core::fmt::Debug;
-use jessie_ast::{Block, DeclarationKind};
+use std::rc::Rc;
+use jessie_ast::{Block, DeclarationKind, Declaration, Function, Scope};
 
 use crate::jessie_scope::BlockScope;
 
@@ -178,7 +179,6 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
     }
 
     pub fn lookahead_1(&self) -> Option<T::Element> {
-        println!("lookahead 1 {:?}", self.input.get(self.pos));
         self.input.get(self.pos)
     }
 
@@ -202,7 +202,6 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
     }
 
     pub fn proceed(&mut self) -> Option<T::Element> {
-        println!("proceed {:?}", self.input.get(self.pos));
         let result = self.input.get(self.pos);
         if result.is_some() {
             self.pos += 1;
@@ -210,7 +209,6 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         result
     }
     pub fn try_proceed(&mut self, c: T::Element) -> bool {
-        println!("try_proceed {:?} {:?}", c.clone(), self.lookahead_1());
         if self.lookahead_1() == Some(c) {
             self.proceed();
             true
@@ -220,7 +218,6 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
     }
 
     pub fn consume_1(&mut self, c: T::Element) -> Result<(), ParserError<Option<T::Element>>> {
-        println!("consume_1 {:?} {:?}", c.clone(), self.lookahead_1());
         if self.lookahead_1() == Some(c.clone()) {
             self.proceed();
             Ok(())
@@ -230,7 +227,6 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
     }
 
     pub fn consume(&mut self, s: T) -> Result<(), String> {
-        println!("consume {:?} {:?}", s.clone(), self.lookahead_1());
         let pos = self.pos;
 
         for i in 0..s.len() {
@@ -249,9 +245,9 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         std::mem::replace(&mut self.scope, BlockScope::new())
     }
 
-    pub fn exit_block_scope(&mut self, parent_scope: BlockScope) -> (Vec<(String, DeclarationKind)>, Vec<String>) {
+    pub fn exit_block_scope(&mut self, parent_scope: BlockScope) -> Scope {
         let scope = std::mem::replace(&mut self.scope, parent_scope);
-        scope.extract()
+        scope.take()
     }
 
     pub fn exit_merge_block_scope(&mut self, parent_scope: BlockScope) {

@@ -1,4 +1,4 @@
-
+use std::rc::Rc;
 
 use crate::parser::{self, ArrayLike, err_expected, err_invalid, err_unimplemented};
 use crate::lexer::{self, Token, VecToken, repeated_elements, enclosed_element};
@@ -126,18 +126,22 @@ fn prop_param<const K: DeclarationKind>(state: &mut ParserState) -> Result<PropP
 pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
     // putting whitespace in consumes is a hack, need to fix later
     match state.lookahead_1() {
-        Some(Token::LeftBrace) => block(state).map(Statement::Block), // TODO: implement statement level record literal?
+        Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(Box::new(x))), // TODO: implement statement level record literal?
         Some(Token::Const) => {
             state.proceed();
-            repeated_elements(state, None, Token::Semicolon, &binding::<{DeclarationKind::Const}>, false).map(|x| Declaration { kind: DeclarationKind::Const, bindings: x }).map(Statement::Declaration)
+            let decl = Rc::new(repeated_elements(state, None, Token::Semicolon, &binding::<{DeclarationKind::Const}>, false).map(Declaration::Const)?);
+            state.scope.settle_declaration(decl.clone());
+            Ok(Statement::Declaration(decl))
         },
         Some(Token::Let) => {
             state.proceed();
-            repeated_elements(state, None, Token::Semicolon, &binding::<{DeclarationKind::Let}>, false).map(|x| Declaration { kind: DeclarationKind::Let, bindings: x }).map(Statement::Declaration)
+            let decl = Rc::new(repeated_elements(state, None, Token::Semicolon, &binding::<{DeclarationKind::Let}>, false).map(Declaration::Let)?);
+            state.scope.settle_declaration(decl.clone());
+            Ok(Statement::Declaration(decl))
         },
-        Some(Token::Function) => function_decl(state).map(Statement::FunctionDeclaration),
-        Some(Token::If) => if_statement(state).map(Statement::IfStatement),
-        Some(Token::While) => while_statement(state).map(Statement::WhileStatement),
+        Some(Token::Function) => function_decl(state).map(Statement::Declaration),
+        Some(Token::If) => if_statement(state).map(|x| Statement::IfStatement(Box::new(x))),
+        Some(Token::While) => while_statement(state).map(|x| Statement::WhileStatement(Box::new(x))),
         Some(Token::Try) => {
             unimplemented!("try statement")
             //state.proceed();
@@ -177,10 +181,10 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
     }
 }
 
-fn function_decl(state: &mut ParserState) -> Result<Function, ParserError> {
+fn function_decl(state: &mut ParserState) -> Result<Rc<Declaration>, ParserError> {
     state.consume_1(Token::Function)?;
     let name = def_variable(state, DeclarationKind::Function)?;
-    function_internal(state, Some(name))
+    function_internal(state, Some(name)).map(|x| Rc::new(Declaration::Function(Box::new(x))))
 }
 
 pub fn binding<const K: DeclarationKind>(state: &mut ParserState) -> Result<Binding, ParserError> {
@@ -208,9 +212,9 @@ pub fn block(state: &mut ParserState) -> Result<Block, ParserError> {
 
     let statements = block_raw(state)?;
 
-    let (declarations, uses) = state.exit_block_scope(parent_scope);
+    let scope = state.exit_block_scope(parent_scope);
 
-    Ok(Block { statements, declarations, uses })
+    Ok(Block { statements, scope })
 }
 
 fn block_raw(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {
@@ -506,24 +510,25 @@ fn function_expr(state: &mut ParserState) -> Result<Function, ParserError> {
 }
 
 fn function_internal(state: &mut ParserState, name: Option<String>) -> Result<Function, ParserError> {
-
-    let parameters = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param::<{DeclarationKind::Argument}>, true/*Check it*/)?;
+    let parent_scope = state.enter_block_scope();
+    
+    let parameters = Rc::new(Declaration::Parameters(repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param::<{DeclarationKind::Argument}>, true/*Check it*/)?));
     // TODO: spread parameter can only come at the end
     println!("function_internal");
 
-    let parent_scope = state.enter_block_scope();
+    state.scope.settle_declaration(parameters.clone());
+
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
             let statements = block_raw(state)?;
-            let (declarations, uses) = state.exit_block_scope(parent_scope);
+            let scope = state.exit_block_scope(parent_scope);
             let func = Function {
                 name,
                 parameters,
                 typeann: None,
                 statements,
                 expression: None,
-                declarations,
-                uses,
+                scope,
             };
             Ok(func)
         },
@@ -620,18 +625,19 @@ fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         state.consume_1(Token::FatArrow)?;
 
         let body = arrow_function_body(state)?;
-        let (declarations, uses) = state.exit_block_scope(parent_scope);
+        let scope = state.exit_block_scope(parent_scope);
 
-        return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, vec![], None, body, declarations, uses))))
+        return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, Rc::new(Declaration::Parameters(vec![])), None, body, scope))))
     }
 
     // unary spread parameter
     if state.try_proceed(Token::DotDotDot) {
         let arg = param::<{DeclarationKind::Argument}>(state)?;
-        let parameters = vec![Pattern::Rest(Box::new(arg), None)];
+        let parameters = Rc::new(Declaration::Parameters(vec![Pattern::Rest(Box::new(arg), None)]));
+        state.scope.settle_declaration(parameters.clone());
         let body = arrow_function_body(state)?;
-        let (declarations, uses) = state.exit_block_scope(parent_scope);
-        return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, parameters, None, body, declarations, uses))))
+        let scope = state.exit_block_scope(parent_scope);
+        return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, parameters, None, body, scope))))
     }
 
     // try parse a single CPEAAPL first
@@ -644,11 +650,13 @@ fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
                 Some(Token::Comma) => {
                     state.proceed();
                     let rest = repeated_elements(state, None, Token::RightParen, &param::<{DeclarationKind::Argument}>, true)?;
-                    let mut parameters = vec![first.into()];
-                    parameters.extend(rest); // TODO: optimize
+                    let mut params_vec = vec![first.into()];
+                    params_vec.extend(rest); // TODO: optimize
+                    let parameters = Rc::new(Declaration::Parameters(params_vec));
+                    state.scope.settle_declaration(parameters.clone());
                     let body = arrow_function_body(state)?;
-                    let (declarations, uses) = state.exit_block_scope(parent_scope);
-                    return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, parameters, None, body, declarations, uses))))
+                    let scope = state.exit_block_scope(parent_scope);
+                    return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, parameters, None, body, scope))))
 
                 },
                 // If a right paren follows, try parse a fat arrow.
@@ -658,9 +666,11 @@ fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
                         // If a fat arrow follows, it is a unary arrow function.
                         Some(Token::FatArrow) => {
                             state.proceed();
+                            let parameters = Rc::new(Declaration::Parameters(vec![first.into()]));
+                            state.scope.settle_declaration(parameters.clone());
                             let body = arrow_function_body(state)?;
-                            let (declarations, uses) = state.exit_block_scope(parent_scope);
-                            return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, vec![first.into()], None, body, declarations, uses))))
+                            let scope = state.exit_block_scope(parent_scope);
+                            return Ok(Expr::ArrowFunc(Box::new(Function::from_body(None, parameters, None, body, scope))))
                         },
                         // Otherwise, it is a parenthesized expression.
                         _ => {
@@ -1149,7 +1159,7 @@ pub fn identifier(state: &mut ParserState) -> Result<String, ParserError> {
 
 pub fn def_variable(state: &mut ParserState, kind: DeclarationKind) -> Result<String, ParserError> {
     let ident = identifier(state)?;
-    state.scope.def_variable(&ident, kind)?;
+    state.scope.def_variable(&ident)?;
     // let type_ann = optional_type_ann(state)?;
     Ok(ident)
 }
