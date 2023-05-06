@@ -34,6 +34,10 @@ impl<V: Sized+Clone+Debug+PartialEq> Trie<V> {
         self.root.iterate(&mut "".to_string(), &mut result);
         result
     }
+
+    pub fn get_mut(&mut self, key: &String) -> Option<&mut V> {
+        self.root.reference(&mut key.chars())
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

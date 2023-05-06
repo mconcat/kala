@@ -1,6 +1,8 @@
 // justin + jessie
 
 
+use std::borrow::Borrow;
+use std::cell::{RefCell, OnceCell};
 use std::fmt::Debug;
 use std::rc::Rc;
 
@@ -71,7 +73,7 @@ impl From<json_types::DataLiteral> for DataLiteral {
 pub enum PropDef {
     KeyValue(PropName, Expr), 
     // MethodDef(MethodDef),// TODO
-    Shorthand(PropName),
+    Shorthand(UseVariable),
     Spread(Expr),
 }
 
@@ -135,7 +137,7 @@ pub struct HardenedExpr(pub Expr); // TODO
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ModuleBinding {
-    VariableBinding(String, Option</*Hardened*/Expr>),
+    VariableBinding(DefVariable, Option</*Hardened*/Expr>),
     PatternBinding(/*Binding*/Pattern, /*Hardened*/Expr),
 }
 
@@ -146,10 +148,10 @@ pub enum ModuleBinding {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Pattern {
     Rest(Box<Pattern>, Option<TypeAnn>),
-    Optional(String, Box<Expr>, Option<TypeAnn>),
+    Optional(DefVariable, Box<Expr>, Option<TypeAnn>),
     ArrayPattern(Vec<Pattern>, Option<TypeAnn>), // only Vec<Param> form is valid
     RecordPattern(Vec<PropParam>, Option<TypeAnn>),
-    Variable(String, Option<TypeAnn>),
+    Variable(DefVariable, Option<TypeAnn>),
     // DataLiteral(DataLiteral), // I don't understand why dataliteral is here...
     Hole,
 }
@@ -159,7 +161,7 @@ impl Pattern {
         Pattern::Rest(Box::new(pattern), None)
     }
 
-    pub fn optional(name: String, expr: Expr) -> Pattern {
+    pub fn optional(name: DefVariable, expr: Expr) -> Pattern {
         Pattern::Optional(name, Box::new(expr), None)
     }
 
@@ -171,7 +173,7 @@ impl Pattern {
         Pattern::RecordPattern(props, None)
     }
 
-    pub fn variable(name: String) -> Pattern {
+    pub fn variable(name: DefVariable) -> Pattern {
         Pattern::Variable(name, None)
     }
 }
@@ -184,7 +186,7 @@ impl From<Expr> for Pattern {
         // - array compatible with destructuring
         // - object compatible with destructuring
         match value {
-            Expr::Variable(name) => Pattern::Variable(name, None),
+            Expr::Variable(name) => Pattern::Variable(name.into(), None),
             Expr::Assignment(assign) => unimplemented!("optional"),
             Expr::Array(arr) => unimplemented!("array"),
             Expr::Record(rec) => unimplemented!("record"), 
@@ -196,9 +198,9 @@ impl From<Expr> for Pattern {
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropParam {
     Rest(Pattern),
-    KeyValue(String, Pattern),
-    Optional(String, Expr),
-    Shorthand(String),
+    KeyValue(DefVariable, Pattern),
+    Optional(DefVariable, Expr),
+    Shorthand(DefVariable),
 }
 
 // paren, function, literal, array, record, variable
@@ -220,7 +222,7 @@ pub enum Expr {
     CallExpr(Box<CallExpr>),
     // QuasiExpr()
     ParenedExpr(Box<Expr>),
-    Variable(String),
+    Variable(UseVariable),
 }
 
 impl Expr {
@@ -303,7 +305,7 @@ pub enum PureExpr {
 pub enum LValue {
     Index(Expr, Expr),
     Member(Expr, String),
-    Variable(String),
+    Variable(UseVariable),
 }
 
 impl From<Expr> for LValue {
@@ -325,7 +327,7 @@ impl From<Expr> for LValue {
 // StatementItem in Jessie
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
-    Declaration(Rc<Declaration>),
+    Declaration(DeclarationPointer),
     Block(Box<Block>),
     IfStatement(Box<IfStatement>),
     // ForStatement(ForStatement),
@@ -340,10 +342,95 @@ pub enum Statement {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Scope {
-    pub declarations: Option<Box<Vec<Rc<Declaration>>>>,
-    pub uses: Vec<(String, Option<Rc<Declaration>>)>,
+    pub declarations: Option<Box<Vec<DeclarationPointer>>>,
+    // pub uses: Vec<(String, MutableDeclarationPointer)>, // Set to none first if not locally declared, and then set to Some(decl) if found during walking through the parent chain.
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct DefVariable{
+    pub name: String,
+    // pub decl: MutableDeclarationPointer, // DefVariable always occures within a declaration anyway
+}
+
+impl From<String> for DefVariable {
+    fn from(name: String) -> Self {
+        DefVariable {
+            name,
+        }
+    }
+}
+
+impl<'a> From<&'a str> for DefVariable {
+    fn from(name: &'a str) -> Self {
+        DefVariable {
+            name: name.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct UseVariable {
+    pub name: String,
+    pub decl: MutableDeclarationPointer,
+}
+
+impl UseVariable {
+    pub fn new(name: &'static str, decl: DeclarationPointer) -> Self {
+        UseVariable {
+            name: name.to_string(),
+            decl: MutableDeclarationPointer(Rc::new(RefCell::new(Rc::new(OnceCell::from(decl))))),
+        }
+    }
+
+    pub fn new_unbound(name: &'static str) -> Self {
+        UseVariable {
+            name: name.to_string(),
+            decl: MutableDeclarationPointer(Rc::new(RefCell::new(Rc::new(OnceCell::new())))),
+        }
+    }
+}
+
+impl Into<DefVariable> for UseVariable {
+    fn into(self) -> DefVariable {
+        DefVariable {
+            name: self.name,
+        }
+    }
+}
+
+// Mutable declaration pointer is a double pointer to declaration.
+// The struct represents three steps of indirection:
+// 1. declarations too larged to be cloned, so the scope information holds the shared reference to it(Rc<Declaration>)
+// 2. when a variable is not yet bind to a specific declaration(variable from a parent scope, etc), it should be first initialized as a None. After then, the variable should be shared by multiple ast Variable nodes, and also should be passed to the parent variable, where the parent can set the reference to the declaration if found. All the occurance in the child block will be also overriden at this point.
+// 3. when a variable is used in multiple level of block scopes(with all under the same declaration), they should be all pointing to the same pointer that points a spceific declaration slot(initialized to None). 
+#[derive(Debug, PartialEq, Clone)]
+pub struct MutableDeclarationPointer(Rc<RefCell<Rc<OnceCell<DeclarationPointer>>>>); // &mut &mut Option<&Declaration>
+
+impl MutableDeclarationPointer {
+    pub fn new() -> Self {
+        MutableDeclarationPointer(Rc::new(RefCell::new(Rc::new(OnceCell::new()))))
+    }
+
+    pub fn get(&self) -> Option<DeclarationPointer> {
+        (*self.0).borrow().get().cloned()
+    }
+
+    // used in once-set context in case 2
+    pub fn settle(&mut self, var: DeclarationPointer) {
+        self.0.borrow_mut().set(var).unwrap();
+    }
+
+    // used in parent propagation context in case 3
+    // existing variable should be not set
+    pub fn replace(&mut self, var: MutableDeclarationPointer) {
+        let self_cell: &mut Rc<OnceCell<DeclarationPointer>> = &mut(*self.0).borrow_mut();
+        if self_cell.get().is_some() {
+            unreachable!("Variable already locally set, should not be replaced");
+        }
+        let var_cell: &Rc<OnceCell<DeclarationPointer>> = &(*var.0).borrow();
+        *self_cell = var_cell.clone();
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
@@ -399,9 +486,11 @@ pub enum Declaration {
     Parameters(Vec<Pattern>),
 }
 
+pub type DeclarationPointer = Rc<Declaration>;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Binding {
-    VariableBinding(String, Option<Expr>),
+    VariableBinding(DefVariable, Option<Expr>),
     PatternBinding(/*Binding*/Pattern, Expr),
 }
 /*
@@ -423,8 +512,8 @@ pub enum BlockOrExpr {
 // Function is used for function declaration, function expressions, and arrow functions.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function{
-    pub name: Option<String>,
-    pub parameters: Rc<Declaration>, // must be Parameters, TODO
+    pub name: Option<DefVariable>,
+    pub parameters: DeclarationPointer, // must be Parameters, TODO
     pub typeann: Option<TypeAnn>,
     
     // block body
@@ -437,7 +526,7 @@ pub struct Function{
 }
 
 impl Function {
-    pub fn from_body(name: Option<String>, parameters: Rc<Declaration>, typeann: Option<TypeAnn>, block_or_expr: BlockOrExpr, scope: Scope) -> Self {
+    pub fn from_body(name: Option<DefVariable>, parameters: DeclarationPointer, typeann: Option<TypeAnn>, block_or_expr: BlockOrExpr, scope: Scope) -> Self {
         match block_or_expr {
             BlockOrExpr::Block(statements) => Function {
                 name,

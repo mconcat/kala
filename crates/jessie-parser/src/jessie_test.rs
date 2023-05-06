@@ -12,30 +12,31 @@ mod tests {
         ("undefined", Expr::DataLiteral(DataLiteral::Undefined)),
         ("3", Expr::new_number(3)),
         ("5+6", Expr::new_add(Expr::new_number(5), Expr::new_number(6))),
-        ("function f(x) { return x; }", Expr::FunctionExpr(Box::new(Function{
-            name: Some("f".to_string()),
-            parameters: Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".to_string(), None)])),
+        ("function f(x) { return x; }", {
+            let param_decl = Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".into(), None)]));
+            Expr::FunctionExpr(Box::new(Function{
+            name: Some("f".into()),
+            parameters: param_decl.clone(),
             typeann: None,
-            statements: vec![Statement::Return(Some(Expr::Variable("x".to_string())))],
+            statements: vec![Statement::Return(Some(Expr::Variable(UseVariable::new("x", param_decl.clone()))))],
             expression: None,
             scope: Scope{
-                declarations: Some(Box::new(vec![Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".to_string(), None)]))])),
-                uses: vec![(String::from("x"), Some(Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".to_string(), None)]))))],
+                declarations: Some(Box::new(vec![Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".into(), None)]))])),
             },
-        }))),
+        }))
+        }),
         ("function f(x, y) {
             return x+y;   
         }", {
-            let param_decl = Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".to_string(), None), Pattern::Variable("y".to_string(), None)]));
+            let param_decl = Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".into(), None), Pattern::Variable("y".into(), None)]));
             Expr::FunctionExpr(Box::new(Function{
-            name: Some("f".to_string()), 
-            parameters: Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".to_string(), None), Pattern::Variable("y".to_string(), None)])), 
+            name: Some("f".into()), 
+            parameters: Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".into(), None), Pattern::Variable("y".into(), None)])), 
             typeann: None,
-            statements: vec![Statement::Return(Some(Expr::new_add(Expr::Variable("x".to_string()), Expr::Variable("y".to_string()))))],
+            statements: vec![Statement::Return(Some(Expr::new_add(Expr::Variable(UseVariable::new("x", param_decl.clone())), Expr::Variable(UseVariable::new("y", param_decl.clone())))))],
             expression: None,
             scope: Scope{
                 declarations: Some(Box::new(vec![param_decl.clone()])),
-                uses: vec![(String::from("x"), Some(param_decl.clone())), (String::from("y"), Some(param_decl))],
             },
         }))}),
             /* 
@@ -58,20 +59,20 @@ mod tests {
         ("[3, v, true, {}, ...g, 123n, 4.67]", Expr::Array(Array( 
             vec![
                 Element::Expr(Expr::new_number(3)),
-                Element::Expr(Expr::Variable("v".to_string())),
+                Element::Expr(Expr::Variable(UseVariable::new_unbound("v"))),
                 Element::Expr(Expr::DataLiteral(DataLiteral::True)),
                 Element::Expr(Expr::Record(Record(vec![]))),
-                Element::Spread(Expr::Variable("g".to_string())),
+                Element::Spread(Expr::Variable(UseVariable::new_unbound("g"))),
                 Element::Expr(Expr::DataLiteral(DataLiteral::Bigint("123".to_string()))),
                 Element::Expr(Expr::DataLiteral(DataLiteral::Number("4.67".to_string()))),
             ]
         ))),
         ("{x: y, t    : [p], ...o, short}", Expr::Record(Record( 
             vec![
-                PropDef::KeyValue(PropName::Ident("x".to_string()), Expr::Variable("y".to_string())),
-                PropDef::KeyValue(PropName::Ident("t".to_string()), Expr::Array(Array (vec![Element::Expr(Expr::Variable("p".to_string()))]))),
-                PropDef::Spread(Expr::Variable("o".to_string())),
-                PropDef::Shorthand(PropName::Ident("short".to_string())),
+                PropDef::KeyValue(PropName::Ident("x".into()), Expr::Variable(UseVariable::new_unbound("y"))),
+                PropDef::KeyValue(PropName::Ident("t".into()), Expr::Array(Array (vec![Element::Expr(Expr::Variable(UseVariable::new_unbound("p")))]))),
+                PropDef::Spread(Expr::Variable(UseVariable::new_unbound("o"))),
+                PropDef::Shorthand(UseVariable::new_unbound("short")),
             ]
         ))),
         ("(3+2)*1&&undefined/5&x-7||true==={x:y}%6", Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Or, 
@@ -85,17 +86,17 @@ mod tests {
                         Expr::DataLiteral(DataLiteral::Undefined), 
                         Expr::new_number(5)
                     ))), 
-                    Expr::new_sub(Expr::Variable("x".to_string()), Expr::new_number(7))
+                    Expr::new_sub(Expr::Variable(UseVariable::new_unbound("x")), Expr::new_number(7))
                 )))))),
             Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::StrictEqual, 
                 Expr::DataLiteral(DataLiteral::True), 
                 Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Mod, 
-                    Expr::Record(Record(vec![PropDef::KeyValue(PropName::Ident("x".to_string()), Expr::Variable("y".to_string()))])), 
+                    Expr::Record(Record(vec![PropDef::KeyValue(PropName::Ident("x".into()), Expr::Variable(UseVariable::new_unbound("y")))])), 
                     Expr::new_number(6)
                 )))))))))),
         ("x.y.z", Expr::CallExpr(Box::new(CallExpr { 
             expr: Expr::CallExpr(Box::new(CallExpr {
-                expr: Expr::Variable("x".to_string()),
+                expr: Expr::Variable(UseVariable::new_unbound("x")),
                 post_op: CallPostOp::MemberPostOp(MemberPostOp::Member("y".to_string()))
             })),
             post_op: CallPostOp::MemberPostOp(MemberPostOp::Member("z".to_string()))
@@ -107,11 +108,11 @@ mod tests {
                 return x+y+z;
             }
         }", {
-            let param_decl = Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".to_string(), None)]));
-            let decl_y = Rc::new(Declaration::Const(vec![Binding::VariableBinding("y".to_string(), Some(Expr::new_number(3)))]));
-            let decl_z = Rc::new(Declaration::Let(vec![Binding::VariableBinding("z".to_string(), Some(Expr::new_number(5)))]));
+            let param_decl = Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".into(), None)]));
+            let decl_y = Rc::new(Declaration::Const(vec![Binding::VariableBinding("y".into(), Some(Expr::new_number(3)))]));
+            let decl_z = Rc::new(Declaration::Let(vec![Binding::VariableBinding("z".into(), Some(Expr::new_number(5)))]));
             Expr::FunctionExpr(Box::new(Function { 
-            name: Some("f".to_string()), 
+            name: Some("f".into()), 
             parameters: param_decl.clone(),
             typeann: None,
             expression: None, 
@@ -120,17 +121,15 @@ mod tests {
                 Statement::Block(Box::new(Block::new(
                     vec![
                     Statement::Declaration(decl_z.clone()),
-                    Statement::Return(Some(Expr::new_add(Expr::new_add(Expr::Variable("x".to_string()), Expr::Variable("y".to_string())), Expr::Variable("z".to_string()))))
+                    Statement::Return(Some(Expr::new_add(Expr::new_add(Expr::Variable(UseVariable::new("x", param_decl.clone())), Expr::Variable(UseVariable::new("y", decl_y.clone()))), Expr::Variable(UseVariable::new("z", decl_z.clone())))))
                     ],
                     Scope{
                         declarations: Some(Box::new(vec![decl_z.clone()])),
-                        uses: vec![("x".to_string(), None), ("y".to_string(), None), ("z".to_string(), Some(decl_z.clone()))],
                     },
                 )))
             ],
             scope: Scope{
                 declarations: Some(Box::new(vec![param_decl, decl_y])),
-                uses: vec![],
             },
         }))
             })

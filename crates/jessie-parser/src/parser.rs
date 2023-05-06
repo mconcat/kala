@@ -245,9 +245,24 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         std::mem::replace(&mut self.scope, BlockScope::new())
     }
 
+    /*
+    Rc<Declaration> <- statement AST nodes
+                    <- declarations(fixed)
+                    <- bound_uses <- 
+                    <- unbound_uses
+
+     */
+
     pub fn exit_block_scope(&mut self, parent_scope: BlockScope) -> Scope {
-        let scope = std::mem::replace(&mut self.scope, parent_scope);
-        scope.take()
+        let scope = std::mem::replace(&mut self.scope, parent_scope); 
+        let (declarations, unbound_uses) = scope.take();
+        for (name, var) in unbound_uses {
+            self.scope.assert_equivalence(&name, var);
+        }
+
+        Scope {
+            declarations,
+        }
     }
 
     pub fn exit_merge_block_scope(&mut self, parent_scope: BlockScope) {

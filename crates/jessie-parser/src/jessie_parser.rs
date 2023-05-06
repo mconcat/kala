@@ -39,13 +39,13 @@ pub fn hardened_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
 pub fn module_binding(state: &mut ParserState) -> Result<ModuleBinding, ParserError> {
     match state.lookahead_1() {
         Some(Token::LeftBrace) | Some(Token::LeftBracket) => {
-            let pattern = binding_pattern::<{DeclarationKind::Const}>(state)?;
+            let pattern = binding_pattern(state)?;
             state.consume_1(Token::Equal)?;
             let expr = hardened_expr(state)?;
             Ok(ModuleBinding::PatternBinding(pattern, expr))
         },
         _ => {
-            let ident = def_variable(state, DeclarationKind::Const)?;
+            let ident = def_variable(state)?;
             state.consume_1(Token::Equal)?;
             let expr = hardened_expr(state)?; // TODO: check if right
             Ok(ModuleBinding::VariableBinding(ident, Some(expr)))
@@ -56,33 +56,33 @@ pub fn module_binding(state: &mut ParserState) -> Result<ModuleBinding, ParserEr
 ///////////////////////
 // Patterns, Bindings, Definitions
 
-pub fn binding_pattern<const K: DeclarationKind>(state: &mut ParserState) -> Result<Pattern, ParserError> {
+pub fn binding_pattern(state: &mut ParserState) -> Result<Pattern, ParserError> {
     match state.lookahead_1() {
-        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param::<K>, false).map(|x| Pattern::ArrayPattern(x, None/*TODO */)),
-        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param::<K>, false).map(|x| Pattern::RecordPattern(x, None/*TODO */)),
+        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(x, None/*TODO */)),
+        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(x, None/*TODO */)),
         c => err_expected("binding pattern", c),
     }
 }
 
 // only parses original "pattern" rule from Jessica, not the entire variants of enum Pattern.
 // consider changing the name to binding_or_ident_pattern or something...
-pub fn pattern<const K: DeclarationKind>(state: &mut ParserState) -> Result<Pattern, ParserError> {
+pub fn pattern(state: &mut ParserState) -> Result<Pattern, ParserError> {
     match state.lookahead_1() {
-        Some(Token::LeftBracket) | Some(Token::LeftBrace) => binding_pattern::<K>(state),
+        Some(Token::LeftBracket) | Some(Token::LeftBrace) => binding_pattern(state),
         Some(Token::Comma) | Some(Token::RightBracket) => Ok(Pattern::Hole), // Not sure if its the right way...
         _ => // data_literal(state).map(|x| Pattern::DataLiteral(x)).or_else(|_| {
-            def_variable(state, K).map(|x| Pattern::Variable(x, None/*TODO */))
+            def_variable(state).map(|x| Pattern::Variable(x, None/*TODO */))
         //}),
     }
 }
 
-pub fn param<const K: DeclarationKind>(state: &mut ParserState) -> Result<Pattern, ParserError> {
+pub fn param(state: &mut ParserState) -> Result<Pattern, ParserError> {
     if state.lookahead_1() == Some(Token::DotDotDot) {
         state.consume_1(Token::DotDotDot)?;
-        return pattern::<K>(state).map(|x| Pattern::Rest(Box::new(x), None/*TODO */))
+        return pattern(state).map(|x| Pattern::Rest(Box::new(x), None/*TODO */))
     }
 
-    let pat = pattern::<K>(state)?;
+    let pat = pattern(state)?;
     if let Pattern::Variable(ref x, ref ann) = pat {
         if ann.is_some() {
             unimplemented!("Type annotations on parameters are not supported yet")
@@ -97,17 +97,17 @@ pub fn param<const K: DeclarationKind>(state: &mut ParserState) -> Result<Patter
     Ok(pat)
 }
 
-fn prop_param<const K: DeclarationKind>(state: &mut ParserState) -> Result<PropParam, ParserError> {
+fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
-        return pattern::<K>(state).map(|x| PropParam::Rest(x))
+        return pattern(state).map(|x| PropParam::Rest(x))
     }
 
-    let key = def_variable(state, K)?; // def or use XXX
+    let key = def_variable(state)?; // def or use XXX
 
     match state.lookahead_1() {
         Some(Token::Colon) => {
             state.proceed();
-            let pat = pattern::<K>(state)?;
+            let pat = pattern(state)?;
             Ok(PropParam::KeyValue(key, pat))
         },
         Some(Token::Equal) => {
@@ -129,13 +129,13 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
         Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(Box::new(x))), // TODO: implement statement level record literal?
         Some(Token::Const) => {
             state.proceed();
-            let decl = Rc::new(repeated_elements(state, None, Token::Semicolon, &binding::<{DeclarationKind::Const}>, false).map(Declaration::Const)?);
+            let decl = Rc::new(repeated_elements(state, None, Token::Semicolon, &binding, false).map(Declaration::Const)?);
             state.scope.settle_declaration(decl.clone());
             Ok(Statement::Declaration(decl))
         },
         Some(Token::Let) => {
             state.proceed();
-            let decl = Rc::new(repeated_elements(state, None, Token::Semicolon, &binding::<{DeclarationKind::Let}>, false).map(Declaration::Let)?);
+            let decl = Rc::new(repeated_elements(state, None, Token::Semicolon, &binding, false).map(Declaration::Let)?);
             state.scope.settle_declaration(decl.clone());
             Ok(Statement::Declaration(decl))
         },
@@ -183,20 +183,20 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
 
 fn function_decl(state: &mut ParserState) -> Result<Rc<Declaration>, ParserError> {
     state.consume_1(Token::Function)?;
-    let name = def_variable(state, DeclarationKind::Function)?;
+    let name = def_variable(state)?;
     function_internal(state, Some(name)).map(|x| Rc::new(Declaration::Function(Box::new(x))))
 }
 
-pub fn binding<const K: DeclarationKind>(state: &mut ParserState) -> Result<Binding, ParserError> {
+pub fn binding(state: &mut ParserState) -> Result<Binding, ParserError> {
     match state.lookahead_1() {
         Some(Token::LeftBrace) | Some(Token::LeftBracket) => {
-            let pattern = binding_pattern::<K>(state)?;
+            let pattern = binding_pattern(state)?;
             state.consume_1(Token::Equal)?;
             let expr = expression(state)?;
             Ok(Binding::PatternBinding(pattern, expr))
         },
         _ => {
-            let name = def_variable(state, K)?;
+            let name = def_variable(state)?;
             let expr = if state.try_proceed(Token::Equal) {
                 Some(expression(state)?)
             } else {
@@ -505,14 +505,14 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
 
 fn function_expr(state: &mut ParserState) -> Result<Function, ParserError> {
     state.consume_1(Token::Function)?;
-    let name = def_variable(state, DeclarationKind::Function).ok();
+    let name = def_variable(state).ok();
     function_internal(state, name)
 }
 
-fn function_internal(state: &mut ParserState, name: Option<String>) -> Result<Function, ParserError> {
+fn function_internal(state: &mut ParserState, name: Option<DefVariable>) -> Result<Function, ParserError> {
     let parent_scope = state.enter_block_scope();
     
-    let parameters = Rc::new(Declaration::Parameters(repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param::<{DeclarationKind::Argument}>, true/*Check it*/)?));
+    let parameters = Rc::new(Declaration::Parameters(repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?));
     // TODO: spread parameter can only come at the end
     println!("function_internal");
 
@@ -632,7 +632,7 @@ fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
 
     // unary spread parameter
     if state.try_proceed(Token::DotDotDot) {
-        let arg = param::<{DeclarationKind::Argument}>(state)?;
+        let arg = param(state)?;
         let parameters = Rc::new(Declaration::Parameters(vec![Pattern::Rest(Box::new(arg), None)]));
         state.scope.settle_declaration(parameters.clone());
         let body = arrow_function_body(state)?;
@@ -649,7 +649,7 @@ fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
                 // TODO: spread element should come only at the last 
                 Some(Token::Comma) => {
                     state.proceed();
-                    let rest = repeated_elements(state, None, Token::RightParen, &param::<{DeclarationKind::Argument}>, true)?;
+                    let rest = repeated_elements(state, None, Token::RightParen, &param, true)?;
                     let mut params_vec = vec![first.into()];
                     params_vec.extend(rest); // TODO: optimize
                     let parameters = Rc::new(Declaration::Parameters(params_vec));
@@ -711,7 +711,7 @@ pub fn record(state: &mut ParserState) -> Result<Record, ParserError> {
     let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_def, true)?;
     Ok(Record(props))
 }
-
+/* 
 pub fn pure_prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
         let expr = expression(state)?;
@@ -725,10 +725,18 @@ pub fn pure_prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
             Ok(PurePropDef::MethodDef(method_def))
             */
         } else {
+            match prop_name {
+                PropName::Ident(ident) => {
+
+                },
+                _ => err
+            }
+            use_variable_with_parsed(state, prop_name.)
             Ok(PropDef::Shorthand(prop_name))
         }
     }
 }
+*/
 
 pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
@@ -742,8 +750,11 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
         if state.try_proceed(Token::Colon) {
             let expr = expression(state)?;
             Ok(PropDef::KeyValue(prop_name, expr))
+        } else if let PropName::Ident(ident) = prop_name {
+            let shorthand = use_variable_with_parsed(state, ident.clone());
+            Ok(PropDef::Shorthand(shorthand))
         } else {
-            Ok(PropDef::Shorthand(prop_name))
+            err_expected("colon or equal sign", state.lookahead_1())
         }
     }
 }
@@ -1157,18 +1168,24 @@ pub fn identifier(state: &mut ParserState) -> Result<String, ParserError> {
     }
 }
 
-pub fn def_variable(state: &mut ParserState, kind: DeclarationKind) -> Result<String, ParserError> {
+pub fn def_variable(state: &mut ParserState) -> Result<DefVariable, ParserError> {
     let ident = identifier(state)?;
-    state.scope.def_variable(&ident)?;
+    let var = state.scope.def_variable(&ident)?;
     // let type_ann = optional_type_ann(state)?;
-    Ok(ident)
+    Ok(var)
 }
 
-pub fn use_variable(state: &mut ParserState) -> Result<String, ParserError> {
+pub fn use_variable(state: &mut ParserState) -> Result<UseVariable, ParserError> {
     let ident = identifier(state)?;
-    state.scope.use_variable(&ident);
+    let var = state.scope.use_variable(&ident);
     println!("use variable {:?}", state);
-    Ok(ident)
+    Ok(var)
+}
+
+pub fn use_variable_with_parsed(state: &mut ParserState, ident: String) -> UseVariable {
+    let var = state.scope.use_variable(&ident);
+    println!("use variable {:?}", state);
+    var 
 }
 
 pub fn optional_type_ann(state: &mut ParserState) -> Result<Option<TypeAnn>, ParserError> {
