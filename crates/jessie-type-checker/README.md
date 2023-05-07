@@ -1,5 +1,10 @@
 # operational semantics sketch
 
+https://rpeszek.github.io/posts/2022-01-03-ts-types-part3.html
+https://users.soe.ucsc.edu/~abadi/Papers/FTS-submitted.pdf
+https://uwspace.uwaterloo.ca/bitstream/handle/10012/13697/Arteca_Ellen.pdf
+http://janvitek.org/pubs/ecoop15a.pdf
+
 ```rust
 // https://rustdoc.swc.rs/swc_ecma_ast/enum.TsType.html
 pub enum Type {
