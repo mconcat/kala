@@ -492,7 +492,8 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::LeftBracket) => array(state).map(Expr::Array),
         Some(Token::LeftBrace) => record(state).map(Expr::Record),
         Some(Token::String(s)) => state.proceed_then(Expr::DataLiteral(DataLiteral::String(s))),
-        Some(Token::Number(n)) => state.proceed_then(Expr::DataLiteral(DataLiteral::Number(n))),
+        Some(Token::Integer(n)) => state.proceed_then(Expr::DataLiteral(DataLiteral::Integer(n))),
+        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(DataLiteral::Decimal(n))),
         Some(Token::Null) => state.proceed_then(Expr::DataLiteral(DataLiteral::Null)),
         Some(Token::True) => state.proceed_then(Expr::DataLiteral(DataLiteral::True)),
         Some(Token::False) => state.proceed_then(Expr::DataLiteral(DataLiteral::False)),
@@ -1202,7 +1203,7 @@ pub fn prop_name(state: &mut ParserState) -> Result<PropName, ParserError> {
             state.proceed();
             Ok(PropName::String(s))
         },
-        Some(Token::Number(s)) => {
+        Some(Token::Integer(s)) => {
             state.proceed();
             Ok(PropName::Number(s))
         },

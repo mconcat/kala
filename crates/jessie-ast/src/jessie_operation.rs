@@ -12,13 +12,13 @@ pub enum BinaryOp {
     And, // Left
 
     // 5
-    BitwiseOr, // Left
+    BitOr, // Left
 
     // 6
-    BitwiseXor, // Left
+    BitXor, // Left
 
     // 7
-    BitwiseAnd, // Left
+    BitAnd, // Left
 
     // 8 
     StrictEqual, // Left
@@ -31,9 +31,9 @@ pub enum BinaryOp {
     GreaterThanEqual, // Left
 
     // 10
-    BitwiseLeftShift, // Left
-    BitwiseRightShift, // Left
-    BitwiseUnsignedRightShift, // Left
+    BitLeftShift, // Left
+    BitRightShift, // Left
+    BitUnsignedRightShift, // Left
 
     // 11
     Add, // Left

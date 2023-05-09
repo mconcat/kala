@@ -1,7 +1,6 @@
 // justin + jessie
 
 
-use std::borrow::Borrow;
 use std::cell::{RefCell, OnceCell};
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -50,7 +49,8 @@ pub enum DataLiteral {
     Null,
     False,
     True,
-    Number(String),
+    Integer(String),
+    Decimal(String),
     String(String),
     Undefined,
     Bigint(String),
@@ -255,7 +255,7 @@ impl From<LValue> for Expr {
 
 impl Expr {
     pub fn new_number(n: i64) -> Self {
-        Expr::DataLiteral(DataLiteral::Number(n.to_string()))
+        Expr::DataLiteral(DataLiteral::Integer(n.to_string()))
     }
 
     pub fn new_add(l: Expr, r: Expr) -> Self {
@@ -301,10 +301,11 @@ pub enum PureExpr {
 }
 */
 
+// TODO: LValue should support nested index/member
 #[derive(Debug, PartialEq, Clone)]
 pub enum LValue {
     Index(Expr, Expr),
-    Member(Expr, String),
+    Member(Expr, Field),
     Variable(UseVariable),
 }
 
@@ -343,7 +344,6 @@ pub enum Statement {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Scope {
     pub declarations: Option<Box<Vec<DeclarationPointer>>>,
-    // pub uses: Vec<(String, MutableDeclarationPointer)>, // Set to none first if not locally declared, and then set to Some(decl) if found during walking through the parent chain.
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -523,6 +523,8 @@ pub struct Function{
     pub expression: Option<Expr>,
 
     pub scope: Scope,
+
+    pub captures: Option<Vec<(Field, MutableDeclarationPointer)>>, 
 }
 
 impl Function {
@@ -574,7 +576,7 @@ pub struct CallExpr {
 #[derive(Debug, PartialEq, Clone)]
 pub enum MemberPostOp {
     Index(Expr),
-    Member(String),
+    Member(Field),
     // QuasiExpr
 }
 

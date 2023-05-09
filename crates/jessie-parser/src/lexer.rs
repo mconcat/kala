@@ -156,7 +156,8 @@ pub enum Token {
     Undefined,
     Identifier(String),
     String(String),
-    Number(String),
+    Integer(String),
+    Decimal(String),
     Bigint(String),
 
     // ????
@@ -770,12 +771,13 @@ pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
                 break;
             }
         } 
+        return Ok(Token::Decimal(number))
     } else if state.lookahead_1() == Some('n') {
         state.proceed();
         return Ok(Token::Bigint(number))
     }
 
-    Ok(Token::Number(number))
+    Ok(Token::Integer(number))
 }
 
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {

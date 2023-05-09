@@ -5,6 +5,13 @@ https://users.soe.ucsc.edu/~abadi/Papers/FTS-submitted.pdf
 https://uwspace.uwaterloo.ca/bitstream/handle/10012/13697/Arteca_Ellen.pdf
 http://janvitek.org/pubs/ecoop15a.pdf
 
+The purpose of the type checker is
+
+1. To efficiently allocate memory for variables, with known type information
+2. To efficiently allocate memory for local scope, with known type information(scope in js is just an object)
+
+It is *not* for ensuring type safety of a program, as if we cannot determine a type of a variable, we can always fallback to `any`.
+
 ```rust
 // https://rustdoc.swc.rs/swc_ecma_ast/enum.TsType.html
 pub enum Type {
@@ -183,8 +190,13 @@ let infer = (expr, expected) => match expr {
         }, x)
     },
     CallExpr(x, op) => match op {
-        Index(idx) => assert_indexable(idx),
-        Member(mem) => assert_member(mem, x),
+        Index(idx) => match infer(idx) {
+            TsNumberKeyword => assert_arraylike(x),
+            TsStringKeyword => assert_indexable(x),
+            StringLitType(s) => assert_has_member(s, x),
+            _ => assert_object(x),
+        },
+        Member(mem) => assert_has_member(mem, x),
         Call(args) => assert_callable(function_signature(args), x)
     },
     ParenedExpr(x) => infer(x),

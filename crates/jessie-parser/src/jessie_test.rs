@@ -64,7 +64,7 @@ mod tests {
                 Element::Expr(Expr::Record(Record(vec![]))),
                 Element::Spread(Expr::Variable(UseVariable::new_unbound("g"))),
                 Element::Expr(Expr::DataLiteral(DataLiteral::Bigint("123".to_string()))),
-                Element::Expr(Expr::DataLiteral(DataLiteral::Number("4.67".to_string()))),
+                Element::Expr(Expr::DataLiteral(DataLiteral::Decimal("4.67".to_string()))),
             ]
         ))),
         ("{x: y, t    : [p], ...o, short}", Expr::Record(Record( 
