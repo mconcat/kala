@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "jessie-interpreter"
+name = "jessie-type-checker"
 version = "0.1.0"
 dependencies = [
  "jessie-ast",
