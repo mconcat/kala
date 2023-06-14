@@ -1,10 +1,9 @@
-use crate::Expr;
-use crate::VariableCell;
+use crate::{Expr, VariableCell};
 use std::mem;
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Assignment<'a>(pub AssignOp, pub LValue<'a>, pub Expr<'a>);
+pub struct Assignment(pub AssignOp, pub LValue, pub Expr);
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AssignOp {
@@ -25,32 +24,32 @@ pub enum AssignOp {
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
-pub enum LValue<'a> {
-    CallLValue(&'a CallLValue<'a>) = 9,
-    Variable(&'a VariableCell<'a>) = 12,
+pub enum LValue {
+    CallLValue(Box<CallLValue>) = 9,
+    Variable(Box<VariableCell>) = 12,
 }
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
-pub enum LValueCallPostOp<'a> {
-    Index(Expr<'a>) = 0,
-    Member(&'a str) = 1,
+pub enum LValueCallPostOp {
+    Index(Expr) = 0,
+    Member(String) = 1,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct CallLValue<'a> {
-    pub expr: Expr<'a>,
-    pub post_op: &'a [LValueCallPostOp<'a>],
+pub struct CallLValue {
+    pub expr: Expr,
+    pub post_op: Vec<LValueCallPostOp>,
 }
 
-impl<'a> From<LValue<'a>> for Expr<'a> {
+impl From<LValue> for Expr {
     fn from(lv: LValue) -> Self {
         // Super unsafe, add bunch of test cases later
         unsafe { mem::transmute(lv) }
     }
 }
 
-impl<'a> From<Expr<'a>> for LValue<'a> {
+impl From<Expr> for LValue {
     fn from(value: Expr) -> Self {
          // must be called only when the expr is transmutable to LValue
          // Super super unsafe

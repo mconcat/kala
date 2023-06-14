@@ -1,10 +1,10 @@
 #[derive(Debug, PartialEq, Clone)]
-pub struct ModuleBody<'a>(pub [ModuleItem<'a>]);
+pub struct ModuleBody(pub Vec<ModuleItem>);
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ModuleItem<'a> {
+pub enum ModuleItem {
     // ImportDeclaration(ImportDeclaration),
-    ModuleDeclaration(ModuleDeclaration<'a>),
+    ModuleDeclaration(ModuleDeclaration),
 }
 /* 
 #[derive(Debug, PartialEq, Clone)]
@@ -29,8 +29,8 @@ pub enum ExportClause {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ModuleDeclaration<'a> {
+pub struct ModuleDeclaration {
     pub export_clause: ExportClause,
     // Using MutableDeclarationPointer as top level const/functions might be used before their declaration
-    pub declaration: MutableDeclarationPointer<'a>, // Must be pointing either Function or Const, TODO: enforce
+    pub declaration: MutableDeclarationPointer, // Must be pointing either Function or Const, TODO: enforce
 }

@@ -1,29 +1,32 @@
-use crate::{expression::Expr, VariableCell};
+use crate::{expression::Expr, Declaration, DeclarationIndex};
 
 // StatementItem in Jessie
 #[derive(Debug, PartialEq, Clone)]
-pub enum Statement<'a> {
-    Declaration(&'a VariableCell<'a>),
-    Block(&'a Block<'a>),
-    IfStatement(&'a IfStatement<'a>),
+pub enum Statement {
+    // The actual declaration is stored in the innermost function. DeclarationIndicies point to them.
+    // When encountered, declaration statements initializes the variable to undefined, or with init value.
+    LocalDeclaration(Box<Vec<DeclarationIndex>>),
+    FunctionDeclaration(DeclarationIndex),
+    Block(Box<Block>),
+    IfStatement(Box<IfStatement>),
     // ForStatement(ForStatement),
-    WhileStatement(&'a WhileStatement<'a>),
+    WhileStatement(Box<WhileStatement>),
     Continue,
     Break,
-    Return(&'a Expr<'a>),
+    Return(Box<Expr>),
     ReturnEmpty,
-    Throw(&'a Expr<'a>),
+    Throw(Box<Expr>),
     // TryStatement(TryStatement),
-    ExprStatement(&'a Expr<'a>),
+    ExprStatement(Box<Expr>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Block<'a> {
-    pub statements: &'a [Statement<'a>],
+pub struct Block {
+    pub statements: Vec<Statement>,
 }
 
-impl<'a> Block<'a> {
-    pub fn new(statements: &'a [Statement<'a>]) -> Self {
+impl Block {
+    pub fn new(statements: Vec<Statement>) -> Self {
         Block {
             statements,
         }
@@ -31,20 +34,22 @@ impl<'a> Block<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct IfStatement<'a> {
-    pub arms: &'a [IfArm<'a>],
-    pub else_arm: Option<Block<'a>>,
+pub struct IfStatement {
+    pub condition: Expr,
+    pub consequent: Block,
+    pub alternate: ElseArm,
 }
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct IfArm<'a> {
-    pub condition: Expr<'a>,
-    pub consequent: Block<'a>,
+pub enum ElseArm {
+    NoElse,
+    Else(Block),
+    ElseIf(Box<IfStatement>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct WhileStatement<'a> {
-    pub condition: Expr<'a>,
-    pub body: Block<'a>,
+pub struct WhileStatement {
+    pub condition: Expr,
+    pub body: Block,
 }

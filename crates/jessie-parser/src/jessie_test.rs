@@ -2,7 +2,7 @@
 mod tests {
     use std::rc::Rc;
 
-    use crate::jessie_parser::{expression, param};
+    use crate::jessie_parser::{expression};
     use crate::parser::ParserState;
     use crate::lexer::*;
     use jessie_ast::*;
@@ -23,6 +23,7 @@ mod tests {
             scope: Scope{
                 declarations: Some(Box::new(vec![Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".into(), None)]))])),
             },
+            captures: vec![],
         }))
         }),
         ("function f(x, y) {
@@ -38,6 +39,7 @@ mod tests {
             scope: Scope{
                 declarations: Some(Box::new(vec![param_decl.clone()])),
             },
+            captures: vec![],
         }))}),
             /* 
             // Excluded due to destructing parameter
@@ -81,7 +83,7 @@ mod tests {
                     Expr::ParenedExpr(Box::new(Expr::new_add(Expr::new_number(3), Expr::new_number(2)))), 
                     Expr::new_number(1)
                 ))), 
-                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitwiseAnd, 
+                Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::BitAnd, 
                     Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Div, 
                         Expr::DataLiteral(DataLiteral::Undefined), 
                         Expr::new_number(5)
@@ -131,8 +133,42 @@ mod tests {
             scope: Scope{
                 declarations: Some(Box::new(vec![param_decl, decl_y])),
             },
+            captures: vec![],
         }))
-            })
+            }),
+        ("function f(x) {
+            return function(y) {
+                return x+y;
+            };   
+        }", {
+            let x_param_decl = Rc::new(Declaration::Parameters(vec![Pattern::Variable("x".into(), None)]));
+            let y_param_decl = Rc::new(Declaration::Parameters(vec![Pattern::Variable("y".into(), None)]));
+            Expr::FunctionExpr(Box::new(Function {
+                name: Some("f".into()),
+                parameters: x_param_decl.clone(),
+                typeann: None,
+                expression: None,
+                statements: vec![
+                    Statement::Return(Some(Expr::FunctionExpr(Box::new(Function {
+                        name: None,
+                        parameters: y_param_decl.clone(),
+                        typeann: None,
+                        expression: None,
+                        statements: vec![
+                            Statement::Return(Some(Expr::new_add(Expr::Variable(UseVariable::new("x", x_param_decl.clone())), Expr::Variable(UseVariable::new("y", y_param_decl.clone())))))
+                        ],
+                        scope: Scope{
+                            declarations: Some(Box::new(vec![y_param_decl])),
+                        },
+                        captures: vec![("x".to_string(), MutableDeclarationPointer::initialized(x_param_decl.clone()))],
+                    }))))
+                ],
+                scope: Scope{
+                    declarations: Some(Box::new(vec![x_param_decl])),
+                },
+                captures: vec![],
+            }))
+        })
         ]
     }
 

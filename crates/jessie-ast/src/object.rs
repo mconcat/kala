@@ -1,20 +1,20 @@
 use crate::{expression::Expr, VariableCell};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Record<'a>(pub &'a [PropDef<'a>]);
+pub struct Record(pub Vec<PropDef>);
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum PropDef<'a> {
-    KeyValue(&'a Field<'a>, Expr<'a>), 
-    // ComputedKeyValue(ComputedProperty<'a>, Expr<'a>), // TODO
+pub enum PropDef {
+    KeyValue(Box<Field>, Expr), 
+    // ComputedKeyValue(ComputedProperty, Expr), // TODO
     // MethodDef(MethodDef),// TODO
-    Shorthand(&'a Field<'a>, &'a VariableCell<'a>),
-    Spread(Expr<'a>),
+    Shorthand(Box<Field>, Box<VariableCell>),
+    Spread(Expr),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Field<'a> {
-    pub dynamic_property: &'a str,
+pub struct Field {
+    pub dynamic_property: String,
     pub static_property: Option<StaticProperty>,    
 }
 
@@ -27,4 +27,4 @@ pub enum StaticProperty {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ComputedProperty<'a>(Expr<'a>);
+pub struct ComputedProperty(Expr);

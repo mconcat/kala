@@ -1,42 +1,29 @@
 use core::fmt::Debug;
-use std::rc::Rc;
-use jessie_ast::{Block, DeclarationKind, Declaration, Function, Scope};
 
-use crate::jessie_scope::BlockScope;
+use jessie_ast::{Declaration, VariableCell, VariablePointer, Variable, DeclarationIndex};
+
+use crate::{scope::LexicalScope};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {
     // A token is expected to be followed,
     // but a different token found.
-    ExpectedToken(String, C),
+    ExpectedToken(String, String, C),
 
     // Not a valid syntax in Jessie.
-    InvalidExpression(String),
+    InvalidExpression(String, String),
 
     // Valid syntax, but not implemented yet.
-    Unimplemented(String),
+    Unimplemented(String, String),
 
     // Scoping error.
-    ScopeError(String, String),
+    ScopeError(String, String, String),
+
+    DuplicateDeclaration,
 }
 
 
-pub fn err_expected<R, C>(message: &'static str, actual: C) -> Result<R, ParserError<C>> {
-    Err(ParserError::ExpectedToken(message.to_string(), actual))
-}
 
-
-pub fn err_invalid<R, C>(message: &'static str) -> Result<R, ParserError<C>> {
-    Err(ParserError::InvalidExpression(message.to_string()))
-}
-
-pub fn err_unimplemented<R, C>(message: &'static str) -> Result<R, ParserError<C>> {
-    Err(ParserError::Unimplemented(message.to_string()))
-}
-
-pub fn err_scope<R, C>(message: &'static str, var: String) -> Result<R, ParserError<C>> {
-    Err(ParserError::ScopeError(message.to_string(), var))
-}
 
 /* 
 pub trait ParserState: CombinatoryParser+Sized {
@@ -155,21 +142,22 @@ pub trait ArrayLike {
 
     fn get(&self, index: usize) -> Option<Self::Element>;
     fn len(&self) -> usize;
+    fn slice(&self, start: usize, end: usize) -> Self;
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct ParserState<T: ArrayLike+Clone+Debug> {
+#[derive(Debug, PartialEq)]
+pub struct ParserState<'a, T: ArrayLike+Clone+Debug+ToString> {
     pub input: T,
     pub pos: usize,
-    pub scope: BlockScope,
+    pub scope: LexicalScope<'a>,
 }
 
-impl<T: ArrayLike+Clone+Debug> ParserState<T> {
-    pub fn new(input: T) -> Self {
+impl<'a, T: ArrayLike+Clone+Debug+ToString> ParserState<'a, T> {
+    pub fn new(input: T, global_declarations: &mut Vec<Declaration>) -> Self {
         Self {
             input,
             pos: 0,
-            scope: BlockScope::new(),
+            scope: LexicalScope::new(global_declarations),
         }
     }
 
@@ -222,7 +210,7 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
             self.proceed();
             Ok(())
         } else {
-            err_expected("consume_1", /*c.clone(),*/ self.lookahead_1())
+            self.err_expected("consume_1", /*c.clone(),*/ self.lookahead_1())
         }
     }
 
@@ -241,34 +229,52 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
         Ok(())
     }
 
-    pub fn enter_block_scope(&mut self) -> BlockScope {
-        std::mem::replace(&mut self.scope, BlockScope::new())
+    pub fn enter_function_scope(&mut self, declarations: &mut Vec<Declaration>) -> LexicalScope {
+        std::mem::replace(&mut self.scope, LexicalScope::new(declarations))
     }
 
-    /*
-    Rc<Declaration> <- statement AST nodes
-                    <- declarations(fixed)
-                    <- bound_uses <- 
-                    <- unbound_uses
-
-     */
-
-    pub fn exit_block_scope(&mut self, parent_scope: BlockScope) -> Scope {
-        let scope = std::mem::replace(&mut self.scope, parent_scope); 
+    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> Vec<DeclarationIndex> {
+        let scope = std::mem::replace(&mut self.scope, parent_scope);
         let (declarations, unbound_uses) = scope.take();
-        for (name, var) in unbound_uses {
-            self.scope.assert_equivalence(&name, var);
+    
+        let mut captures = Vec::with_capacity(unbound_uses.len());
+
+        for (name, mut ptr) in unbound_uses {
+            // make a capturing declaration targeting upper scope, set the local pointer to reference it
+            let capture_cell = VariableCell::uninitialized();
+            let decl = Declaration::Capture { name, variable: capture_cell };
+            let declaration_index = DeclarationIndex(declarations.len());
+            declarations.push(decl);
+
+            // Set the ptr to reference the new declaration
+            ptr.set(declaration_index, None, None).unwrap();
+
+            // assert equivalence
+            self.scope.assert_equivalence(&name, capture_cell.ptr);
+
+            captures.push(declaration_index)
         }
 
-        Scope {
-            declarations,
-        }
+        captures
     }
 
-    pub fn exit_merge_block_scope(&mut self, parent_scope: BlockScope) {
+    pub fn enter_block_scope(&mut self) -> LexicalScope {
+        std::mem::replace(&mut self.scope, LexicalScope::new(&mut self.scope.declarations))
+    }
+
+    pub fn exit_block_scope(&mut self, parent_scope: LexicalScope) {
+        let scope = std::mem::replace(&mut self.scope, parent_scope); 
+        let (_, unbound_uses) = scope.take();
+        for (name, var) in unbound_uses {
+            self.scope.assert_equivalence(&name, var/*TODO: optimize */);
+        }
+    }
+/* 
+    pub fn exit_merge_block_scope(&mut self, parent_scope: LexicalScope) {
         let scope = std::mem::replace(&mut self.scope, parent_scope);
         scope.merge_into(&mut self.scope);
     }
+*/
 
     /*
     # Define Javascript-style comments.
@@ -402,5 +408,22 @@ impl<T: ArrayLike+Clone+Debug> ParserState<T> {
 
     }
     */
+
+    pub fn err_expected<R, C>(&self, message: &'static str, actual: C) -> Result<R, ParserError<C>> {
+        Err(ParserError::ExpectedToken(self.input.slice(0, self.pos).to_string(), message.to_string(), actual))
+    }
+    
+    
+    pub fn err_invalid<R, C>(&self, message: &'static str) -> Result<R, ParserError<C>> {
+        Err(ParserError::InvalidExpression(self.input.slice(0, self.pos).to_string(), message.to_string()))
+    }
+    
+    pub fn err_unimplemented<R, C>(&self, message: &'static str) -> Result<R, ParserError<C>> {
+        Err(ParserError::Unimplemented(self.input.slice(0, self.pos).to_string(), message.to_string()))
+    }
+    
+    pub fn err_scope<R, C>(&self, message: &'static str, var: String) -> Result<R, ParserError<C>> {
+        Err(ParserError::ScopeError(self.input.slice(0, self.pos).to_string(), message.to_string(), var))
+    }
 }
 

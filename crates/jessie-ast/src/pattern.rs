@@ -1,22 +1,22 @@
-use crate::{Expr, VariableCell};
+use crate::{Expr};
 
 // BindingPattern, Param, Pattern are all collapsed into single Pattern type
 // Be careful to not mess with parsing orders - struct types and parsing might not correspond
 #[derive(Debug, PartialEq, Clone)]
-pub enum Pattern<'a> {
-    Rest(&'a Pattern<'a>),
-    Optional(&'a VariableCell<'a>, &'a Expr<'a>),
-    ArrayPattern(&'a [Pattern<'a>]), // only Vec<Param> form is valid
-    RecordPattern(&'a [PropParam<'a>]),
-    Variable(&'a VariableCell<'a>),
+pub enum Pattern {
+    Rest(Box<Pattern>),
+    Optional(String, Expr),
+    ArrayPattern(Vec<Pattern>), // only Vec<Param> form is valid
+    RecordPattern(Vec<PropParam>),
+    Variable(String),
 }
-
-impl<'a> Pattern<'a> {
+/* 
+impl Pattern {
     pub fn rest(pattern: &'a Self) -> Self {
         Pattern::Rest(pattern)
     }
 
-    pub fn optional(name: &'a VariableCell<'a>, expr: &'a Expr) -> Self {
+    pub fn optional(name: &'a VariableCell, expr: &'a Expr) -> Self {
         Pattern::Optional(name, expr)
     }
 
@@ -28,12 +28,12 @@ impl<'a> Pattern<'a> {
         Pattern::RecordPattern(props)
     }
 
-    pub fn variable(name: &'a VariableCell<'a>) -> Self {
+    pub fn variable(name: &'a VariableCell) -> Self {
         Pattern::Variable(name)
     }
 }
 
-impl<'a> From<Expr<'a>> for Pattern<'a> {
+impl From<Expr> for Pattern {
     fn from(value: Expr) -> Self {
         // Expression can be converted to pattern only if it is 
         // - a variable
@@ -49,12 +49,12 @@ impl<'a> From<Expr<'a>> for Pattern<'a> {
         }
     }
 }
-
+*/
 #[derive(Debug, PartialEq, Clone)]
-pub enum PropParam<'a> {
-    Rest(Pattern<'a>),
-    KeyValue(&'a VariableCell<'a>, Pattern<'a>),
-    Optional(&'a VariableCell<'a>, Expr<'a>),
-    Shorthand(&'a VariableCell<'a>),
+pub enum PropParam {
+    Rest(Pattern),
+    KeyValue(String, Pattern),
+    Optional(String, Expr),
+    Shorthand(String),
 }
 

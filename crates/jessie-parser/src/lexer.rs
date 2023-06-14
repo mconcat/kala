@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use crate::parser::{ParserState, ArrayLike, ParserError, err_expected};
+use crate::parser::{ParserState, ArrayLike, ParserError};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Str<'a>(pub &'a str);
@@ -17,10 +17,26 @@ impl<'a> ArrayLike for Str<'a> {
     fn len(&self) -> usize {
         self.0.len()
     }
+
+    fn slice(&self, start: usize, end: usize) -> Self {
+        Str(&self.0[start..end])
+    }
+}
+
+impl<'a> ToString for Str<'a> {
+    fn to_string(&self) -> String {
+        self.0.to_string()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct VecToken(pub Vec<Token>);
+
+impl ToString for VecToken {
+    fn to_string(&self) -> String {
+        self.0.iter().map(|x| format!("{:?}", x)).collect::<Vec<String>>().join(" ")
+    }
+}
 
 impl ArrayLike for VecToken {
     type Element = Token;
@@ -31,6 +47,10 @@ impl ArrayLike for VecToken {
 
     fn len(&self) -> usize {
         self.0.len()
+    }
+
+    fn slice(&self, start: usize, end: usize) -> Self {
+        VecToken(self.0[start..end].to_vec())
     }
 }
 
@@ -690,13 +710,13 @@ pub fn repeated_elements<Data: Debug>(
                     state.proceed();
                     break;
                 } else {
-                    return err_expected("no trailing comma", Some(Token::Comma))
+                    return state.err_expected("no trailing comma", Some(Token::Comma))
                 }
             } 
         } else if state.try_proceed(close.clone()) {
             break
         } else {
-            return err_expected("comma or close", state.lookahead_1())
+            return state.err_expected("comma or close", state.lookahead_1())
         }
     }
 

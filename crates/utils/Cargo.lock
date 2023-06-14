@@ -3,12 +3,5 @@
 version = 3
 
 [[package]]
-name = "jessie-ast"
-version = "0.1.0"
-dependencies = [
- "utils",
-]
-
-[[package]]
 name = "utils"
 version = "0.1.0"

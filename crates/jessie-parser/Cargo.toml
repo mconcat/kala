@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 jessie-ast = { version = "0.1.0", path = "../jessie-ast" }
+utils = { version = "0.1.0", path = "../utils" }

@@ -1,4 +1,4 @@
-use crate::{operation::*, VariableCell, Function, Record, Assignment};
+use crate::{operation::*, Function, Record, Assignment, VariableCell};
 
 // paren, function, literal, array, record, variable
 
@@ -7,48 +7,48 @@ use crate::{operation::*, VariableCell, Function, Record, Assignment};
 // Be sure not to represent any invalid states.
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
-pub enum Expr<'a> {
-    DataLiteral(&'a DataLiteral<'a>) = 0,
-    Array(&'a Array<'a>) = 1,
-    Record(&'a Record<'a>) = 2,
-    ArrowFunc(&'a Function<'a>) = 3,
-    FunctionExpr(&'a Function<'a>) = 4,
-    Assignment(&'a Assignment<'a>) = 5,
-    CondExpr(&'a CondExpr<'a>) = 6,
-    BinaryExpr(&'a BinaryExpr<'a>) = 7,
-    UnaryExpr(&'a UnaryExpr<'a>) = 8,
-    CallExpr(&'a CallExpr<'a>) = 9,
+pub enum Expr {
+    DataLiteral(Box<DataLiteral>) = 0,
+    Array(Box<Array>) = 1,
+    Record(Box<Record>) = 2,
+    ArrowFunc(Box<Function>) = 3,
+    FunctionExpr(Box<Function>) = 4,
+    Assignment(Box<Assignment>) = 5,
+    CondExpr(Box<CondExpr>) = 6,
+    BinaryExpr(Box<BinaryExpr>) = 7,
+    UnaryExpr(Box<UnaryExpr>) = 8,
+    CallExpr(Box<CallExpr>) = 9,
     // QuasiExpr() = 10
-    ParenedExpr(&'a Expr<'a>) = 11,
-    Variable(&'a VariableCell<'a>) = 12,
+    ParenedExpr(Box<Expr>) = 11,
+    Variable(Box<VariableCell>) = 12,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Array<'a>(pub &'a [Element<'a>]);
+pub struct Array(pub Vec<Element>);
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Element<'a> {
-    Expr(Expr<'a>),
-    Spread(Expr<'a>),
+pub enum Element {
+    Expr(Expr),
+    Spread(Expr),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum DataLiteral<'a> {
+pub enum DataLiteral {
     Null,
     False,
     True,
-    Integer(&'a str),
-    Decimal(&'a str),
-    String(&'a str),
+    Integer(String),
+    Decimal(String),
+    String(String),
     Undefined,
-    Bigint(&'a str),
+    Bigint(String),
 }
 
 
 
 /*
-impl<'a> Expr<'a> {
+impl Expr {
     pub fn new_number(n: i64) -> Self {
         Expr::DataLiteral(DataLiteral::Integer(n.to_string()))
     }
@@ -76,7 +76,7 @@ pub enum BlockOrExpr {
 /* 
 // Function is used for function declaration, function expressions, and arrow functions.
 #[derive(Debug, PartialEq, Clone)]
-pub struct Function<'a>{
+pub struct Function{
     pub name: Option<DefVariable>,
 
 
@@ -120,34 +120,34 @@ impl Function {
 */
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct BinaryExpr<'a>(pub BinaryOp, pub Expr<'a>, pub Expr<'a>);
+pub struct BinaryExpr(pub BinaryOp, pub Expr, pub Expr);
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct CondExpr<'a>(pub Expr<'a>, pub Expr<'a>, pub Expr<'a>);
+pub struct CondExpr(pub Expr, pub Expr, pub Expr);
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct UnaryExpr<'a> {
-    pub op: &'a [UnaryOp],
-    pub expr: Expr<'a>,
+pub struct UnaryExpr {
+    pub op: Vec<UnaryOp>,
+    pub expr: Expr,
 }
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
-pub enum CallPostOp<'a> {
-    Index(Expr<'a>) = 0,
-    Member(&'a str) = 1,
+pub enum CallPostOp {
+    Index(Expr) = 0,
+    Member(String) = 1,
     // QuasiExpr = 2
-    Call(&'a [Arg<'a>]) = 3,
+    Call(Vec<Arg>) = 3,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct CallExpr<'a> {
-    pub expr: Expr<'a>,
-    pub post_op: &'a [CallPostOp<'a>],
+pub struct CallExpr {
+    pub expr: Expr,
+    pub post_ops: Vec<CallPostOp>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Arg<'a> {
-    Expr(Expr<'a>),
-    Spread(Expr<'a>),
+pub enum Arg {
+    Expr(Expr),
+    Spread(Expr),
 }
