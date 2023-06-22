@@ -2,6 +2,7 @@
 #![feature(adt_const_params)]
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
+#![feature(test)]
 
 // pub mod jessie_test;
 pub mod parser;
@@ -14,6 +15,8 @@ pub mod pattern;
 pub mod object;
 pub mod operation;
 pub mod scope;
+// pub mod outline;
+pub mod common;
 
 pub use lexer::{
     Token,
@@ -28,3 +31,8 @@ pub use pattern::*;
 // pub use module::*;
 pub use object::*;
 pub use operation::*;
+pub use common::*;
+
+///////
+
+mod bench;

@@ -1,7 +1,9 @@
 use jessie_ast::*;
-use crate::parser;
+use crate::{parser, use_variable};
 use crate::{
     VecToken, Token,
+
+    identifier,
 
     repeated_elements,
 
@@ -11,6 +13,7 @@ use crate::{
 
     function_internal,
 };
+use utils::OwnedSlice;
 
 type ParserState<'a> = parser::ParserState<'a, VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
@@ -22,9 +25,9 @@ type ParserError = parser::ParserError<Option<Token>>;
 pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
     // putting whitespace in consumes is a hack, need to fix later
     match state.lookahead_1() {
-        Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(Box::new(x))), // TODO: implement statement level record literal?
-        Some(Token::Const) => const_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
-        Some(Token::Let) => let_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
+        Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(x)), // TODO: implement statement level record literal?
+        Some(Token::Const) => const_decl(state).map(|x| Statement::LocalDeclaration(x)),
+        Some(Token::Let) => let_decl(state).map(|x| Statement::LocalDeclaration(x)),
         Some(Token::Function) => function_decl(state).map(|x| Statement::FunctionDeclaration(x)),
         Some(Token::If) => if_statement(state).map(|x| Statement::IfStatement(Box::new(x))),
         Some(Token::While) => while_statement(state).map(|x| Statement::WhileStatement(Box::new(x))),
@@ -68,7 +71,7 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
 }
 
 
-fn const_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserError> {
+fn const_decl(state: &mut ParserState) -> Result<OwnedSlice<DeclarationIndex>, ParserError> {
     state.consume_1(Token::Const)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -76,7 +79,7 @@ fn const_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserEr
     }, false)
 }
 
-fn let_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserError> {
+fn let_decl(state: &mut ParserState) -> Result<OwnedSlice<DeclarationIndex>, ParserError> {
     state.consume_1(Token::Let)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -89,9 +92,9 @@ fn function_decl(state: &mut ParserState) -> Result<DeclarationIndex, ParserErro
     let name = identifier(state)?;
     let parent_scope = state.enter_block_scope();
     // TODO: support recursive reference to function
-    function_internal(state, Some(name)).map(|x| Declaration::Function(Box::new(x)));
+    let function = function_internal(state, Some(name))?;
     state.exit_block_scope(parent_scope);
-
+    state.scope.declare_function(function).ok_or(ParserError::DuplicateDeclaration)
 }
 
 pub fn binding(state: &mut ParserState) -> Result<(Pattern, Option<Expr>), ParserError> {
@@ -103,13 +106,13 @@ pub fn binding(state: &mut ParserState) -> Result<(Pattern, Option<Expr>), Parse
             Ok((pattern, Some(expr)))
         },
         _ => {
-            let name = def_variable(state)?;
+            let var = use_variable(state)?;
             let expr = if state.try_proceed(Token::Equal) {
                 Some(expression(state)?)
             } else {
                 None
             };
-            Ok((Pattern::Variable(name), expr))
+            Ok((Pattern::Variable(Box::new(var)), expr))
         }
     }
 }
@@ -122,10 +125,10 @@ pub fn block(state: &mut ParserState) -> Result<Block, ParserError> {
     // Unbound uses list is only needed for function declarations, so we can ignore it here.
     state.exit_block_scope(parent_scope);
 
-    Ok(Block { statements })
+    Ok(Block(statements))
 }
 
-pub fn block_raw(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {
+pub fn block_raw(state: &mut ParserState) -> Result<OwnedSlice<Statement>, ParserError> {
     state.consume_1(Token::LeftBrace)?;
 
     let mut statements = vec![];
@@ -135,7 +138,7 @@ pub fn block_raw(state: &mut ParserState) -> Result<Vec<Statement>, ParserError>
 
     state.consume_1(Token::RightBrace)?;
 
-    Ok(statements)
+    Ok(OwnedSlice::from_vec(statements))
 }
 
 fn if_statement(state: &mut ParserState) -> Result<IfStatement, ParserError> {

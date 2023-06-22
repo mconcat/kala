@@ -1,30 +1,35 @@
 use crate::{Statement, Expr, Pattern, DataLiteral};
 use std::{rc::Rc, cell::OnceCell, cell::RefCell, borrow::BorrowMut, option};
+use utils::{OwnedString, SharedString, OwnedSlice};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
-    pub name: Option<String>,
+    pub name: Option<SharedString>,
 
-    pub captures: Vec<DeclarationIndex>,
+    pub captures: OwnedSlice<DeclarationIndex>,
 
-    pub parameters: Vec<DeclarationIndex>,
+    pub parameters: OwnedSlice<DeclarationIndex>,
 
-    pub declarations: Vec<Declaration>,
+    pub declarations: OwnedSlice<Declaration>,
 
     // block body
-    pub statements: Vec<Statement>,
+    pub statements: OwnedSlice<Statement>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Declaration {
     Capture {
-        name: String,
+        name: SharedString,
         variable: VariableCell, // pointing upper function scope
         //index: DeclarationIndex,
     },
     Parameter {
         pattern: Pattern,
         //index: DeclarationIndex,
+    },
+    OptionalParameter {
+        name: SharedString,
+        default: Expr,
     },
     Const {
         pattern: Pattern,
@@ -51,9 +56,7 @@ pub struct Variable {
     // index of the variable declaration in the innermost function 
     pub declaration_index: DeclarationIndex,
 
-    pub property_access: Option<Box<Vec<PropertyAccess>>>,
-
-    pub optional_init: Option<Box<Expr>>,
+    pub property_access: PropertyAccessChain,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -64,23 +67,21 @@ impl VariablePointer {
         VariablePointer(Rc::new(RefCell::new(Rc::new(OnceCell::new()))))
     }
 
-    pub fn initialized(declaration_index: DeclarationIndex, property_access: Option<Box<Vec<PropertyAccess>>>, optional_init: Option<Box<Expr>>) -> Self {
+    pub fn initialized(declaration_index: DeclarationIndex, property_access: PropertyAccessChain) -> Self {
         let cell = OnceCell::new();
         cell.set(Variable {
             declaration_index,
             property_access,
-            optional_init,
         }).unwrap();
         VariablePointer(Rc::new(RefCell::new(Rc::new(cell))))
     }
 
-    pub fn set(&mut self, declaration_index: DeclarationIndex, property_access: Option<Box<Vec<PropertyAccess>>>, optional_init: Option<Box<Expr>>) -> Result<(), Variable> {
+    pub fn set(&mut self, declaration_index: DeclarationIndex, property_access: PropertyAccessChain) -> Result<(), Variable> {
         let inner = (*self.0).borrow_mut();
 
         inner.set(Variable {
             declaration_index,
             property_access,
-            optional_init,
         })
     }
 
@@ -90,9 +91,9 @@ impl VariablePointer {
         *inner = other.0.borrow().clone()
     }
 
-    pub fn new_cell(&self) -> VariableCell {
+    pub fn new_cell(&self, name: SharedString) -> VariableCell {
         let cell = OnceCell::new();
-        VariableCell { cell, ptr: self.clone() }
+        VariableCell { name, cell, ptr: self.clone() }
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -106,27 +107,28 @@ impl VariablePointer {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct VariableCell {
+    pub name: SharedString,
     pub cell: OnceCell<Variable>,
     pub ptr: VariablePointer,
 }
 
 impl VariableCell {
-    pub fn uninitialized() -> Self {
+    pub fn uninitialized(name: SharedString) -> Self {
         VariableCell {
+            name,
             cell: OnceCell::new(),
             ptr: VariablePointer(Rc::new(RefCell::new(Rc::new(OnceCell::new())))),
         }
     }
 
-    pub fn initialized(declaration_index: DeclarationIndex, property_access: Option<Box<Vec<PropertyAccess>>>, optional_init: Option<Box<Expr>>) -> Self {
+    pub fn initialized(name: SharedString, declaration_index: DeclarationIndex, property_access: Vec<PropertyAccess>) -> Self {
         let mut cell = OnceCell::new();
         cell.set(Variable {
             declaration_index,
-            property_access,
-            optional_init,
+            property_access: PropertyAccessChain::from_vec(property_access),
         }).unwrap();
         let ptr = VariablePointer(Rc::new(RefCell::new(Rc::new(cell.clone()))));
-        Self { cell, ptr }
+        Self { name, cell, ptr }
     }
 
     // Must not be called before all the scoping is done
@@ -157,7 +159,34 @@ impl VariableCell {
 
 #[derive(Debug, PartialEq, Clone)] 
 pub enum PropertyAccess {
-    Property(String),
+    Property(SharedString),
     Element(usize),
     // Rest,
+}
+
+#[repr(transparent)]
+#[derive(Debug, PartialEq, Clone)] 
+pub struct PropertyAccessChain(OwnedSlice<PropertyAccess>);
+
+impl PropertyAccessChain {
+    pub fn empty() -> Self {
+        PropertyAccessChain(OwnedSlice::empty())
+    }
+
+    pub fn from_vec(vec: Vec<PropertyAccess>) -> Self {
+        PropertyAccessChain(OwnedSlice::from_vec(vec))
+    }
+/* 
+    pub fn push(&mut self, access: PropertyAccess) {
+        self.0.push(access)
+    }
+
+    pub fn pop(&mut self) -> Option<PropertyAccess> {
+        self.0.pop()
+    }
+
+    pub fn last_mut(&mut self) -> &mut PropertyAccess {
+        self.0.last_mut().unwrap()
+    }
+*/
 }

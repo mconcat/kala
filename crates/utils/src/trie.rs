@@ -1,5 +1,6 @@
 // just a dead simple trie.
 use std::{str::Chars, fmt::Debug, borrow::BorrowMut};
+use crate::{SharedString, OwnedSlice};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Trie<V: Sized+Clone+Debug+PartialEq> {
@@ -17,26 +18,26 @@ impl<V: Sized+Clone+Debug+PartialEq> Trie<V> {
         }
     }
 
-    pub fn insert(&mut self, key: &String, value: V) -> Option<V> {
-        self.root.insert(&mut key.chars(), value)
+    pub fn insert(&mut self, key: &SharedString, value: V) -> Option<V> {
+        self.root.insert(&mut key.0.chars(), value)
     }
 
-    pub fn get(&mut self, key: &String) -> Option<V> {
-        self.root.reference(&mut key.chars()).map(|v| v.clone())
+    pub fn get(&mut self, key: &SharedString) -> Option<V> {
+        self.root.reference(&mut key.0.chars()).map(|v| v.clone())
     }
 
-    pub fn has(&mut self, key: &String) -> bool {
-        self.root.reference(&mut key.chars()).is_some()
+    pub fn has(&mut self, key: &SharedString) -> bool {
+        self.root.reference(&mut key.0.chars()).is_some()
     }
 
-    pub fn iterate(&self) -> Vec<(String, V)> {
+    pub fn iterate(&self) -> OwnedSlice<(SharedString, V)> {
         let mut result = vec![];
         self.root.iterate(&mut "".to_string(), &mut result);
-        result
+        OwnedSlice::from_vec(result)
     }
 
-    pub fn get_mut(&mut self, key: &String) -> Option<&mut V> {
-        self.root.reference(&mut key.chars())
+    pub fn get_mut(&mut self, key: &SharedString) -> Option<&mut V> {
+        self.root.reference(&mut key.0.chars())
     }
 }
 
@@ -140,10 +141,10 @@ impl<V: Sized+Clone+Debug+PartialEq> TrieNode<V> {
         }
     }
     
-    fn iterate<'a>(&self, prefix: &mut String, result: &mut Vec<(String, V)>) {
+    fn iterate<'a>(&self, prefix: &mut String, result: &mut Vec<(SharedString, V)>) {
         prefix.push_str(&self.extension);
         if let Some(value) = &self.value {
-            result.push((prefix.clone(), value.clone()));
+            result.push((SharedString::from_string(prefix.clone()), value.clone()));
         }
         for (divergence, child) in &self.branch {
             prefix.push(*divergence);
@@ -168,25 +169,25 @@ mod tests {
             },
         };
 
-        trie.insert(&"hello".to_string(), 1);
-        trie.insert(&"hell".to_string(), 2);
-        trie.insert(&"he".to_string(), 3);
-        trie.insert(&"h".to_string(), 4);
-        trie.insert(&"world".to_string(), 5);
-        trie.insert(&"wor".to_string(), 6);
-        trie.insert(&"wo".to_string(), 7);
-        trie.insert(&"w".to_string(), 8);
+        trie.insert(&SharedString::from_str(&"hello"), 1);
+        trie.insert(&SharedString::from_str(&"hell"), 2);
+        trie.insert(&SharedString::from_str(&"he"), 3);
+        trie.insert(&SharedString::from_str(&"h"), 4);
+        trie.insert(&SharedString::from_str(&"world"), 5);
+        trie.insert(&SharedString::from_str(&"wor"), 6);
+        trie.insert(&SharedString::from_str(&"wo"), 7);
+        trie.insert(&SharedString::from_str(&"w"), 8);
 
-        assert_eq!(trie.get(&"hello".to_string()), Some(1));
-        assert_eq!(trie.get(&"hell".to_string()), Some(2));
-        assert_eq!(trie.get(&"he".to_string()), Some(3));
-        assert_eq!(trie.get(&"h".to_string()), Some(4));
-        assert_eq!(trie.get(&"world".to_string()), Some(5));
-        assert_eq!(trie.get(&"wor".to_string()), Some(6));
-        assert_eq!(trie.get(&"wo".to_string()), Some(7));
-        assert_eq!(trie.get(&"w".to_string()), Some(8));
+        assert_eq!(trie.get(&SharedString::from_str(&"hello")), Some(1));
+        assert_eq!(trie.get(&SharedString::from_str(&"hell")), Some(2));
+        assert_eq!(trie.get(&SharedString::from_str(&"he")), Some(3));
+        assert_eq!(trie.get(&SharedString::from_str(&"h")), Some(4));
+        assert_eq!(trie.get(&SharedString::from_str(&"world")), Some(5));
+        assert_eq!(trie.get(&SharedString::from_str(&"wor")), Some(6));
+        assert_eq!(trie.get(&SharedString::from_str(&"wo")), Some(7));
+        assert_eq!(trie.get(&SharedString::from_str(&"w")), Some(8));
 
-        assert_eq!(trie.get(&"helloo".to_string()), None);
+        assert_eq!(trie.get(&SharedString::from_str(&"helloo")), None);
     }
 
     #[test]

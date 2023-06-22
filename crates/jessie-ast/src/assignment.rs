@@ -1,13 +1,15 @@
 use crate::{Expr, VariableCell};
 use std::mem;
+use utils::{OwnedString, OwnedSlice};
 
-
+#[repr(C)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assignment(pub AssignOp, pub LValue, pub Expr);
 
+#[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum AssignOp {
-    Assign,
+    Assign = 0,
     AssignAdd,
     AssignSub,
     AssignMul,
@@ -33,13 +35,13 @@ pub enum LValue {
 #[derive(Debug, PartialEq, Clone)]
 pub enum LValueCallPostOp {
     Index(Expr) = 0,
-    Member(String) = 1,
+    Member(OwnedString) = 1,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CallLValue {
     pub expr: Expr,
-    pub post_op: Vec<LValueCallPostOp>,
+    pub post_op: OwnedSlice<LValueCallPostOp>,
 }
 
 impl From<LValue> for Expr {

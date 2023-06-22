@@ -1,13 +1,14 @@
 use crate::{expression::Expr, Declaration, DeclarationIndex};
+use utils::{OwnedSlice};
 
 // StatementItem in Jessie
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     // The actual declaration is stored in the innermost function. DeclarationIndicies point to them.
     // When encountered, declaration statements initializes the variable to undefined, or with init value.
-    LocalDeclaration(Box<Vec<DeclarationIndex>>),
+    LocalDeclaration(OwnedSlice<DeclarationIndex>),
     FunctionDeclaration(DeclarationIndex),
-    Block(Box<Block>),
+    Block(Block),
     IfStatement(Box<IfStatement>),
     // ForStatement(ForStatement),
     WhileStatement(Box<WhileStatement>),
@@ -20,16 +21,13 @@ pub enum Statement {
     ExprStatement(Box<Expr>),
 }
 
+#[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
-pub struct Block {
-    pub statements: Vec<Statement>,
-}
+pub struct Block(pub OwnedSlice<Statement>);
 
 impl Block {
     pub fn new(statements: Vec<Statement>) -> Self {
-        Block {
-            statements,
-        }
+        Block(OwnedSlice::from_vec(statements))
     }
 }
 

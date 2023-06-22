@@ -1,8 +1,10 @@
 use core::fmt::Debug;
 
-use jessie_ast::{Declaration, VariableCell, VariablePointer, Variable, DeclarationIndex};
+use jessie_ast::{Declaration, VariableCell, VariablePointer, Variable, DeclarationIndex, PropertyAccessChain};
 
 use crate::{scope::LexicalScope};
+
+use utils::{OwnedSlice};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {
@@ -233,7 +235,7 @@ impl<'a, T: ArrayLike+Clone+Debug+ToString> ParserState<'a, T> {
         std::mem::replace(&mut self.scope, LexicalScope::new(declarations))
     }
 
-    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> Vec<DeclarationIndex> {
+    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> OwnedSlice<DeclarationIndex> {
         let scope = std::mem::replace(&mut self.scope, parent_scope);
         let (declarations, unbound_uses) = scope.take();
     
@@ -241,13 +243,13 @@ impl<'a, T: ArrayLike+Clone+Debug+ToString> ParserState<'a, T> {
 
         for (name, mut ptr) in unbound_uses {
             // make a capturing declaration targeting upper scope, set the local pointer to reference it
-            let capture_cell = VariableCell::uninitialized();
+            let capture_cell = VariableCell::uninitialized(name);
             let decl = Declaration::Capture { name, variable: capture_cell };
             let declaration_index = DeclarationIndex(declarations.len());
             declarations.push(decl);
 
             // Set the ptr to reference the new declaration
-            ptr.set(declaration_index, None, None).unwrap();
+            ptr.set(declaration_index, PropertyAccessChain::empty()).unwrap();
 
             // assert equivalence
             self.scope.assert_equivalence(&name, capture_cell.ptr);
@@ -255,7 +257,7 @@ impl<'a, T: ArrayLike+Clone+Debug+ToString> ParserState<'a, T> {
             captures.push(declaration_index)
         }
 
-        captures
+        OwnedSlice::from_vec(captures)
     }
 
     pub fn enter_block_scope(&mut self) -> LexicalScope {

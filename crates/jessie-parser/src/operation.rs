@@ -1,7 +1,10 @@
 use jessie_ast::*;
+use utils::OwnedSlice;
 use crate::parser;
 use crate::{
     VecToken, Token,
+
+    identifier,
 
     enclosed_element,
     repeated_elements,
@@ -12,7 +15,7 @@ use crate::{
     call_and_unary_op,
 };
 
-type ParserState = parser::ParserState<VecToken>;
+type ParserState<'a> = parser::ParserState<'a, VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
 
 ///////////////////////////
@@ -332,7 +335,7 @@ fn call_post_op(state: &mut ParserState) -> Result<CallPostOp, ParserError> {
     }
 }
 
-fn call_expr_internal(state: &mut ParserState, mut expr: Expr) -> Result<(Expr, bool), ParserError> { 
+pub fn call_expr_internal(state: &mut ParserState, mut expr: Expr) -> Result<(Expr, bool), ParserError> { 
     let mut only_member_post_op = true;
 
     let mut post_ops = Vec::new();
@@ -346,7 +349,7 @@ fn call_expr_internal(state: &mut ParserState, mut expr: Expr) -> Result<(Expr, 
     }
 
     if !post_ops.is_empty() {
-        expr = Expr::CallExpr(Box::new(CallExpr { expr, post_ops }));
+        expr = Expr::CallExpr(Box::new(CallExpr { expr, post_ops: OwnedSlice::from_vec(post_ops) }));
     }
 
     Ok((expr, only_member_post_op))

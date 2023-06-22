@@ -1,13 +1,15 @@
 // just wrap the parser state to accumulate the tokens
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use crate::parser::{ParserState, ArrayLike, ParserError};
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Str<'a>(pub &'a str);
+use utils::{OwnedString, OwnedSlice, SharedString};
 
-impl<'a> ArrayLike for Str<'a> {
+#[derive(Debug, PartialEq, Clone)]
+pub struct Str(pub String);
+
+impl ArrayLike for Str {
     type Element = char;
 
     fn get(&self, index: usize) -> Option<Self::Element> {
@@ -19,13 +21,19 @@ impl<'a> ArrayLike for Str<'a> {
     }
 
     fn slice(&self, start: usize, end: usize) -> Self {
-        Str(&self.0[start..end])
+        self.0.as_str()[start..end].to_string().into()
     }
 }
 
-impl<'a> ToString for Str<'a> {
-    fn to_string(&self) -> String {
-        self.0.to_string()
+impl Display for Str {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+impl From<String> for Str {
+    fn from(s: String) -> Self {
+        Str(s)
     }
 }
 
@@ -54,7 +62,7 @@ impl ArrayLike for VecToken {
     }
 }
 
-type Lexer<'a> = ParserState<Str<'a>>;
+type Lexer<'a> = ParserState<'a, Str>;
 
 // Valid jessie tokens
 #[derive(Debug, Clone, PartialEq)]
@@ -174,11 +182,11 @@ pub enum Token {
     AsteriskSlash, // */
     // Literals
     Undefined,
-    Identifier(String),
-    String(String),
-    Integer(String),
-    Decimal(String),
-    Bigint(String),
+    Identifier(SharedString),
+    String(OwnedString),
+    Integer(OwnedString),
+    Decimal(OwnedString),
+    Bigint(OwnedString),
 
     // ????
     Instanceof,
@@ -195,11 +203,11 @@ fn given_keyword_or_ident(lexer: &mut Lexer, keyword: &'static str, token: Token
         return ident(lexer);   
     }
 
-    if lexer.consume(Str(keyword)).is_ok() {
+    if lexer.consume(Str(keyword.to_string())).is_ok() {
         println!("keyword given_keyword_or_ident: {:?}", token);
         Ok(token)
     } else {
-        println!("ident given_keyword_or_ident: {:?}", Token::Identifier(keyword.to_string()));
+        println!("ident given_keyword_or_ident: {:?}", Token::Identifier(SharedString::from_str(keyword)));
         ident(lexer)
     }
 }
@@ -241,8 +249,8 @@ fn keyword_or_ident(lexer: &mut Lexer) -> Result<Token, String> {
         Some('b') => {
             match lexer.lookahead_2() {
                 Some('r') => given_keyword_or_ident(lexer, &"break", Token::Break),
-                Some('i') => given_keyword_or_ident(lexer, &"bigint", Token::Bigint("".to_string())),
-                Some('o') => given_keyword_or_ident(lexer, &"bool", Token::Identifier("bool".to_string())),
+                // Some('i') => given_keyword_or_ident(lexer, &"bigint", Token::Bigint("".to_string())),
+                // Some('o') => given_keyword_or_ident(lexer, &"bool", Token::Identifier("bool".to_string())),
                 _ => ident(lexer),
             }
         },
@@ -322,7 +330,7 @@ fn keyword_or_ident(lexer: &mut Lexer) -> Result<Token, String> {
                 Some('e') => given_keyword_or_ident(lexer, &"new", Token::New),
                 Some('u') => match lexer.lookahead_3() {
                     Some('l') => given_keyword_or_ident(lexer, &"null", Token::Null),
-                    Some('m') => given_keyword_or_ident(lexer, &"number", Token::Identifier("number".to_string())),
+                    // Some('m') => given_keyword_or_ident(lexer, &"number", Token::Identifier("number".to_string())),
                     _ => ident(lexer),
                 },
                 _ => ident(lexer),
@@ -673,7 +681,7 @@ fn ident(state: &mut Lexer) -> Result<Token, String> {
         _ => return Err(format!("Expected identifier, but got {:?}", state.lookahead_1())),
     }
 
-    Ok(Token::Identifier(ident))
+    Ok(Token::Identifier(SharedString::from_string(ident)))
 }
 
 
@@ -687,7 +695,7 @@ pub fn repeated_elements<Data: Debug>(
     close: Token, 
     element: &impl Fn(&mut ParserState<VecToken>) -> Result<Data, ParserError<Option<Token>>>, 
     trailing: bool
-) -> Result<Vec<Data>, ParserError<Option<Token>>> {
+) -> Result<OwnedSlice<Data>, ParserError<Option<Token>>> {
     let mut elements = Vec::new();
     if let Some(some_open) = open.clone() {
         state.consume_1(some_open)?;
@@ -720,7 +728,7 @@ pub fn repeated_elements<Data: Debug>(
         }
     }
 
-    Ok(elements)
+    Ok(OwnedSlice::from_vec(elements))
 }
 
 pub fn enclosed_element<Data: Debug>(
@@ -791,13 +799,13 @@ pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
                 break;
             }
         } 
-        return Ok(Token::Decimal(number))
+        return Ok(Token::Decimal(OwnedString::from_string(number)))
     } else if state.lookahead_1() == Some('n') {
         state.proceed();
-        return Ok(Token::Bigint(number))
+        return Ok(Token::Bigint(OwnedString::from_string(number)))
     }
 
-    Ok(Token::Integer(number))
+    Ok(Token::Integer(OwnedString::from_string(number)))
 }
 
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
@@ -813,7 +821,7 @@ pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
             state.proceed();
         }
     }
-    Ok(Token::String(string))
+    Ok(Token::String(OwnedString::from_string(string)))
 }
 
 fn parse_ident(state: &mut Lexer) -> Result<Token, String> {
@@ -836,5 +844,5 @@ fn parse_ident(state: &mut Lexer) -> Result<Token, String> {
             break;
         }
     }
-    Ok(Token::Identifier(ident))
+    Ok(Token::Identifier(SharedString::from_string(ident)))
 }

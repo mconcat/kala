@@ -1,5 +1,5 @@
 use jessie_ast::*;
-use crate::parser;
+use crate::{parser, prop_def_or_prop_param, CoverProperty};
 use crate::{
     VecToken, Token,
 
@@ -9,8 +9,11 @@ use crate::{
     arrow_or_paren_expr,
     cond_expr_with_leftmost,
     cond_expr_with_leftmost_no_power,
+    call_expr_internal,
 
     unary_op,
+
+    use_variable,
 };
 
 type ParserState<'a> = parser::ParserState<'a, VecToken>;
@@ -243,7 +246,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::Undefined) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Undefined))),
         Some(Token::Bigint(b)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Bigint(b)))),
         Some(Token::Function) => function_expr(state).map(|x| Expr::FunctionExpr(Box::new(x))),
-        _ => use_variable(state).map(|x| Expr::Variable(x)),
+        _ => use_variable(state).map(|x| Expr::Variable(Box::new(x))),
     }
 }
 pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
@@ -251,14 +254,18 @@ pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
     Ok(Array(elements))
 }
 
-pub fn element(state: &mut ParserState) -> Result<Element, ParserError> {
+pub fn element(state: &mut ParserState) -> Result<Expr, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
         let expr = expression(state)?;
-        Ok(Element::Spread(expr))
+        Ok(Expr::Spread(Box::new(expr)))
     } else {
         let expr = expression(state)?;
-        Ok(Element::Expr(expr))
+        Ok(expr)
     }
+}
+
+pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
+    prop_def_or_prop_param(state).map(CoverProperty::into_prop)
 }
 
 pub fn record(state: &mut ParserState) -> Result<Record, ParserError> {
@@ -291,36 +298,56 @@ pub fn pure_prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
     }
 }
 */
-
-pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
-    if state.try_proceed(Token::DotDotDot) {
-        let expr = expression(state)?;
-        Ok(PropDef::Spread(expr))
+/*
+pub fn prop_name(state: &mut ParserState) -> Result<PropName, ParserError> {
+    match state.lookahead_1() {
+        Some(Token::Identifier(s)) => {
+            state.proceed();
+            Ok(PropName::Ident(s))
+        },
+        Some(Token::String(s)) => {
+            state.proceed();
+            Ok(PropName::String(s))
+        },
+        Some(Token::Integer(s)) => {
+            state.proceed();
+            Ok(PropName::Number(s))
+        },
+        c => state.err_expected("property name", c),
     }
-    else if state.lookahead_1() == Some(Token::QuasiQuote) {
-        return state.err_unimplemented("quasiquote")
-    } else {
-        let prop_name = prop_name(state)?;
-        if state.try_proceed(Token::Colon) {
-            let expr = expression(state)?;
-            Ok(PropDef::KeyValue(prop_name, expr))
-        } else if let PropName::Ident(ident) = prop_name {
-            let shorthand = use_variable_with_parsed(state, ident.clone());
-            Ok(PropDef::Shorthand(shorthand))
-        } else {
-            state.err_expected("colon or equal sign", state.lookahead_1())
-        }
+}
+*/
+
+pub fn prop_name(state: &mut ParserState) -> Result<Box<Field>, ParserError> {
+    match state.lookahead_1() {
+        Some(Token::Identifier(s)) => {
+            state.proceed();
+            Ok(Box::new(Field::new_dynamic(s)))
+        },
+        /* 
+        Some(Token::String(s)) => {
+            state.proceed();
+            Ok(Box::new(Field::String(s)))
+        },
+        Some(Token::Integer(s)) => {
+            state.proceed();
+            Ok(Box::new(Field::Number(s)))
+        },
+        */
+        c => state.err_expected("property name", c),
     }
 }
 
-pub fn arg(state: &mut ParserState) -> Result<Arg, ParserError> {
+
+
+pub fn arg(state: &mut ParserState) -> Result<Expr, ParserError> {
     // TODO: spread parameter can only come at the end
     if state.try_proceed(Token::DotDotDot) {
         let e = expression(state)?;
-        Ok(Arg::Spread(e))
+        Ok(Expr::Spread(Box::new(e)))
     } else {
         let expr = expression(state)?;
-        Ok(Arg::Expr(expr))
+        Ok(expr)
     }
 }
 

@@ -1,6 +1,25 @@
-use crate::{operation::*, Function, Record, Assignment, VariableCell};
+use crate::{operation::*, Function, Record, Assignment, VariableCell, VariablePointer, Field};
+use utils::{SharedString, OwnedSlice, OwnedString};
 
 // paren, function, literal, array, record, variable
+
+#[repr(u8)]
+pub enum ExprDiscriminant {
+    DataLiteral = 0,
+    Array = 1,
+    Record = 2,
+    ArrowFunc = 3,
+    FunctionExpr = 4,
+    Assignment = 5,
+    CondExpr = 6,
+    BinaryExpr = 7,
+    UnaryExpr = 8,
+    CallExpr = 9,
+    // QuasiExpr() = 10
+    ParenedExpr = 11,
+    Variable = 12,
+    Spread = 13,
+}
 
 // PrimaryExpr, Operator Expressions(CondExpr, BinaryExpr, UnaryExpr, CallExpr), AssignExpr
 // are all collapsed into single Expr type.
@@ -8,29 +27,30 @@ use crate::{operation::*, Function, Record, Assignment, VariableCell};
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
 pub enum Expr {
-    DataLiteral(Box<DataLiteral>) = 0,
-    Array(Box<Array>) = 1,
-    Record(Box<Record>) = 2,
-    ArrowFunc(Box<Function>) = 3,
-    FunctionExpr(Box<Function>) = 4,
-    Assignment(Box<Assignment>) = 5,
-    CondExpr(Box<CondExpr>) = 6,
-    BinaryExpr(Box<BinaryExpr>) = 7,
-    UnaryExpr(Box<UnaryExpr>) = 8,
-    CallExpr(Box<CallExpr>) = 9,
+    DataLiteral(Box<DataLiteral>) = ExprDiscriminant::DataLiteral as u8,
+    Array(Box<Array>) = ExprDiscriminant::Array as u8,
+    Record(Box<Record>) = ExprDiscriminant::Record as u8,
+    ArrowFunc(Box<Function>) = ExprDiscriminant::ArrowFunc as u8,
+    FunctionExpr(Box<Function>) = ExprDiscriminant::FunctionExpr as u8,
+    Assignment(Box<Assignment>) = ExprDiscriminant::Assignment as u8,
+    CondExpr(Box<CondExpr>) = ExprDiscriminant::CondExpr as u8,
+    BinaryExpr(Box<BinaryExpr>) = ExprDiscriminant::BinaryExpr as u8,
+    UnaryExpr(Box<UnaryExpr>) = ExprDiscriminant::UnaryExpr as u8,
+    CallExpr(Box<CallExpr>) = ExprDiscriminant::CallExpr as u8,
     // QuasiExpr() = 10
-    ParenedExpr(Box<Expr>) = 11,
-    Variable(Box<VariableCell>) = 12,
+    ParenedExpr(Box<Expr>) = ExprDiscriminant::ParenedExpr as u8,
+    Variable(Box<VariableCell>) = ExprDiscriminant::Variable as u8,
+    Spread(Box<Expr>) = ExprDiscriminant::Spread as u8, // for array elements
 }
 
+#[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
-pub struct Array(pub Vec<Element>);
-
+pub struct Array(pub OwnedSlice<Expr>);
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Element {
-    Expr(Expr),
-    Spread(Expr),
+pub struct KeyValue {
+    pub key: Field,
+    pub value: Expr,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -38,11 +58,11 @@ pub enum DataLiteral {
     Null,
     False,
     True,
-    Integer(String),
-    Decimal(String),
-    String(String),
+    Integer(OwnedString),
+    Decimal(OwnedString),
+    String(OwnedString),
     Undefined,
-    Bigint(String),
+    Bigint(OwnedString),
 }
 
 
@@ -135,19 +155,13 @@ pub struct UnaryExpr {
 #[derive(Debug, PartialEq, Clone)]
 pub enum CallPostOp {
     Index(Expr) = 0,
-    Member(String) = 1,
+    Member(SharedString) = 1,
     // QuasiExpr = 2
-    Call(Vec<Arg>) = 3,
+    Call(OwnedSlice<Expr>) = 3,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CallExpr {
     pub expr: Expr,
-    pub post_ops: Vec<CallPostOp>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Arg {
-    Expr(Expr),
-    Spread(Expr),
+    pub post_ops: OwnedSlice<CallPostOp>,
 }

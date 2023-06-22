@@ -1,4 +1,5 @@
 use jessie_ast::*;
+use crate::common::identifier;
 use crate::parser;
 use crate::{
     VecToken, Token,
@@ -8,7 +9,7 @@ use crate::{
     expression,
 };
 
-type ParserState = parser::ParserState<VecToken>;
+type ParserState<'a> = parser::ParserState<'a, VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
 
 ///////////////////////
@@ -16,8 +17,8 @@ type ParserError = parser::ParserError<Option<Token>>;
 
 pub fn binding_pattern(state: &mut ParserState) -> Result<Pattern, ParserError> {
     match state.lookahead_1() {
-        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(x)),
-        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(x)),
+        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(Box::new(ArrayPattern(x)))),
+        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(Box::new(RecordPattern(x)))),
         c => state.err_expected("binding pattern", c),
     }
 }
@@ -27,16 +28,18 @@ pub fn binding_pattern(state: &mut ParserState) -> Result<Pattern, ParserError> 
 pub fn pattern(state: &mut ParserState) -> Result<Pattern, ParserError> {
     match state.lookahead_1() {
         Some(Token::LeftBracket) | Some(Token::LeftBrace) => binding_pattern(state),
-        Some(Token::Comma) | Some(Token::RightBracket) => Ok(Pattern::Hole), // Not sure if its the right way...
-        _ => // data_literal(state).map(|x| Pattern::DataLiteral(x)).or_else(|_| {
-            def_variable(state).map(|x| Pattern::Variable(x))
+        // Some(Token::Comma) | Some(Token::RightBracket) => Ok(Pattern::Hole), // Not sure if its the right way...
+        _ => {// data_literal(state).map(|x| Pattern::DataLiteral(x)).or_else(|_| {
+            let name = identifier(state)?;
+            let var = state.scope.use_variable(&name);
+            Ok(Pattern::Variable(Box::new(var)))
+        }
         //}),
     }
 }
 
 pub fn param(state: &mut ParserState) -> Result<Pattern, ParserError> {
-    if state.lookahead_1() == Some(Token::DotDotDot) {
-        state.consume_1(Token::DotDotDot)?;
+    if state.try_proceed(Token::DotDotDot) {
         return pattern(state).map(|x| Pattern::Rest(Box::new(x)))
     }
 
@@ -44,7 +47,7 @@ pub fn param(state: &mut ParserState) -> Result<Pattern, ParserError> {
     if let Pattern::Variable(ref x) = pat {
         if state.try_proceed(Token::Equal) {
             let expr = expression(state)?;
-            return Ok(Pattern::Optional(x.clone(), Box::new(expr)))
+            return Ok(Pattern::optional(**x, expr))
         }
     }
 
@@ -56,19 +59,27 @@ fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
         return pattern(state).map(|x| PropParam::Rest(x))
     }
 
-    let key = def_variable(state)?; // def or use XXX
+    let key = identifier(state)?;
 
     match state.lookahead_1() {
         Some(Token::Colon) => {
             state.proceed();
             let pat = pattern(state)?;
-            Ok(PropParam::KeyValue(key, pat))
+            Ok(PropParam::KeyValue(Box::new(Field::new_dynamic(key)), pat))
         },
         Some(Token::Equal) => {
+            unimplemented!("default value in record pattern")
+            /* 
             state.proceed();
             let expr = expression(state)?;
-            Ok(PropParam::Optional(key, expr))
+            Ok(PropParam::(key, expr))
+            */
         }
-        _ => Ok(PropParam::Shorthand(key)),
+        _ => {
+            let var = state.scope.use_variable(&key);
+            let field = Box::new(Field::new_dynamic(key));
+            Ok(PropParam::Shorthand(field, var))
+        }
     }
 }
+
