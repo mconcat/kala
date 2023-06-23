@@ -16,7 +16,7 @@ use crate::{
     use_variable,
 };
 
-type ParserState<'a> = parser::ParserState<'a, VecToken>;
+type ParserState = parser::ParserState<VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
 
 ///////////////////////
@@ -250,7 +250,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
     }
 }
 pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
-    let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &element, true)?;
+    let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &mut element, true)?;
     Ok(Array(elements))
 }
 
@@ -269,7 +269,7 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
 }
 
 pub fn record(state: &mut ParserState) -> Result<Record, ParserError> {
-    let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_def, true)?;
+    let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &mut prop_def, true)?;
     Ok(Record(props))
 }
 /* 

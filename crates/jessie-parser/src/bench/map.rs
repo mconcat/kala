@@ -11,17 +11,46 @@ use test::{Bencher};
 use utils::{trie, SharedString};
 
 trait BenchMap {
-    fn new() -> Self;
+    fn new(size: usize) -> Self;
     fn insert(&mut self, key: SharedString);
-    fn search(&self, key: SharedString);
+    fn search(&mut self, key: SharedString);
     fn delete(&mut self, key: SharedString);
     fn drain(&mut self);
+}
+
+// Emulates statically known offset behavior
+// inserted here to compare with hashmap access
+struct BenchArray(Vec<()>);
+
+impl BenchMap for BenchArray {
+    fn new(size: usize) -> Self {
+        BenchArray(vec![(); size])
+    }
+
+    fn insert(&mut self, key: SharedString) {
+        let index = key.as_bytes()[0] as usize % self.0.len();
+        self.0[index] = ();
+    }
+
+    fn search(&mut self, key: SharedString) {
+        let index = key.as_bytes()[0] as usize % self.0.len();
+        let value = self.0[index];
+    }
+
+    fn delete(&mut self, key: SharedString) {
+        let index = key.as_bytes()[0] as usize % self.0.len();
+        self.0[index] = ();
+    }
+
+    fn drain(&mut self) {
+        self.0 = Vec::new();
+    }
 }
 
 struct BenchTrie(trie::Trie<()>);
 
 impl BenchMap for BenchTrie {
-    fn new() -> Self {
+    fn new(size: usize) -> Self {
         BenchTrie(trie::Trie::empty())
     }
 
@@ -29,7 +58,7 @@ impl BenchMap for BenchTrie {
         self.0.insert(&key, ());
     }
 
-    fn search(&self, key: SharedString) {
+    fn search(&mut self, key: SharedString) {
         self.0.get(&key);
     }
 
@@ -45,7 +74,7 @@ impl BenchMap for BenchTrie {
 struct BenchHashMap(HashMap<SharedString, ()>);
 
 impl BenchMap for BenchHashMap {
-    fn new() -> Self {
+    fn new(size: usize) -> Self {
         BenchHashMap(HashMap::new())
     }
 
@@ -53,7 +82,7 @@ impl BenchMap for BenchHashMap {
         self.0.insert(key, ());
     }
 
-    fn search(&self, key: SharedString) {
+    fn search(&mut self, key: SharedString) {
         self.0.get(&key);
     }
 
@@ -69,7 +98,7 @@ impl BenchMap for BenchHashMap {
 struct BenchFxHashMap(FxHashMap<SharedString, ()>);
 
 impl BenchMap for BenchFxHashMap {
-    fn new() -> Self {
+    fn new(size: usize) -> Self {
         BenchFxHashMap(FxHashMap::default())
     }
 
@@ -77,7 +106,7 @@ impl BenchMap for BenchFxHashMap {
         self.0.insert(key, ());
     }
 
-    fn search(&self, key: SharedString) {
+    fn search(&mut self, key: SharedString) {
         self.0.get(&key);
     }
 
@@ -93,7 +122,7 @@ impl BenchMap for BenchFxHashMap {
 struct BenchBTreeMap(BTreeMap<SharedString, ()>);
 
 impl BenchMap for BenchBTreeMap {
-    fn new() -> Self {
+    fn new(size: usize) -> Self {
         BenchBTreeMap(BTreeMap::new())
     }
 
@@ -101,7 +130,7 @@ impl BenchMap for BenchBTreeMap {
         self.0.insert(key, ());
     }
 
-    fn search(&self, key: SharedString) {
+    fn search(&mut self, key: SharedString) {
         self.0.get(&key);
     }
 
@@ -136,8 +165,8 @@ fn bench_map_insert<T: BenchMap>(b: &mut Bencher, mut map: T, n: usize, len: usi
     let keys = random_keys(n, len, 0);
 
     b.iter(|| {
-        for key in keys {
-            map.insert(key);
+        for key in &keys {
+            map.insert(key.clone());
         }
     });
 }
@@ -157,13 +186,13 @@ fn bench_map_drain<T: BenchMap>(b: &mut Bencher, mut map: T, n: usize, len: usiz
 fn bench_map_search<T: BenchMap>(b: &mut Bencher, mut map: T, n: usize, len: usize) {
     let keys = random_keys(n, len, 0);
 
-    for key in keys {
-        map.insert(key);
+    for key in &keys {
+        map.insert(key.clone());
     }
 
     b.iter(|| {
-        for key in keys {
-            map.search(key);
+        for key in &keys {
+            map.search(key.clone());
         }
     });
 }
@@ -172,13 +201,13 @@ macro_rules! bench_map {
     ($map_type_name:ident, $n:expr, $len:expr, $insert_name:ident, $search_name:ident, $drain_name: ident) => {
         #[bench]
         fn $insert_name(b: &mut Bencher) {
-            let map = $map_type_name::new();
+            let map = $map_type_name::new($n);
             bench_map_insert(b, map, $n, $len);
         }
 
         #[bench]
         fn $search_name(b: &mut Bencher) {
-            let map = $map_type_name::new();
+            let map = $map_type_name::new($n);
             bench_map_search(b, map, $n, $len);
         }
 
@@ -191,12 +220,12 @@ macro_rules! bench_map {
 */
         #[bench]
         fn $drain_name(b: &mut Bencher) {
-            let map = $map_type_name::new();
+            let map = $map_type_name::new($n);
             bench_map_drain(b, map, $n, $len);
         }
     };
 }
-
+/* 
 
 bench_map!(BenchTrie, 5, 5, bench_trie_insert_5_5, bench_trie_search_5_5, bench_trie_drain_5_5);
 bench_map!(BenchTrie, 5, 20, bench_trie_insert_5_20, bench_trie_search_5_20, bench_trie_drain_5_20);
@@ -252,3 +281,16 @@ bench_map!(BenchBTreeMap, 20, 80, bench_btreemap_insert_20_80, bench_btreemap_se
 bench_map!(BenchBTreeMap, 80, 5, bench_btreemap_insert_80_5, bench_btreemap_search_80_5, bench_btreemap_drain_80_5);
 bench_map!(BenchBTreeMap, 80, 20, bench_btreemap_insert_80_20, bench_btreemap_search_80_20, bench_btreemap_drain_80_20);
 bench_map!(BenchBTreeMap, 80, 80, bench_btreemap_insert_80_80, bench_btreemap_search_80_80, bench_btreemap_drain_80_80);
+*/
+
+bench_map!(BenchArray, 5, 5, bench_array_insert_5_5, bench_array_search_5_5, bench_array_drain_5_5);
+bench_map!(BenchArray, 5, 20, bench_array_insert_5_20, bench_array_search_5_20, bench_array_drain_5_20);
+bench_map!(BenchArray, 5, 80, bench_array_insert_5_80, bench_array_search_5_80, bench_array_drain_5_80);
+
+bench_map!(BenchArray, 20, 5, bench_array_insert_20_5, bench_array_search_20_5, bench_array_drain_20_5);
+bench_map!(BenchArray, 20, 20, bench_array_insert_20_20, bench_array_search_20_20, bench_array_drain_20_20);
+bench_map!(BenchArray, 20, 80, bench_array_insert_20_80, bench_array_search_20_80, bench_array_drain_20_80);
+
+bench_map!(BenchArray, 80, 5, bench_array_insert_80_5, bench_array_search_80_5, bench_array_drain_80_5);
+bench_map!(BenchArray, 80, 20, bench_array_insert_80_20, bench_array_search_80_20, bench_array_drain_80_20);
+bench_map!(BenchArray, 80, 80, bench_array_insert_80_80, bench_array_search_80_80, bench_array_drain_80_80);

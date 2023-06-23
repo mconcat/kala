@@ -9,7 +9,7 @@ use crate::{
     expression,
 };
 
-type ParserState<'a> = parser::ParserState<'a, VecToken>;
+type ParserState = parser::ParserState<VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
 
 ///////////////////////
@@ -44,12 +44,12 @@ pub fn param(state: &mut ParserState) -> Result<Pattern, ParserError> {
     }
 
     let pat = pattern(state)?;
-    if let Pattern::Variable(ref x) = pat {
+    if let Pattern::Variable(x) = &pat {
         if state.try_proceed(Token::Equal) {
             let expr = expression(state)?;
-            return Ok(Pattern::optional(**x, expr))
+            return Ok(Pattern::optional(*x.clone(), expr))
         }
-    }
+    } 
 
     Ok(pat)
 }

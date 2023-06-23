@@ -62,7 +62,7 @@ impl ArrayLike for VecToken {
     }
 }
 
-type Lexer<'a> = ParserState<'a, Str>;
+type Lexer = ParserState<Str>;
 
 // Valid jessie tokens
 #[derive(Debug, Clone, PartialEq)]

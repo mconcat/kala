@@ -148,14 +148,14 @@ pub trait ArrayLike {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ParserState<'a, T: ArrayLike+Clone+Debug+ToString> {
+pub struct ParserState<T: ArrayLike+Clone+Debug+ToString> {
     pub input: T,
     pub pos: usize,
-    pub scope: LexicalScope<'a>,
+    pub scope: LexicalScope,
 }
 
-impl<'a, T: ArrayLike+Clone+Debug+ToString> ParserState<'a, T> {
-    pub fn new(input: T, global_declarations: &mut Vec<Declaration>) -> Self {
+impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
+    pub fn new(input: T, global_declarations: Vec<Declaration>) -> Self {
         Self {
             input,
             pos: 0,
@@ -231,25 +231,25 @@ impl<'a, T: ArrayLike+Clone+Debug+ToString> ParserState<'a, T> {
         Ok(())
     }
 
-    pub fn enter_function_scope(&mut self, declarations: &mut Vec<Declaration>) -> LexicalScope {
+    pub fn enter_function_scope(&mut self, declarations: Vec<Declaration>) -> LexicalScope {
         std::mem::replace(&mut self.scope, LexicalScope::new(declarations))
     }
 
-    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> OwnedSlice<DeclarationIndex> {
+    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> (Vec<Declaration>, OwnedSlice<DeclarationIndex>) {
         let scope = std::mem::replace(&mut self.scope, parent_scope);
-        let (declarations, unbound_uses) = scope.take();
+        let (mut declarations, unbound_uses) = scope.take();
     
         let mut captures = Vec::with_capacity(unbound_uses.len());
 
         for (name, mut ptr) in unbound_uses {
             // make a capturing declaration targeting upper scope, set the local pointer to reference it
-            let capture_cell = VariableCell::uninitialized(name);
-            let decl = Declaration::Capture { name, variable: capture_cell };
+            let capture_cell = VariableCell::uninitialized(name.clone());
+            let decl = Declaration::Capture { name: name.clone(), variable: capture_cell.clone() };
             let declaration_index = DeclarationIndex(declarations.len());
             declarations.push(decl);
 
             // Set the ptr to reference the new declaration
-            ptr.set(declaration_index, PropertyAccessChain::empty()).unwrap();
+            ptr.set(declaration_index.clone(), PropertyAccessChain::empty()).unwrap();
 
             // assert equivalence
             self.scope.assert_equivalence(&name, capture_cell.ptr);
@@ -257,14 +257,15 @@ impl<'a, T: ArrayLike+Clone+Debug+ToString> ParserState<'a, T> {
             captures.push(declaration_index)
         }
 
-        OwnedSlice::from_vec(captures)
+        (declarations, OwnedSlice::from_vec(captures))
     }
 
     pub fn enter_block_scope(&mut self) -> LexicalScope {
-        std::mem::replace(&mut self.scope, LexicalScope::new(&mut self.scope.declarations))
+        self.scope.replace_with_child()
     }
 
     pub fn exit_block_scope(&mut self, parent_scope: LexicalScope) {
+        
         let scope = std::mem::replace(&mut self.scope, parent_scope); 
         let (_, unbound_uses) = scope.take();
         for (name, var) in unbound_uses {

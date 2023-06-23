@@ -1,4 +1,4 @@
-use crate::{Statement, Expr, Pattern, DataLiteral};
+use crate::{Statement, Expr, Pattern, DataLiteral, Field};
 use std::{rc::Rc, cell::OnceCell, cell::RefCell, borrow::BorrowMut, option};
 use utils::{OwnedString, SharedString, OwnedSlice};
 
@@ -159,7 +159,7 @@ impl VariableCell {
 
 #[derive(Debug, PartialEq, Clone)] 
 pub enum PropertyAccess {
-    Property(SharedString),
+    Property(Box<Field>),
     Element(usize),
     // Rest,
 }

@@ -4,7 +4,7 @@
 #![feature(allocator_api)]
 #![feature(test)]
 
-// pub mod jessie_test;
+pub mod jessie_test;
 pub mod parser;
 pub mod lexer;
 pub mod expression;

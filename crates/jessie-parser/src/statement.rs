@@ -15,7 +15,7 @@ use crate::{
 };
 use utils::OwnedSlice;
 
-type ParserState<'a> = parser::ParserState<'a, VecToken>;
+type ParserState = parser::ParserState<VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
 
 ///////////////////////
