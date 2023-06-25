@@ -324,7 +324,7 @@ fn pow_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Resul
 
 fn call_post_op(state: &mut ParserState) -> Result<CallPostOp, ParserError> {
     match state.lookahead_1() {
-        Some(Token::LeftParen) => repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &arg, true).map(CallPostOp::Call),
+        Some(Token::LeftParen) => repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &arg, true).map(|x| CallPostOp::Call(OwnedSlice::from_vec(x))),
         Some(Token::LeftBracket) => enclosed_element(state, Token::LeftBracket, Token::RightBracket, &expression).map(|x| CallPostOp::Index(x)),
         Some(Token::Dot) => {
             state.proceed();

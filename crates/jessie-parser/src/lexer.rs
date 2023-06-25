@@ -695,7 +695,7 @@ pub fn repeated_elements<Data: Debug>(
     close: Token, 
     element: &impl Fn(&mut ParserState<VecToken>) -> Result<Data, ParserError<Option<Token>>>, 
     trailing: bool
-) -> Result<OwnedSlice<Data>, ParserError<Option<Token>>> {
+) -> Result<Vec<Data>, ParserError<Option<Token>>> {
     let mut elements = Vec::new();
     if let Some(some_open) = open.clone() {
         state.consume_1(some_open)?;
@@ -728,7 +728,7 @@ pub fn repeated_elements<Data: Debug>(
         }
     }
 
-    Ok(OwnedSlice::from_vec(elements))
+    Ok(elements)
 }
 
 pub fn enclosed_element<Data: Debug>(

@@ -105,11 +105,24 @@ impl VariablePointer {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct VariableCell {
     pub name: SharedString,
     pub cell: OnceCell<Variable>,
     pub ptr: VariablePointer,
+}
+
+impl PartialEq for VariableCell {
+    fn eq(&self, other: &Self) -> bool {
+        if self.name != other.name {
+            return false
+        }
+
+        let self_var = self.get_checked();
+        let other_var = other.get_checked();
+
+        self_var == other_var
+    }
 }
 
 impl VariableCell {
@@ -133,6 +146,8 @@ impl VariableCell {
 
     // Must not be called before all the scoping is done
     pub fn get(&self) -> Variable {
+        println!("Getting variable {:?}", self);
+
         if let Some(var) = self.cell.get() {
             return var.clone()
         }
@@ -141,6 +156,17 @@ impl VariableCell {
         let ptr_var = inner.as_ref().get().unwrap();
         self.cell.set(ptr_var.clone());
         ptr_var.clone()
+    }
+
+    pub fn get_checked(&self) -> Option<Variable> {
+        if let Some(var) = self.cell.get() {
+            return Some(var.clone())
+        }
+
+        let inner = (*self.ptr.0).borrow();
+        let ptr_var = inner.as_ref().get()?;
+        self.cell.set(ptr_var.clone());
+        Some(ptr_var.clone())
     }
 
     pub fn is_uninitialied(&self) -> bool {

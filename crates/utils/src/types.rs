@@ -1,4 +1,4 @@
-use std::{rc::Rc, ops::Deref, hash::Hash};
+use std::{rc::Rc, ops::{Deref, DerefMut}, hash::Hash};
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
@@ -9,6 +9,8 @@ impl<T> OwnedSlice<T> {
         Self(vec![].into_boxed_slice())
     }
 
+    // TODO: into_boxed_slice deep copies if the capacity is different, do something
+    // we definitely don't want to deep copy everytime we call this
     pub fn from_vec(vec: Vec<T>) -> Self {
         Self(vec.into_boxed_slice())
     }
@@ -29,6 +31,12 @@ impl<T> Deref for OwnedSlice<T> {
     }
 }
 
+impl<T> DerefMut for OwnedSlice<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.0
+    }
+}
+/* 
 pub struct OwnedSliceIter<T>{
     cursor: *const T,
     end: *const T,
@@ -38,6 +46,7 @@ impl<T> Iterator for OwnedSliceIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
+        println!("{:?}, {:?}", self.cursor, self.end);
         if self.cursor == self.end {
             None
         } else {
@@ -47,17 +56,7 @@ impl<T> Iterator for OwnedSliceIter<T> {
         }
     }
 }
-
-impl<T> IntoIterator for OwnedSlice<T> {
-    type Item = T;
-    type IntoIter = OwnedSliceIter<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let cursor = self.0.as_ptr();
-        let end = unsafe { cursor.add(self.0.len()) };
-        OwnedSliceIter { cursor, end }
-    }
-}
+*/
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
@@ -131,3 +130,4 @@ impl Hash for OwnedString {
         self.0.hash(state)
     }
 }
+

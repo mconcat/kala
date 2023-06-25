@@ -45,7 +45,7 @@ pub fn module_item(state: &mut ParserState) -> Result<ModuleItem, ParserError> {
         Some(Token::Function) => {
             let proxy = state.scope.declare(|proxy| {
                 function_decl(state)
-            })
+            });
             Ok(ModuleItem::ModuleDeclaration(ModuleDeclaration{
                 export_clause: ExportClause::NoExport,
                 declaration: proxy,

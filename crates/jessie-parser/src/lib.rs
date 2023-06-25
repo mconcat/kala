@@ -3,6 +3,7 @@
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
 #![feature(test)]
+#![feature(btree_drain_filter)]
 
 pub mod jessie_test;
 pub mod parser;

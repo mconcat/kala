@@ -2,58 +2,61 @@ use std::cell::{RefCell, OnceCell};
 
 use fxhash::FxHashMap;
 use jessie_ast::{Expr, VariableCell, Declaration, Pattern, PropertyAccess, PropParam, Variable, Function, DeclarationIndex, VariablePointer, PropertyAccessChain, OptionalPattern};
-use utils::{OwnedSlice, OwnedString, SharedString};
-use std::collections::HashMap;
+use utils::{OwnedSlice, OwnedString, SharedString, FxMap, Map};
 
-type Map<T> = fxhash::FxHashMap<SharedString, T>;
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct LexicalScope {
     pub declarations: Vec<Declaration>,
-    pub variable_trie: Option<Box<Map<VariablePointer>>>,
+    pub variables: FxMap<VariablePointer>,
 }
 
 impl LexicalScope {
-    pub fn new(declarations: Vec<Declaration>) -> Self {
+    pub fn new(declarations: Vec<Declaration>, variables: FxMap<VariablePointer>) -> Self {
         Self {
             declarations,
-            variable_trie: None,
+            variables,
         }
     }
 
+    // Replaces both declarations and variable trie
+    pub fn enter_function_scope(&mut self, variables: FxMap<VariablePointer>) -> Self {
+        std::mem::replace(self, Self {
+            declarations: Vec::new(),
+            variables,
+        })
+    }
+
+    pub fn exit_function_scope(&mut self, parent: Self) -> Self {
+        std::mem::replace(self, parent)
+    }
+
+    // Preserves declarations, only resets variable trie
+    pub fn replace_variable_map(&mut self, variables: FxMap<VariablePointer>) -> FxMap<VariablePointer> {
+        std::mem::replace(&mut self.variables, variables)
+    }
+/* 
     // Replaces itself with an empty lexical scope(parent declarations and empty variable trie)
     // Returns lexical scope with empty declarations and parent variable trie
-    pub fn replace_with_child(&mut self) -> Self {
-        let parent_variable_trie = std::mem::replace(&mut self.variable_trie, None);
+    pub fn replace_with_child(&mut self, variables: Map<VariablePointer>) -> Self {
+        let parent_variables = std::mem::replace(&mut self.variables, variables);
 
         Self {
             declarations: Vec::new(),
-            variable_trie: parent_variable_trie,
+            variables: parent_variables,
         }
     }
 
-    pub fn recover_parent(&mut self, parent: Self) {
-        std::mem::replace(&mut self.variable_trie, parent.variable_trie);
+    pub fn recover_parent(&mut self, parent: Self) -> Map<VariablePointer> {
+        std::mem::replace(&mut self.variables, parent.variables)
     }
-
-    fn get_declarations(&mut self) -> &mut Vec<Declaration> {
-        &mut self.declarations
-    }
-
-    fn get_variable_trie(&mut self) -> &mut Map<VariablePointer> {
-        if self.variable_trie.is_none() {
-            self.variable_trie = Some(Box::new(HashMap::with_hasher(Default::default())));
-        }
-        self.variable_trie.as_mut().unwrap()
-    }
-
+*/
     fn next_declaration_index(&mut self) -> DeclarationIndex {
-        DeclarationIndex(self.get_declarations().len())
+        DeclarationIndex(self.declarations.len())
     }
 
     fn declare(&mut self, name: &SharedString, declaration_index: DeclarationIndex, property_access: PropertyAccessChain, is_hoisting_allowed: bool) -> Option<()> {
-        let trie = self.get_variable_trie();
-        if let Some(cell) = trie.get_mut(name) {
+        if let Some(cell) = self.variables.get(name) {
+            println!("declare exists {:?} {:?}", name, cell);
             // Variable has been occured in this scope
 
             if is_hoisting_allowed {
@@ -61,13 +64,26 @@ impl LexicalScope {
                     // Variable has been declared, redeclaration is not allowed
                     return None
                 }
+            } else {
+                // XXX
+                // for now, only the parameter declarations are not allowed to be hoisted,
+                // however the use_variable call inside param() makes sort of "usage" before the declaration,
+                // so we just proceed, super adhoc, need to be fixed later
+                if cell.set(declaration_index, property_access.clone()).is_err() {
+                    // Variable has been declared, redeclaration is not allowed
+                    return None
+                } 
+
+                // hoisting is not allowed, variable usage cannot come before the declaration
+                // return None
             }
 
             Some(())
         } else {
+            println!("declare not exists {:?}", name);
             // Variable has not been occured in this scope
             let cell = VariablePointer::initialized(declaration_index, property_access.clone());
-            trie.insert(name.clone(), cell.clone());
+            self.variables.insert(name, cell.clone());
 
             Some(())
         }
@@ -141,7 +157,7 @@ impl LexicalScope {
         let decl = Declaration::Parameter { 
             pattern,
         };
-        self.get_declarations().push(decl);
+        self.declarations.push(decl);
 
 
 
@@ -151,7 +167,7 @@ impl LexicalScope {
     pub fn declare_optional_parameter(&mut self, name: SharedString, default: Expr) -> Option<DeclarationIndex> {
         let index = self.next_declaration_index();
         let decl = Declaration::OptionalParameter { name, default };
-        self.get_declarations().push(decl);
+        self.declarations.push(decl);
 
         Some(index)
     }
@@ -165,7 +181,7 @@ impl LexicalScope {
             pattern,
             value,
         };
-        self.get_declarations().push(decl);
+        self.declarations.push(decl);
 
         Some(index)
     }
@@ -179,7 +195,7 @@ impl LexicalScope {
             pattern,
             value,
         };
-        self.get_declarations().push(decl);
+        self.declarations.push(decl);
 
 
         Some(index)
@@ -195,7 +211,7 @@ impl LexicalScope {
         let decl = Declaration::Function {
             function: Box::new(function),
         };
-        self.get_declarations().push(decl);
+        self.declarations.push(decl);
 
         self.declare(&function_name.unwrap(), index.clone(), PropertyAccessChain::empty(), true)?;
 
@@ -203,34 +219,22 @@ impl LexicalScope {
     }
 
     pub fn use_variable(&mut self, name: &SharedString) -> VariableCell {
-        let trie = self.get_variable_trie();
-        if let Some(ptr) = trie.get_mut(name) {
+        if let Some(ptr) = self.variables.get(name) {
+            println!("exists {:?} {:?}", name, ptr);
             ptr.clone().new_cell(name.clone())
         } else {
+            println!("not exists {:?}", name);
             let ptr = VariablePointer::new();
-            trie.insert(name.clone(), ptr.clone());
+            self.variables.insert(name, ptr.clone());
             ptr.new_cell(name.clone())
         }
     }
 
-    pub fn take(mut self) -> (Vec<Declaration>, OwnedSlice<(SharedString, VariablePointer)>) {
-        let mut unbound_uses = Vec::new();
-        let trie = self.get_variable_trie();
-        let ptrs = trie.drain();
-        for (name, ptr) in ptrs {
-            if ptr.is_uninitialized() {
-                unbound_uses.push((name.clone(), ptr));
-            }
-        }
-        (self.declarations, OwnedSlice::from_vec(unbound_uses))
-    }
-
     pub fn assert_equivalence(&mut self, name: &SharedString, mut var: VariablePointer) {
-        let trie = self.get_variable_trie();
-        if let Some(ptr) = trie.get_mut(name) {
+        if let Some(ptr) = self.variables.get(name) {
             var.overwrite(ptr);
         } else {
-            trie.insert(name.clone(), var);
+            self.variables.insert(name, var);
         }
     }
 }

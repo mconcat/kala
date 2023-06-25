@@ -1,4 +1,4 @@
-use crate::{operation::*, Function, Record, Assignment, VariableCell, VariablePointer, Field};
+use crate::{operation::*, Function, Record, Assignment, VariableCell, VariablePointer, Field, traits::UnsafeInto, Pattern};
 use utils::{SharedString, OwnedSlice, OwnedString};
 
 // paren, function, literal, array, record, variable
@@ -41,6 +41,18 @@ pub enum Expr {
     ParenedExpr(Box<Expr>) = ExprDiscriminant::ParenedExpr as u8,
     Variable(Box<VariableCell>) = ExprDiscriminant::Variable as u8,
     Spread(Box<Expr>) = ExprDiscriminant::Spread as u8, // for array elements
+}
+
+impl UnsafeInto<Pattern> for Expr {
+    unsafe fn unsafe_into(self) -> Pattern {
+        match self {
+            Expr::Variable(v) => Pattern::Variable(v),
+            Expr::Spread(e) => Pattern::Rest(std::mem::transmute(e)),
+            Expr::Array(a) => Pattern::ArrayPattern(std::mem::transmute(a)),
+            Expr::Record(r) => Pattern::RecordPattern(std::mem::transmute(r)),
+            _ => panic!("cannot convert {:?} into Pattern", self),
+        }
+    }
 }
 
 #[repr(transparent)]

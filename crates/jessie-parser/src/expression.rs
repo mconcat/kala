@@ -15,6 +15,7 @@ use crate::{
 
     use_variable,
 };
+use utils::OwnedSlice;
 
 type ParserState = parser::ParserState<VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
@@ -53,6 +54,7 @@ pub fn expression(state: &mut ParserState) -> Result<Expr, ParserError> {
             // if the expression is parenthesized expression(a primary expression), 
             // it can be a leftmost expression for a CondExpr.
             if let Expr::ParenedExpr(_) = expr {
+                println!("arrow_or_paren_expr: {:?}", expr);
                 cond_expr_with_leftmost(state, expr)
             } else {
                 Ok(expr)
@@ -251,7 +253,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
 }
 pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
     let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &mut element, true)?;
-    Ok(Array(elements))
+    Ok(Array(OwnedSlice::from_vec(elements)))
 }
 
 pub fn element(state: &mut ParserState) -> Result<Expr, ParserError> {
@@ -270,7 +272,7 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
 
 pub fn record(state: &mut ParserState) -> Result<Record, ParserError> {
     let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &mut prop_def, true)?;
-    Ok(Record(props))
+    Ok(Record(OwnedSlice::from_vec(props)))
 }
 /* 
 pub fn pure_prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {

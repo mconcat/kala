@@ -8,6 +8,7 @@ pub mod function;
 pub mod assignment;
 pub mod object;
 pub mod helper;
+mod traits;
 
 pub use operation::*;
 pub use expression::*;

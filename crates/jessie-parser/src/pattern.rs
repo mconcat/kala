@@ -8,6 +8,7 @@ use crate::{
 
     expression,
 };
+use utils::OwnedSlice;
 
 type ParserState = parser::ParserState<VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
@@ -17,8 +18,8 @@ type ParserError = parser::ParserError<Option<Token>>;
 
 pub fn binding_pattern(state: &mut ParserState) -> Result<Pattern, ParserError> {
     match state.lookahead_1() {
-        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(Box::new(ArrayPattern(x)))),
-        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(Box::new(RecordPattern(x)))),
+        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(Box::new(ArrayPattern(OwnedSlice::from_vec(x))))),
+        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(Box::new(RecordPattern(OwnedSlice::from_vec(x))))),
         c => state.err_expected("binding pattern", c),
     }
 }

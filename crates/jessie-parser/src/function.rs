@@ -34,28 +34,32 @@ pub fn function_expr(state: &mut ParserState) -> Result<Function, ParserError> {
     let function = function_internal(state, name.clone())?;
 
     // Named function expr should be only locally bound. TODO.
-    // For now named function expr are not permitted
+    // For now recursive call is not supported for function expressions
     // state.scope.declare_function(function).ok_or(ParserError::DuplicateDeclaration)?;
-    if name.is_some() {
-        unimplemented!("named function expression")
-    }
 
     Ok(function)
 }
 
 pub fn function_internal(state: &mut ParserState, name: Option<SharedString>) -> Result<Function, ParserError> {
+
+    println!("function_internal");
     let parent_scope = state.enter_function_scope(Vec::new());
     
     let parameter_patterns = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
 
+    println!("parameter patterns {:?}", parameter_patterns[0]);
+
     let mut parameters = Vec::with_capacity(parameter_patterns.len());
-    for param in parameter_patterns.into_iter() {
+    for param in parameter_patterns {
+        println!("parameter");
         let index = state.scope.declare_parameter(param).ok_or(ParserError::DuplicateDeclaration)?;
         parameters.push(index);
     }
  
+    println!("parameters {:?}", parameters);
+    println!("scope {:?}", state.scope);
+
     // TODO: spread parameter can only come at the end
-    println!("function_internal");
 
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
@@ -192,6 +196,7 @@ pub fn prop_def_or_prop_param(state: &mut ParserState) -> Result<CoverProperty, 
     }
 
     let prop_name = prop_name(state)?;
+    println!("lookahead {:?}", state.lookahead_1());
     match state.lookahead_1() {
         Some(Token::Colon) => {
             state.proceed();
@@ -216,7 +221,7 @@ pub fn prop_def_or_prop_param(state: &mut ParserState) -> Result<CoverProperty, 
             })
         },
         _ => {
-            state.err_expected(":", state.lookahead_1())
+            state.err_expected(": for property pair", state.lookahead_1())
         }
     }
 }
@@ -263,8 +268,8 @@ fn assignment_or_parameter_or_optional(state: &mut ParserState) -> Result<CoverP
 fn expression_or_pattern(state: &mut ParserState) -> Result<CoverParameter, ParserError> {
     match state.lookahead_1() {
         // Destructuring pattern or Expressions
-        Some(Token::LeftBrace) => destructing_array_parameter_or_array_literal(state),
-        Some(Token::LeftBracket) => destructing_record_parameter_or_record_literal(state),
+        Some(Token::LeftBracket) => destructing_array_parameter_or_array_literal(state),
+        Some(Token::LeftBrace) => destructing_record_parameter_or_record_literal(state),
 
         // Default pattern or Assignment expressions
         Some(Token::Identifier(_)) => assignment_or_parameter_or_optional(state),
@@ -367,6 +372,8 @@ pub fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError>
     }
 
     let expr = expression_or_pattern(state)?;
+
+    println!("cpeaapl expr: {:?}", expr);
 
     if !expr.is_transmutable_to_param {
         state.consume_1(Token::RightParen)?;

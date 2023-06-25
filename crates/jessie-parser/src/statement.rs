@@ -76,7 +76,7 @@ fn const_decl(state: &mut ParserState) -> Result<OwnedSlice<DeclarationIndex>, P
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
         state.scope.declare_const(pattern, init).ok_or(ParserError::DuplicateDeclaration)
-    }, false)
+    }, false).map(OwnedSlice::from_vec)
 }
 
 fn let_decl(state: &mut ParserState) -> Result<OwnedSlice<DeclarationIndex>, ParserError> {
@@ -84,7 +84,7 @@ fn let_decl(state: &mut ParserState) -> Result<OwnedSlice<DeclarationIndex>, Par
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
         state.scope.declare_let(pattern, init).ok_or(ParserError::DuplicateDeclaration)
-    }, false)
+    }, false).map(OwnedSlice::from_vec)
 }
 
 fn function_decl(state: &mut ParserState) -> Result<DeclarationIndex, ParserError> {

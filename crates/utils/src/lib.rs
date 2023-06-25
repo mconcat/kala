@@ -1,7 +1,5 @@
-pub mod trie;
 pub mod types;
-pub mod hashmap;
+pub mod map;
 
-pub use trie::*;
 pub use types::*;
-pub use hashmap::*;
+pub use map::*;

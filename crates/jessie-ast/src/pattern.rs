@@ -1,6 +1,6 @@
 use utils::OwnedSlice;
 
-use crate::{Expr, ExprDiscriminant, VariableCell, Record, PropDefDiscriminant, Field, AssignOp, LValue};
+use crate::{Expr, ExprDiscriminant, VariableCell, Record, PropDefDiscriminant, Field, AssignOp, LValue, traits::{UnsafeInto}};
 
 // Pattern is a subset of Expr
 #[repr(u8)]
@@ -16,6 +16,12 @@ pub enum Pattern {
 impl Pattern {
     pub fn optional(lvalue: VariableCell, expr: Expr) -> Self {
         Pattern::Optional(Box::new(OptionalPattern(OptionalOp::Optional, LValueOptional::Variable(Box::new(lvalue)), expr)))
+    }
+}
+
+impl UnsafeInto<Expr> for Pattern {
+    unsafe fn unsafe_into(self) -> Expr {
+        std::mem::transmute(self)
     }
 }
 

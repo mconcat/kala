@@ -4,7 +4,8 @@ use jessie_ast::{Declaration, VariableCell, VariablePointer, Variable, Declarati
 
 use crate::{scope::LexicalScope};
 
-use utils::{OwnedSlice};
+extern crate utils;
+use utils::{OwnedSlice, FxMap, MapPool, VectorMapPool, FxMapPool, Map};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {
@@ -147,19 +148,22 @@ pub trait ArrayLike {
     fn slice(&self, start: usize, end: usize) -> Self;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct ParserState<T: ArrayLike+Clone+Debug+ToString> {
     pub input: T,
     pub pos: usize,
     pub scope: LexicalScope,
+    pub map_pool: FxMapPool<VariablePointer>,
 }
 
 impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
     pub fn new(input: T, global_declarations: Vec<Declaration>) -> Self {
+        let mut map_pool = FxMapPool::new();
         Self {
             input,
             pos: 0,
-            scope: LexicalScope::new(global_declarations),
+            scope: LexicalScope::new(global_declarations, map_pool.get()),
+            map_pool,
         }
     }
 
@@ -232,44 +236,46 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
     }
 
     pub fn enter_function_scope(&mut self, declarations: Vec<Declaration>) -> LexicalScope {
-        std::mem::replace(&mut self.scope, LexicalScope::new(declarations))
+        self.scope.enter_function_scope(self.map_pool.get())
     }
 
     pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> (Vec<Declaration>, OwnedSlice<DeclarationIndex>) {
-        let scope = std::mem::replace(&mut self.scope, parent_scope);
-        let (mut declarations, unbound_uses) = scope.take();
-    
-        let mut captures = Vec::with_capacity(unbound_uses.len());
+        let LexicalScope{mut declarations, variables} = self.scope.exit_function_scope(parent_scope);
+        let mut captures = Vec::with_capacity(variables.len());
+        let mut ptrs = self.map_pool.drain(variables);
+        for (name, mut ptr) in ptrs {
+            println!("exit function scope {:?} {:?}", name, ptr);
+            if ptr.is_uninitialized() {
+                // make a capturing declaration targeting upper scope, set the local pointer to reference it
+                let capture_cell = VariableCell::uninitialized(name.clone());
+                let decl = Declaration::Capture { name: name.clone(), variable: capture_cell.clone() };
+                let declaration_index = DeclarationIndex(declarations.len());
+                declarations.push(decl);
 
-        for (name, mut ptr) in unbound_uses {
-            // make a capturing declaration targeting upper scope, set the local pointer to reference it
-            let capture_cell = VariableCell::uninitialized(name.clone());
-            let decl = Declaration::Capture { name: name.clone(), variable: capture_cell.clone() };
-            let declaration_index = DeclarationIndex(declarations.len());
-            declarations.push(decl);
+                // Set the ptr to reference the new declaration
+                ptr.set(declaration_index.clone(), PropertyAccessChain::empty()).unwrap();
 
-            // Set the ptr to reference the new declaration
-            ptr.set(declaration_index.clone(), PropertyAccessChain::empty()).unwrap();
+                // assert equivalence
+                self.scope.assert_equivalence(&name, capture_cell.ptr);
 
-            // assert equivalence
-            self.scope.assert_equivalence(&name, capture_cell.ptr);
-
-            captures.push(declaration_index)
+                captures.push(declaration_index)
+            }
         }
 
         (declarations, OwnedSlice::from_vec(captures))
     }
 
-    pub fn enter_block_scope(&mut self) -> LexicalScope {
-        self.scope.replace_with_child()
+    pub fn enter_block_scope(&mut self) -> FxMap<VariablePointer> {
+        self.scope.replace_variable_map(self.map_pool.get())
     }
 
-    pub fn exit_block_scope(&mut self, parent_scope: LexicalScope) {
-        
-        let scope = std::mem::replace(&mut self.scope, parent_scope); 
-        let (_, unbound_uses) = scope.take();
-        for (name, var) in unbound_uses {
-            self.scope.assert_equivalence(&name, var/*TODO: optimize */);
+    pub fn exit_block_scope(&mut self, parent_variables: FxMap<VariablePointer>) {
+        let mut variables = self.scope.replace_variable_map(parent_variables);
+        let ptrs = self.map_pool.drain(variables);
+        for (name, ptr) in ptrs {
+            if ptr.is_uninitialized() {
+                self.scope.assert_equivalence(&name, ptr/*TODO: optimize */);
+            }
         }
     }
 /* 
