@@ -125,7 +125,7 @@ pub enum Token {
     Interface,
     Private,
     Public,
-    
+
     // Operators
     // Binary
     BarBar, // ||
@@ -200,7 +200,7 @@ fn given_keyword_or_ident(lexer: &mut Lexer, keyword: &'static str, token: Token
     // proceed to identifier parsing
     if lexer.lookahead_n(keyword.len()+1).map(|x| x.is_alphabetic() || x == '_' || x.is_digit(10)).unwrap_or(false) {
         println!("fastpath ident given_keyword_or_ident");
-        return ident(lexer);   
+        return ident(lexer);
     }
 
     if lexer.consume(Str(keyword.to_string())).is_ok() {
@@ -239,7 +239,7 @@ fn keyword_or_ident(lexer: &mut Lexer) -> Result<Token, String> {
     println!("keyword_or_ident: {:?}", lexer.lookahead_1());
 
     match lexer.lookahead_1() {
-        Some('a') => 
+        Some('a') =>
             match lexer.lookahead_2() {
                 Some('s') => given_keyword_or_ident(lexer, &"async", Token::Async),
                 Some('r') => given_keyword_or_ident(lexer, &"arguments", Token::Arguments),
@@ -472,7 +472,7 @@ pub fn lex(lexer: &mut Lexer) -> Result<Vec<Token>, String> {
                 } else {
                     result.push(lexer.proceed_with(Token::Plus));
                 }
-            },            
+            },
             Some('-') => {
                 if lexer.lookahead_2() == Some('-') {
                     return Err("Decrement operator not supported yet".to_string());
@@ -614,7 +614,7 @@ pub fn check_whitespace_nonident(c1: Option<char>, c2: Option<char>) -> Result<(
         }
     } else {
         Ok(())
-        
+
     }
 }
 
@@ -687,13 +687,13 @@ fn ident(state: &mut Lexer) -> Result<Token, String> {
 
 
 /////////
-/// 
+///
 /// // comma seperated list of elements, with optional trailing comma
 pub fn repeated_elements<Data: Debug>(
-    state: &mut ParserState<VecToken>, 
-    open: Option<Token>, 
-    close: Token, 
-    element: &impl Fn(&mut ParserState<VecToken>) -> Result<Data, ParserError<Option<Token>>>, 
+    state: &mut ParserState<VecToken>,
+    open: Option<Token>,
+    close: Token,
+    element: &impl Fn(&mut ParserState<VecToken>) -> Result<Data, ParserError<Option<Token>>>,
     trailing: bool
 ) -> Result<Vec<Data>, ParserError<Option<Token>>> {
     let mut elements = Vec::new();
@@ -720,7 +720,7 @@ pub fn repeated_elements<Data: Debug>(
                 } else {
                     return state.err_expected("no trailing comma", Some(Token::Comma))
                 }
-            } 
+            }
         } else if state.try_proceed(close.clone()) {
             break
         } else {
@@ -732,9 +732,9 @@ pub fn repeated_elements<Data: Debug>(
 }
 
 pub fn enclosed_element<Data: Debug>(
-    state: &mut ParserState<VecToken>, 
-    open: Token, 
-    close: Token, 
+    state: &mut ParserState<VecToken>,
+    open: Token,
+    close: Token,
     element: &impl Fn(&mut ParserState<VecToken>) -> Result<Data, ParserError<Option<Token>>>
 ) -> Result<Data, ParserError<Option<Token>>> {
     state.consume_1(open)?;
@@ -768,10 +768,10 @@ pub fn parse_number(state: &mut Lexer) -> Result<DataLiteral, String> {
             } else {
                 break;
             }
-        } 
-    } 
- 
-    Ok(DataLiteral::Number(number)) 
+        }
+    }
+
+    Ok(DataLiteral::Number(number))
 }
  */
 pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
@@ -798,7 +798,7 @@ pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
             } else {
                 break;
             }
-        } 
+        }
         return Ok(Token::Decimal(OwnedString::from_string(number)))
     } else if state.lookahead_1() == Some('n') {
         state.proceed();
@@ -808,15 +808,27 @@ pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
     Ok(Token::Integer(OwnedString::from_string(number)))
 }
 
+// TODO: Detect ` string to use variable / Song127
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
     let mut string = String::new();
-    let enclosing = state.lookahead_1().filter(|c| *c == '"' || *c == '\'').ok_or("Expected string".to_string())?;
+    let enclosing = state.lookahead_1().filter(|c| *c == '"' || *c == '\'' || *c == '`').ok_or("Expected string".to_string())?;
     state.proceed();
     while let Some(c) = state.lookahead_1() {
         if c == enclosing {
             state.proceed();
             break;
         } else {
+            if(c == '$') {
+                let is_interpolation = state.lookahead_2() == Some('{');
+                if is_interpolation {
+                    string.push(lex(state)?);
+
+                    state.proceed();
+                    state.proceed();
+                    break;
+                }
+            }
+            before = c;
             string.push(c); // TODO: optimize, i think we can just slice the string
             state.proceed();
         }
