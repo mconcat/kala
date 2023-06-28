@@ -1,9 +1,9 @@
 use crate::{expression::Expr, VariableCell, VariablePointer};
-use utils::{SharedString, OwnedSlice};
+use utils::{SharedString};
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
-pub struct Record(pub OwnedSlice<PropDef>);
+pub struct Record(pub Vec<PropDef>);
 
 pub enum PropDefDiscriminant {
     KeyValue = 0, 

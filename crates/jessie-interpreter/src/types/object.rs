@@ -1,3 +1,34 @@
+use std::cell::Ref;
+
+use utils::FxMap;
+
+use crate::{memory::memory::Pointer, slot::Slot};
+
+pub struct Object {
+    properties: FxMap<Slot>,
+}
+
+pub struct Reference {
+    ptr: Pointer<Object>
+}
+
+impl From<Slot> for Reference {
+    fn from(slot: Slot) -> Self {
+        Self {
+            ptr: slot.get_pointer()
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+/* 
 // Object model in Kala
 //
 // - Statically known object, with inlined properties
@@ -25,6 +56,7 @@ pub enum Object {
 
     // Object
     //RAIIObject(ObjectInternal), // the lifetime of the object ends inside the block where it is declared
-    LifetimeObject(ObjectInternal), // the lifetime is statically known, and drop analysis had inserted where it should be destructed
-    //RcObject(ObjectInternal), // the lifetime could not be statically known, wrap in Rc
+    // LifetimeObject(ObjectInternal), // the lifetime is statically known, and drop analysis had inserted where it should be destructed
+    RcObject(ObjectInternal), // the lifetime could not be statically known, wrap in Rc
 }
+*/

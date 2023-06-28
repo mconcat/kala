@@ -1,3 +1,4 @@
+#[repr(u8)]
 // https://github.com/Moddable-OpenSource/moddable/blob/public/xs/sources/xsCommon.h
 pub enum Opcode {
     // xs opcodes that I think I know what they are doing(based on their names)
@@ -7,12 +8,13 @@ pub enum Opcode {
     False,
     Bigint1,
 	Bigint2,
-	// 1 byte, 2 bytes, 4 bytes of integer data inlined in the opcode
+	Bigint4,
+	Bigint,
+	// 1 byte, 2 bytes, 4 bytes, 8 bytes of integer data inlined in the opcode
     Integer1,
 	Integer2,
 	Integer4,
 	// StringX: X bytes of string length, n bytes of inlined string data(where n is the length of the string from that X bytes)
-	String0, // 16 bytes of string data inlined in the opcode
     String1,
 	String2,
 	String4,
@@ -25,7 +27,7 @@ pub enum Opcode {
 	// But we are storing 64.64 fixed point numbers
 	Number, // 64.64, 16 bytes
 
-	// [Opcode::ArrayX, Array Type, X bytes of array capacity]]
+	// [Opcode::ArrayX, X bytes of array capacity]]
     Array1,
 	Array2,
 
@@ -84,13 +86,17 @@ pub enum Opcode {
 	Branch2,
 	Branch4,
 	// BranchChainX is for optional chaining. If the value on the stack is null or undefined, it jumps to the address inlined in the opcode, otherwise it continues to the next instruction, without consuming the value on the stack
+	/* 
 	BranchChain1,
 	BranchChain2,
 	BranchChain4,
+	*/
 	// BranchCoalesceX is for nullish coalescing. If the value on the stack is NOT null or undefined, it jumps to the address inlined in the opcode, otherwise it continues to the next instruction, WITH consuming the value on the stack
+	/* 
 	BranchCoalesce1,
 	BranchCoalesce2,
 	BranchCoalesce4,
+	*/
 
 	// BranchIfX jumps to the address inlined in the opcode if the value on the stack is true, otherwise it continues to the next instruction 
 	BranchIf1,

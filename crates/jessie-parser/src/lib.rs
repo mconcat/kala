@@ -18,6 +18,7 @@ pub mod operation;
 pub mod scope;
 // pub mod outline;
 pub mod common;
+mod map;
 
 pub use lexer::{
     Token,

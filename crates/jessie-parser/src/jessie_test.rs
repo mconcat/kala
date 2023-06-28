@@ -1,13 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
 
     use crate::expression;
     use crate::parser::ParserState;
     use crate::lexer::*;
     use jessie_ast::*;
     use jessie_ast::helper::*;
-    use utils::{OwnedSlice, SharedString};
 
     fn expr_test_cases() -> Vec<(&'static str, Expr)> {
         vec![
@@ -25,21 +23,23 @@ mod tests {
                     return_statement(var_x),
                 ],
             ) 
-        }),/* 
+        }),
         ("function f(x, y) {
             return x+y;   
         }", {
+            let param_x = variable("x"); 
+            let param_y = variable("y");
             function_expr(
                 Some("f"),
                 vec![],
-                vec![variable("x"), variable("y")],
+                vec![param_x, param_y],
                 vec![],
                 vec![
                     return_statement(add(variable("x"), variable("y"))),
                 ],
             )
         }),
-            // Excluded due to destructing parameter
+          /*   // Excluded due to destructing parameter
         ("function f(x, [y, z]) {
             let t = x+y;
             return z;
@@ -103,9 +103,9 @@ mod tests {
                 vec![unsafe{var_x.clone().unsafe_into()}],
                 vec![var_y, var_z],
                 vec![
-                    const_statement("y", DeclarationIndex(1)),
+                    const_statement("y", DeclarationIndex::Local(0)),
                     block(vec![
-                        let_statement("z", DeclarationIndex(2)),
+                        let_statement("z", DeclarationIndex::Local(1)),
                         return_statement(add(add(variable("x"), variable("y")), variable("z"))),
                     ]),
                 ],

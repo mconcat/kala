@@ -1,36 +1,64 @@
-use crate::{Statement, Expr, Pattern, DataLiteral, Field};
+use crate::{Statement, Expr, Pattern, DataLiteral, Field, OptionalPattern};
 use std::{rc::Rc, cell::OnceCell, cell::RefCell, borrow::BorrowMut, option};
-use utils::{OwnedString, SharedString, OwnedSlice};
+use utils::{SharedString};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     pub name: Option<SharedString>,
 
-    pub captures: OwnedSlice<DeclarationIndex>,
+    // index 0 is reserved
 
-    pub parameters: OwnedSlice<DeclarationIndex>,
+    pub captures: Vec<CaptureDeclaration>, // indexed by [1..captures.len+1]
 
-    pub declarations: OwnedSlice<Declaration>,
+    pub parameters: Vec<ParameterDeclaration>, // indexed by [-parameters.len..0]
+
+    pub declarations: Vec<LocalDeclaration>, // indexed by [captures.len+1..captures.len+declarations.len+1]
 
     // block body
-    pub statements: OwnedSlice<Statement>,
+    pub statements: Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Declaration {
-    Capture {
+pub enum CaptureDeclaration {
+    Local {
         name: SharedString,
         variable: VariableCell, // pointing upper function scope
-        //index: DeclarationIndex,
     },
-    Parameter {
+    Global {
+        name: SharedString,
+    },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ParameterDeclaration {
+    Variable {
+        name: SharedString,
+    },
+    Pattern {
         pattern: Pattern,
         //index: DeclarationIndex,
     },
-    OptionalParameter {
+    Optional {
         name: SharedString,
         default: Expr,
     },
+}
+
+impl From<Pattern> for ParameterDeclaration {
+    fn from(pattern: Pattern) -> Self {
+        match pattern {
+            Pattern::Variable(var) => ParameterDeclaration::Variable { name: var.name },
+            Pattern::Optional(pat) => {
+                let OptionalPattern(_, crate::LValueOptional::Variable(var), default) = *pat;
+                ParameterDeclaration::Optional { name: var.name, default }
+            },
+            _ => ParameterDeclaration::Pattern { pattern },
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum LocalDeclaration { 
     Const {
         pattern: Pattern,
         value: Option<Expr>,
@@ -47,9 +75,13 @@ pub enum Declaration {
     }
 }
 
-#[repr(transparent)]
-#[derive(Debug, PartialEq, Clone)]
-pub struct DeclarationIndex(pub usize);
+#[derive(Debug, PartialEq, Clone, Copy)]
+
+pub enum DeclarationIndex {
+    Parameter(usize),
+    Capture(usize),
+    Local(usize),
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Variable {
@@ -192,15 +224,15 @@ pub enum PropertyAccess {
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)] 
-pub struct PropertyAccessChain(OwnedSlice<PropertyAccess>);
+pub struct PropertyAccessChain(Vec<PropertyAccess>);
 
 impl PropertyAccessChain {
     pub fn empty() -> Self {
-        PropertyAccessChain(OwnedSlice::empty())
+        PropertyAccessChain(Vec::new())
     }
 
     pub fn from_vec(vec: Vec<PropertyAccess>) -> Self {
-        PropertyAccessChain(OwnedSlice::from_vec(vec))
+        PropertyAccessChain(vec)
     }
 /* 
     pub fn push(&mut self, access: PropertyAccess) {

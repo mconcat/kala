@@ -4,7 +4,7 @@ use std::fmt::{Debug, Display};
 
 use crate::parser::{ParserState, ArrayLike, ParserError};
 
-use utils::{OwnedString, OwnedSlice, SharedString};
+use utils::{SharedString};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Str(pub String);
@@ -183,10 +183,10 @@ pub enum Token {
     // Literals
     Undefined,
     Identifier(SharedString),
-    String(OwnedString),
-    Integer(OwnedString),
-    Decimal(OwnedString),
-    Bigint(OwnedString),
+    String(String),
+    Integer(String),
+    Decimal(String),
+    Bigint(String),
 
     // ????
     Instanceof,
@@ -799,13 +799,13 @@ pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
                 break;
             }
         } 
-        return Ok(Token::Decimal(OwnedString::from_string(number)))
+        return Ok(Token::Decimal(number))
     } else if state.lookahead_1() == Some('n') {
         state.proceed();
-        return Ok(Token::Bigint(OwnedString::from_string(number)))
+        return Ok(Token::Bigint(number))
     }
 
-    Ok(Token::Integer(OwnedString::from_string(number)))
+    Ok(Token::Integer(number))
 }
 
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
@@ -821,7 +821,7 @@ pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
             state.proceed();
         }
     }
-    Ok(Token::String(OwnedString::from_string(string)))
+    Ok(Token::String(string))
 }
 
 fn parse_ident(state: &mut Lexer) -> Result<Token, String> {

@@ -1,5 +1,5 @@
 use std::{rc::Rc, ops::{Deref, DerefMut}, hash::Hash};
-
+/* 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct OwnedSlice<T>(pub Box<[T]>);
@@ -35,7 +35,7 @@ impl<T> DerefMut for OwnedSlice<T> {
     fn deref_mut(&mut self) -> &mut [T] {
         &mut self.0
     }
-}
+}*/
 /* 
 pub struct OwnedSliceIter<T>{
     cursor: *const T,
@@ -107,6 +107,7 @@ impl Hash for SharedString {
         self.0.hash(state)
     }
 }
+/* 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub struct OwnedString(pub Box<str>);
@@ -130,4 +131,4 @@ impl Hash for OwnedString {
         self.0.hash(state)
     }
 }
-
+*/

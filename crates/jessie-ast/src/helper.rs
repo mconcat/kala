@@ -1,4 +1,4 @@
-use utils::{SharedString, OwnedString, OwnedSlice};
+use utils::{SharedString};
 
 use crate::{*};
 pub use crate::traits::UnsafeInto;
@@ -24,31 +24,31 @@ pub fn boolean(b: bool) -> Expr {
 }
 
 pub fn number(n: i64) -> Expr {
-    data_literal(DataLiteral::Integer(OwnedString::from_string(n.to_string())))
+    data_literal(DataLiteral::Integer(n.to_string()))
 }
 
 pub fn decimal(n: &str) -> Expr {
-    data_literal(DataLiteral::Decimal(OwnedString::from_string(n.to_string())))
+    data_literal(DataLiteral::Decimal(n.to_string()))
 }
 
 pub fn string(s: &str) -> Expr {
-    data_literal(DataLiteral::String(OwnedString::from_string(s.to_string())))
+    data_literal(DataLiteral::String(s.to_string()))
 }
 
 pub fn bigint(s: u64) -> Expr {
-    data_literal(DataLiteral::Bigint(OwnedString::from_string(s.to_string())))
+    data_literal(DataLiteral::Bigint(s.to_string()))
 }
 
 // Array
 
 pub fn array(elements: Vec<Expr>) -> Expr {
-    Expr::Array(Box::new(Array(OwnedSlice::from_vec(elements))))
+    Expr::Array(Box::new(Array(elements)))
 }
 
 // Record
 
 pub fn record(fields: Vec<PropDef>) -> Expr {
-    Expr::Record(Box::new(Record(OwnedSlice::from_vec(fields))))
+    Expr::Record(Box::new(Record(fields)))
 }
 
 pub fn keyvalue(key: &str, value: Expr) -> PropDef {
@@ -84,23 +84,31 @@ fn set_variable_pointers_for_pattern(pattern: &mut Pattern, decl_index: Declarat
     }
 }
 
-pub fn function_expr(name: Option<&str>, captures: Vec<DeclarationIndex>, mut params: Vec<Pattern>, declarations: Vec<Declaration>, statements: Vec<Statement>) -> Expr {
+pub fn function_expr(name: Option<&str>, captures: Vec<(SharedString, DeclarationIndex)>, mut params: Vec<Pattern>, declarations: Vec<LocalDeclaration>, statements: Vec<Statement>) -> Expr {
     let mut decl_index = 0;
     let mut param_decls = params.iter_mut().map(|pattern| {
-        set_variable_pointers_for_pattern(pattern, DeclarationIndex(decl_index), &mut Vec::new());
-        Declaration::Parameter{pattern: pattern.clone()}
-    }).collect::<Vec<_>>();
+        set_variable_pointers_for_pattern(pattern, DeclarationIndex::Parameter(decl_index), &mut Vec::new());
+        decl_index += 1;
+        (*pattern).clone().into()
+    }).collect::<Vec<ParameterDeclaration>>();
 
-    let param_indices: Vec<DeclarationIndex> = (0..param_decls.len()).map(DeclarationIndex).collect();
+    decl_index = 0;
+    let mut capture_decls = captures.into_iter().map(|(name, parent_index)| {   
+        let capture_cell = VariableCell::initialized(name.clone(), parent_index, vec![]);
 
-    param_decls.extend(declarations);
+        CaptureDeclaration::Local {
+            name: name,
+            variable: capture_cell,
+
+        }
+    }).collect::<Vec<CaptureDeclaration>>();
 
     Expr::FunctionExpr(Box::new(Function{
         name: name.map(SharedString::from_str),
-        captures: OwnedSlice::from_vec(captures),
-        parameters: OwnedSlice::from_vec(param_indices),
-        declarations: OwnedSlice::from_vec(param_decls),
-        statements: OwnedSlice::from_vec(statements),
+        captures: capture_decls,
+        parameters: param_decls,
+        declarations: declarations,
+        statements: statements,
     }))
 }
 
@@ -162,11 +170,11 @@ pub fn spread(expr: Expr) -> Expr {
 }
 
 pub fn property(expr: Expr, prop: &str) -> Expr {
-    Expr::CallExpr(Box::new(CallExpr { expr, post_ops: OwnedSlice::from_vec(vec![CallPostOp::Member(SharedString::from_str(prop))]) }))
+    Expr::CallExpr(Box::new(CallExpr { expr, post_ops: vec![CallPostOp::Member(SharedString::from_str(prop))] }))
 }
 
 pub fn properties(expr: Expr, props: Vec<&str>) -> Expr {
-    Expr::CallExpr(Box::new(CallExpr { expr, post_ops: OwnedSlice::from_vec(props.into_iter().map(|prop| CallPostOp::Member(SharedString::from_str(prop))).collect()) }))
+    Expr::CallExpr(Box::new(CallExpr { expr, post_ops: props.into_iter().map(|prop| CallPostOp::Member(SharedString::from_str(prop))).collect() }))
 }
 
 pub fn shorthand(name: &str) -> PropDef {
@@ -183,36 +191,36 @@ pub fn return_statement(expr: Expr) -> Statement {
     Statement::Return(Box::new(expr))
 }
 
-pub fn const_declaration(name: &str, expr: Expr) -> Declaration {
-    Declaration::Const{
+pub fn const_declaration(name: &str, expr: Expr) -> LocalDeclaration {
+    LocalDeclaration::Const{
         pattern: Pattern::Variable(Box::new(VariableCell::uninitialized(SharedString::from_str(name)))),
         value: Some(expr),
     }
 }
 
 pub fn const_statement(name: &str, decl: DeclarationIndex) -> Statement {
-    Statement::LocalDeclaration(OwnedSlice::from_vec(vec![decl]))
+    Statement::LocalDeclaration(vec![decl])
 }
 
-pub fn let_declaration(name: &str, expr: Expr) -> Declaration {
-    Declaration::Let{
+pub fn let_declaration(name: &str, expr: Expr) -> LocalDeclaration {
+    LocalDeclaration::Let{
         pattern: Pattern::Variable(Box::new(VariableCell::uninitialized(SharedString::from_str(name)))),
         value: Some(expr),
     }
 }
 
 pub fn let_statement(name: &str, decl: DeclarationIndex) -> Statement {
-    Statement::LocalDeclaration(OwnedSlice::from_vec(vec![decl]))
+    Statement::LocalDeclaration(vec![decl])
 }
-
-pub fn capture(name: &str, declaration_index: DeclarationIndex) -> Declaration {
+/* 
+pub fn capture(name: &str, declaration_index: DeclarationIndex) -> CaptureDeclaration {
     let name = SharedString::from_str(name);
-    Declaration::Capture{
+    CaptureDeclaration::Local{
         name: name.clone(),
         variable: VariableCell::initialized(name.clone(), declaration_index, vec![])
     }
 }
-
+*/
 pub fn block(statements: Vec<Statement>) -> Statement {
-    Statement::Block(Block(OwnedSlice::from_vec(statements)))
+    Statement::Block(Block(statements))
 }

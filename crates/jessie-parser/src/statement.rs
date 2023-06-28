@@ -13,7 +13,6 @@ use crate::{
 
     function_internal,
 };
-use utils::OwnedSlice;
 
 type ParserState = parser::ParserState<VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
@@ -71,20 +70,21 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
 }
 
 
-fn const_decl(state: &mut ParserState) -> Result<OwnedSlice<DeclarationIndex>, ParserError> {
+fn const_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserError> {
     state.consume_1(Token::Const)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
+        println!("const_decl {:?} {:?}", pattern, init);
         state.scope.declare_const(pattern, init).ok_or(ParserError::DuplicateDeclaration)
-    }, false).map(OwnedSlice::from_vec)
+    }, false)
 }
 
-fn let_decl(state: &mut ParserState) -> Result<OwnedSlice<DeclarationIndex>, ParserError> {
+fn let_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserError> {
     state.consume_1(Token::Let)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
-        state.scope.declare_let(pattern, init).ok_or(ParserError::DuplicateDeclaration)
-    }, false).map(OwnedSlice::from_vec)
+        state.scope.declare_let(&pattern, init).ok_or(ParserError::DuplicateDeclaration)
+    }, false)
 }
 
 fn function_decl(state: &mut ParserState) -> Result<DeclarationIndex, ParserError> {
@@ -128,7 +128,7 @@ pub fn block(state: &mut ParserState) -> Result<Block, ParserError> {
     Ok(Block(statements))
 }
 
-pub fn block_raw(state: &mut ParserState) -> Result<OwnedSlice<Statement>, ParserError> {
+pub fn block_raw(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {
     state.consume_1(Token::LeftBrace)?;
 
     let mut statements = vec![];
@@ -138,7 +138,7 @@ pub fn block_raw(state: &mut ParserState) -> Result<OwnedSlice<Statement>, Parse
 
     state.consume_1(Token::RightBrace)?;
 
-    Ok(OwnedSlice::from_vec(statements))
+    Ok(statements)
 }
 
 fn if_statement(state: &mut ParserState) -> Result<IfStatement, ParserError> {

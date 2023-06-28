@@ -45,6 +45,9 @@ pub fn expr(state: &mut CompilerState, expr: Expr) -> Result<(), String> {
         Expr::Variable(x) => {
             variable(state, x)
         },
+        Expr::Spread(x) => {
+            spread(state, x)
+        },
     }
 }
 
@@ -107,6 +110,7 @@ pub fn integer(state: &mut CompilerState, s: String) -> Result<(), String> {
         state.opcodes.push(((i >> 8) & 0xff) as u8);
         state.opcodes.push((i & 0xff) as u8);
     };
+    Ok(())
 }
 
 pub fn decimal(state: &mut CompilerState, s: String) -> Result<(), String> {
@@ -175,7 +179,27 @@ pub fn array(state: &mut CompilerState, arr: Array) -> Result<(), String> {
 }
 
 pub fn record(state: &mut CompilerState, data: Record) -> Result<(), String> {
-    unimplemented!()
+    for prop in data.0 {
+        match prop {
+            PropDef::KeyValue(field, value) => {
+                if let Some(static_property) = field.static_property {
+                    unimplemented!("inferred property")
+                } else {
+                    // Differs from XS SetProperty Opcode behavior, didnt understand their code
+                    state.opcodes.push(Opcode::SetProperty)?;
+                    string(state, field.dynamic_property)?;
+                    expr(state, value);
+                }
+            },
+            PropDef::Shorthand(field, var) => {
+
+            },
+            PropDef::Spread(expr) => {
+
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn arrow_func(state: &mut CompilerState, data: Function) -> Result<(), String> {
@@ -206,7 +230,7 @@ pub fn function_expr(state: &mut CompilerState, data: Function) -> Result<(), St
 
         state.cleanup_closure();
         Ok(())
-    });
+    })
 }
 
 pub fn assignment(state: &mut CompilerState, data: Assignment) -> Result<(), String> {
@@ -224,7 +248,7 @@ pub fn assignment(state: &mut CompilerState, data: Assignment) -> Result<(), Str
         LValue::Variable(var) => {
             state.reference_local(var);
         },
-    }
+    };
 
     if data.1 == AssignOp::Assign {
         expr(state, *data.2)?;
@@ -286,6 +310,8 @@ pub fn binary_expr(state: &mut CompilerState, data: BinaryExpr) -> Result<(), St
         BinaryOp::Or => logical_or(state, data.1, data.2),
         BinaryOp::Coalesce => coalesce(state, data.1, data.2),
     }
+
+    Ok(())
 }
 
 pub fn unary_expr(state: &mut CompilerState, data: UnaryExpr) -> Result<(), String> {
@@ -307,6 +333,7 @@ pub fn call_expr(state: &mut CompilerState, data: CallExpr) -> Result<(), String
     unimplemented!()
 }
 
-pub fn variable(state: &mut CompilerState, data: UseVariable) -> Result<(), String> {
-    
+pub fn variable(state: &mut CompilerState, data: VariableCell) -> Result<(), String> {
+    state.reference_local(data.get());
+    Ok(())
 }

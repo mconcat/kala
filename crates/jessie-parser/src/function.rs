@@ -14,7 +14,7 @@ use crate::{
 
     assign_or_cond_or_primary_expression,
 };
-use utils::{SharedString, OwnedSlice};
+use utils::{SharedString};
 use std::ops::Deref;
 
 type ParserState = parser::ParserState<VecToken>;
@@ -50,11 +50,7 @@ pub fn function_internal(state: &mut ParserState, name: Option<SharedString>) ->
     println!("parameter patterns {:?}", parameter_patterns[0]);
 
     let mut parameters = Vec::with_capacity(parameter_patterns.len());
-    for param in parameter_patterns {
-        println!("parameter");
-        let index = state.scope.declare_parameter(param).ok_or(ParserError::DuplicateDeclaration)?;
-        parameters.push(index);
-    }
+    state.scope.declare_parameters(parameter_patterns, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
  
     println!("parameters {:?}", parameters);
     println!("scope {:?}", state.scope);
@@ -66,11 +62,11 @@ pub fn function_internal(state: &mut ParserState, name: Option<SharedString>) ->
             let statements = block_raw(state)?;
             let (declarations, captures) = state.exit_function_scope(parent_scope);
             let func = Function {
-                declarations: OwnedSlice::from_vec(declarations),
+                declarations,
                 name,
                 statements,
                 captures,
-                parameters: OwnedSlice::from_vec(parameters),
+                parameters,
             };
             Ok(func)
         },
@@ -134,7 +130,7 @@ fn destructing_array_parameter_or_array_literal(state: &mut ParserState) -> Resu
         is_transmutable_to_param &= cover_elem.is_transmutable_to_param;
     }
 
-    Ok(CoverParameter { expr: Expr::Array(Box::new(Array(OwnedSlice::from_vec(elements)))), is_transmutable_to_param })
+    Ok(CoverParameter { expr: Expr::Array(Box::new(Array(elements))), is_transmutable_to_param })
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -240,7 +236,7 @@ fn destructing_record_parameter_or_record_literal(state: &mut ParserState) -> Re
         is_transmutable_to_param &= cover_prop.is_transmutable_to_param;
     }
 
-    Ok(CoverParameter { expr: Expr::Record(Box::new(Record(OwnedSlice::from_vec(props)))), is_transmutable_to_param })
+    Ok(CoverParameter { expr: Expr::Record(Box::new(Record(props))), is_transmutable_to_param })
 }
 
 fn assignment_or_parameter_or_optional(state: &mut ParserState) -> Result<CoverParameter, ParserError> {
@@ -282,7 +278,7 @@ fn expression_or_pattern(state: &mut ParserState) -> Result<CoverParameter, Pars
     }
 }
 
-fn arrow_function_body(state: &mut ParserState) -> Result<OwnedSlice<Statement>, ParserError> {
+pub fn arrow_function_body(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
             state.proceed();
@@ -290,7 +286,7 @@ fn arrow_function_body(state: &mut ParserState) -> Result<OwnedSlice<Statement>,
         },
         _ => {
             let expr = expression(state)?;
-            Ok(OwnedSlice::from_slice(&[Statement::Return(Box::new(expr))]))
+            Ok(vec![Statement::Return(Box::new(expr))])
         }
     }
 }
@@ -344,8 +340,8 @@ pub fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError>
         let function = Function {
             name: None,
             captures,
-            parameters: OwnedSlice::empty(),
-            declarations: OwnedSlice::from_vec(declarations),
+            parameters: vec![],
+            declarations: declarations,
             statements,
         };
 
@@ -392,10 +388,8 @@ pub fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError>
 
             let mut parameters = Vec::with_capacity(rest.len() + 1);
 
-            parameters.push(state.scope.declare_parameter(expr.into_param()).ok_or(ParserError::DuplicateDeclaration)?);
-            for param in rest {
-                parameters.push(state.scope.declare_parameter(param).ok_or(ParserError::DuplicateDeclaration)?);
-            }
+            state.scope.declare_parameter(expr.into_param(), &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
+            state.scope.declare_parameters(rest, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
 
             let statements = arrow_function_body(state)?;
             let (declarations, captures) = state.exit_function_scope(parent_scope);
@@ -403,8 +397,8 @@ pub fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError>
             let function = Function {
                 name: None,
                 captures,
-                parameters: OwnedSlice::from_vec(parameters),
-                declarations: OwnedSlice::from_vec(declarations),
+                parameters: parameters,
+                declarations: declarations,
                 statements,
             };
 
@@ -421,13 +415,14 @@ pub fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError>
 
                     let parent_scope = state.enter_function_scope(Vec::new());
 
-                    let parameters = OwnedSlice::from_slice(&[state.scope.declare_parameter(expr.into_param()).ok_or(ParserError::DuplicateDeclaration)?]);
+                    let mut parameters = Vec::with_capacity(1);
+                    state.scope.declare_parameter(expr.into_param(), &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
 
                     let statements = arrow_function_body(state)?;
 
                     let (declarations, captures) = state.exit_function_scope(parent_scope);
 
-                    let function = Function { name: None, captures, parameters, declarations: OwnedSlice::from_vec(declarations), statements };
+                    let function = Function { name: None, captures, parameters, declarations: declarations, statements };
                     
                     return Ok(Expr::ArrowFunc(Box::new(function)))
                 },

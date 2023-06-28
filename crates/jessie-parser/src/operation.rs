@@ -1,5 +1,4 @@
 use jessie_ast::*;
-use utils::OwnedSlice;
 use crate::parser;
 use crate::{
     VecToken, Token,
@@ -324,7 +323,7 @@ fn pow_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> Resul
 
 fn call_post_op(state: &mut ParserState) -> Result<CallPostOp, ParserError> {
     match state.lookahead_1() {
-        Some(Token::LeftParen) => repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &arg, true).map(|x| CallPostOp::Call(OwnedSlice::from_vec(x))),
+        Some(Token::LeftParen) => repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &arg, true).map(|x| CallPostOp::Call(x)),
         Some(Token::LeftBracket) => enclosed_element(state, Token::LeftBracket, Token::RightBracket, &expression).map(|x| CallPostOp::Index(x)),
         Some(Token::Dot) => {
             state.proceed();
@@ -349,7 +348,7 @@ pub fn call_expr_internal(state: &mut ParserState, mut expr: Expr) -> Result<(Ex
     }
 
     if !post_ops.is_empty() {
-        expr = Expr::CallExpr(Box::new(CallExpr { expr, post_ops: OwnedSlice::from_vec(post_ops) }));
+        expr = Expr::CallExpr(Box::new(CallExpr { expr, post_ops, }));
     }
 
     Ok((expr, only_member_post_op))

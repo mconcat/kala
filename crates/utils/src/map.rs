@@ -7,7 +7,7 @@ extern crate alloc;
 
 use fxhash::FxHashMap;
 
-use crate::{SharedString, OwnedSlice};
+use crate::{SharedString};
 
 // Common map trait for sorted vector and fxhashmap
 pub trait Map<V>: Sized {
@@ -17,7 +17,9 @@ pub trait Map<V>: Sized {
     fn with_capacity(capacity: usize) -> Self;
     fn get(&mut self, key: &SharedString) -> Option<&mut V>;
     fn insert(&mut self, key: &SharedString, value: V) -> Option<V>;
+    fn iter(&self) -> Self::MapIterator;
     fn drain(&mut self) -> Self::MapIterator;
+    fn clear(&mut self);
     fn len(&self) -> usize;
 }
 
@@ -48,13 +50,26 @@ impl<V: Clone> Map<V> for FxMap<V> {
         self.0.insert(key.clone(), value)
     }
 
-    fn drain(&mut self) -> Self::MapIterator {
-        let mut elements: Vec<(SharedString, V)> = self.0.drain().collect();
-        elements.sort_by_key(|(key, _)| key.clone());
+    fn iter(&self) -> Self::MapIterator {
+        let mut elements: Vec<(SharedString, V)> = self.0.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
+        elements.sort_unstable_by_key(|(key, _)| key.clone());
         HashMapIterator{
-            elements: OwnedSlice::from_vec(elements),
+            elements,
             cursor: 0,
         }
+    }
+
+    fn drain(&mut self) -> Self::MapIterator {
+        let mut elements: Vec<(SharedString, V)> = self.0.drain().collect();
+        elements.sort_unstable_by_key(|(key, _)| key.clone());
+        HashMapIterator{
+            elements,
+            cursor: 0,
+        }
+    }
+
+    fn clear(&mut self) {
+        self.0.clear()
     }
 
     fn len(&self) -> usize {
@@ -63,7 +78,7 @@ impl<V: Clone> Map<V> for FxMap<V> {
 }
 
 pub struct HashMapIterator<V>{
-    elements: OwnedSlice<(SharedString, V)>,
+    elements: Vec<(SharedString, V)>,
     cursor: usize,
 }
 
@@ -81,67 +96,152 @@ impl<V: Clone> Iterator for HashMapIterator<V> {
     }
 }
 
-pub struct VectorMap<V>{
-    keys: Vec<SharedString>,
-    values: Vec<V>,
+pub struct VectorMap<V, const limit: usize = 16>{
+    pairs: Vec<(SharedString, V)>,
 }
 
-impl<V: Clone> Map<V> for VectorMap<V> {
-    type MapIterator = VectorMapIterator<V>;
+impl<V: Debug+Clone, const limit: usize> Debug for VectorMap<V, limit> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(self.pairs.iter().map(|(k, v)| (k.clone(), v.clone()))).finish()
+    }
+}
 
-    fn new() -> Self {
-        Self{
-            keys: Vec::new(),
-            values: Vec::new(),
-        }
+impl<V, const limit: usize> VectorMap<V, limit> {
+    fn to_be_sorted(&self) -> bool {
+        self.pairs.len() > limit
     }
 
-    fn with_capacity(capacity: usize) -> Self {
-        Self{
-            keys: Vec::with_capacity(capacity),
-            values: Vec::with_capacity(capacity),
-        }
-    }
-
-    fn get(&mut self, key: &SharedString) -> Option<&mut V> {
-        match self.keys.binary_search(key) {
-            Ok(i) => Some(&mut self.values[i]),
+    fn get_sorted(&mut self, key: &SharedString) -> Option<&mut V> {
+        match self.pairs.binary_search_by_key(key, |(key, _)| key.clone()) {
+            Ok(i) => Some(&mut self.pairs[i].1),
             Err(_) => None,
         }
     }
 
-    fn insert(&mut self, key: &SharedString, value: V) -> Option<V> {
-        match self.keys.binary_search(key) {
+    fn insert_sorted(&mut self, key: &SharedString, value: V) -> Option<V> {
+        match self.pairs.binary_search_by_key(key, |(key, _)| key.clone()) {
             Ok(i) => {
-                Some(std::mem::replace(&mut self.values[i], value))
+                Some(std::mem::replace(&mut self.pairs[i].1, value))
             },
             Err(i) => {
-                self.keys.insert(i, key.clone());
-                self.values.insert(i, value);
+                self.pairs.insert(i, (key.clone(), value));
                 None
             },
         }
     }
 
-    fn drain(&mut self) -> Self::MapIterator {
-        let keys = self.keys.drain(..);
-        let values = self.values.drain(..);
+    fn drain_sorted(&mut self) -> VectorMapIterator<V> {
+        let pairs = self.pairs.drain(..).collect(); 
         
         VectorMapIterator {
-            keys: keys.collect(),
-            values: values.collect(),
+            pairs,
             cursor: 0,
         }
     }
 
+    fn get_unsorted(&mut self, key: &SharedString) -> Option<&mut V> {
+        for (i, (key, value)) in self.pairs.iter_mut().enumerate() {
+            if key == key {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    fn insert_unsorted(&mut self, key: &SharedString, new_value: V) -> Option<V> {
+        for (i, (key, value)) in self.pairs.iter_mut().enumerate() {
+            if key == key {
+                return Some(std::mem::replace(value, new_value));
+            }
+        }
+        self.pairs.push((key.clone(), new_value));
+
+        if self.to_be_sorted() {
+            self.pairs.sort_unstable_by_key(|(key, _)| key.clone());
+        }
+
+        None
+    }
+
+    fn drain_unsorted(&mut self) -> VectorMapIterator<V> {
+        let mut pairs: Vec<(SharedString, V)> = self.pairs.drain(..).collect();
+
+        pairs.sort_unstable_by_key(|(key, _)| key.clone());
+
+        VectorMapIterator {
+            pairs,
+            cursor: 0,
+        }
+    }
+}
+
+
+impl<V: Clone, const limit: usize> Map<V> for VectorMap<V, limit> {
+    type MapIterator = VectorMapIterator<V>;
+
+    fn new() -> Self {
+        Self{
+            pairs: Vec::new(),
+        }
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        Self{
+            pairs: Vec::with_capacity(capacity),
+        }
+    }
+
+    fn get(&mut self, key: &SharedString) -> Option<&mut V> {
+        if self.to_be_sorted() {
+            self.get_sorted(key)
+        } else {
+            self.get_unsorted(key)
+        } 
+    }
+
+    fn insert(&mut self, key: &SharedString, value: V) -> Option<V> {
+        if self.to_be_sorted() {
+            self.insert_sorted(key, value)
+        } else {
+            self.insert_unsorted(key, value)
+        }
+    }
+
+    fn iter(&self) -> Self::MapIterator {
+        if self.to_be_sorted() {
+            let mut elements: Vec<(SharedString, V)> = self.pairs.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
+            elements.sort_unstable_by_key(|(key, _)| key.clone());
+            VectorMapIterator{
+                pairs: elements,
+                cursor: 0,
+            }
+        } else {
+            VectorMapIterator{
+                pairs: self.pairs.clone(),
+                cursor: 0,
+            }
+        }
+    }
+
+    fn drain(&mut self) -> Self::MapIterator {
+        if self.to_be_sorted() {
+            self.drain_sorted()
+        } else {
+            self.drain_unsorted()
+        }
+    }
+
+    fn clear(&mut self) {
+        self.pairs.clear()
+    }
+
     fn len(&self) -> usize {
-        self.keys.len()
+        self.pairs.len()
     }
 }
 
 pub struct VectorMapIterator<V>{
-    keys: Vec<SharedString>,
-    values: Vec<V>,
+    pairs: Vec<(SharedString, V)>,
     cursor: usize,
 }
 
@@ -149,10 +249,10 @@ impl<V: Clone> Iterator for VectorMapIterator<V> {
     type Item = (SharedString, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cursor == self.keys.len() {
+        if self.cursor == self.pairs.len() {
             None
         } else {
-            let item = (self.keys[self.cursor].clone(), self.values[self.cursor].clone());
+            let item = self.pairs[self.cursor].clone();
             self.cursor += 1;
             Some(item)
         }
@@ -197,6 +297,14 @@ pub trait MapPool<V> {
 }
 
 pub struct VectorMapPool<V>(Vec<VectorMap<V>>);
+
+impl<V> Debug for VectorMapPool<V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HashMapPool")
+            .field("len", &self.0.len())
+            .finish()
+    }
+}
 
 impl<V: Clone> MapPool<V> for VectorMapPool<V> {
     type Map = VectorMap<V>;

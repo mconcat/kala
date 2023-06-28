@@ -1,5 +1,5 @@
 use crate::{operation::*, Function, Record, Assignment, VariableCell, VariablePointer, Field, traits::UnsafeInto, Pattern};
-use utils::{SharedString, OwnedSlice, OwnedString};
+use utils::{SharedString};
 
 // paren, function, literal, array, record, variable
 
@@ -57,7 +57,7 @@ impl UnsafeInto<Pattern> for Expr {
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
-pub struct Array(pub OwnedSlice<Expr>);
+pub struct Array(pub Vec<Expr>);
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct KeyValue {
@@ -70,11 +70,11 @@ pub enum DataLiteral {
     Null,
     False,
     True,
-    Integer(OwnedString),
-    Decimal(OwnedString),
-    String(OwnedString),
+    Integer(String),
+    Decimal(String),
+    String(String),
     Undefined,
-    Bigint(OwnedString),
+    Bigint(String),
 }
 
 
@@ -169,11 +169,11 @@ pub enum CallPostOp {
     Index(Expr) = 0,
     Member(SharedString) = 1,
     // QuasiExpr = 2
-    Call(OwnedSlice<Expr>) = 3,
+    Call(Vec<Expr>) = 3,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CallExpr {
     pub expr: Expr,
-    pub post_ops: OwnedSlice<CallPostOp>,
+    pub post_ops: Vec<CallPostOp>,
 }

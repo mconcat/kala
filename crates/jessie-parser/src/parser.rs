@@ -1,11 +1,11 @@
 use core::fmt::Debug;
 
-use jessie_ast::{Declaration, VariableCell, VariablePointer, Variable, DeclarationIndex, PropertyAccessChain};
+use jessie_ast::{VariableCell, VariablePointer, Variable, DeclarationIndex, PropertyAccessChain, LocalDeclaration, CaptureDeclaration};
 
-use crate::{scope::LexicalScope};
+use crate::{scope::LexicalScope, map::VariablePointerMap, map::VariablePointerMapPool};
 
 extern crate utils;
-use utils::{OwnedSlice, FxMap, MapPool, VectorMapPool, FxMapPool, Map};
+use utils::{FxMap, MapPool, FxMapPool, Map};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {
@@ -153,12 +153,12 @@ pub struct ParserState<T: ArrayLike+Clone+Debug+ToString> {
     pub input: T,
     pub pos: usize,
     pub scope: LexicalScope,
-    pub map_pool: FxMapPool<VariablePointer>,
+    pub map_pool: VariablePointerMapPool,
 }
 
 impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
-    pub fn new(input: T, global_declarations: Vec<Declaration>) -> Self {
-        let mut map_pool = FxMapPool::new();
+    pub fn new(input: T, global_declarations: Vec<LocalDeclaration>) -> Self {
+        let mut map_pool = VariablePointerMapPool::new();
         Self {
             input,
             pos: 0,
@@ -235,11 +235,11 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
         Ok(())
     }
 
-    pub fn enter_function_scope(&mut self, declarations: Vec<Declaration>) -> LexicalScope {
+    pub fn enter_function_scope(&mut self, declarations: Vec<LocalDeclaration>) -> LexicalScope {
         self.scope.enter_function_scope(self.map_pool.get())
     }
 
-    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> (Vec<Declaration>, OwnedSlice<DeclarationIndex>) {
+    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> (Vec<LocalDeclaration>, Vec<CaptureDeclaration>) {
         let LexicalScope{mut declarations, variables} = self.scope.exit_function_scope(parent_scope);
         let mut captures = Vec::with_capacity(variables.len());
         let mut ptrs = self.map_pool.drain(variables);
@@ -248,28 +248,26 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
             if ptr.is_uninitialized() {
                 // make a capturing declaration targeting upper scope, set the local pointer to reference it
                 let capture_cell = VariableCell::uninitialized(name.clone());
-                let decl = Declaration::Capture { name: name.clone(), variable: capture_cell.clone() };
-                let declaration_index = DeclarationIndex(declarations.len());
-                declarations.push(decl);
+                let decl = CaptureDeclaration::Local { name: name.clone(), variable: capture_cell.clone() };
+                let capture_index = DeclarationIndex::Capture(captures.len());
+                captures.push(decl);
 
                 // Set the ptr to reference the new declaration
-                ptr.set(declaration_index.clone(), PropertyAccessChain::empty()).unwrap();
+                ptr.set(capture_index.clone(), PropertyAccessChain::empty()).unwrap();
 
                 // assert equivalence
                 self.scope.assert_equivalence(&name, capture_cell.ptr);
-
-                captures.push(declaration_index)
             }
         }
 
-        (declarations, OwnedSlice::from_vec(captures))
+        (declarations, captures)
     }
 
-    pub fn enter_block_scope(&mut self) -> FxMap<VariablePointer> {
+    pub fn enter_block_scope(&mut self) -> VariablePointerMap {
         self.scope.replace_variable_map(self.map_pool.get())
     }
 
-    pub fn exit_block_scope(&mut self, parent_variables: FxMap<VariablePointer>) {
+    pub fn exit_block_scope(&mut self, parent_variables: VariablePointerMap) {
         let mut variables = self.scope.replace_variable_map(parent_variables);
         let ptrs = self.map_pool.drain(variables);
         for (name, ptr) in ptrs {

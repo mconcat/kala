@@ -1,2 +1,6 @@
-pub mod unsafe_slot;
-pub mod value;
+pub mod slot;
+pub mod number;
+pub mod impls;
+
+pub use slot::*;
+pub use impls::*;

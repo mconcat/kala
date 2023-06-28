@@ -1,5 +1,3 @@
-use utils::OwnedSlice;
-
 use crate::{Expr, ExprDiscriminant, VariableCell, Record, PropDefDiscriminant, Field, AssignOp, LValue, traits::{UnsafeInto}};
 
 // Pattern is a subset of Expr
@@ -44,12 +42,12 @@ pub enum LValueOptional {
 // ArrayPattern is a subset of Expr::Array
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
-pub struct ArrayPattern(pub OwnedSlice<Pattern>);
+pub struct ArrayPattern(pub Vec<Pattern>);
 
 // RecordPattern is a subset of Expr::Record
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)]
-pub struct RecordPattern(pub OwnedSlice<PropParam>);
+pub struct RecordPattern(pub Vec<PropParam>);
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]

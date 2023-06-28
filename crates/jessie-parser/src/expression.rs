@@ -1,5 +1,5 @@
 use jessie_ast::*;
-use crate::{parser, prop_def_or_prop_param, CoverProperty};
+use crate::{parser, prop_def_or_prop_param, CoverProperty, arrow_function_body};
 use crate::{
     VecToken, Token,
 
@@ -15,7 +15,6 @@ use crate::{
 
     use_variable,
 };
-use utils::OwnedSlice;
 
 type ParserState = parser::ParserState<VecToken>;
 type ParserError = parser::ParserError<Option<Token>>;
@@ -139,6 +138,12 @@ pub fn assign_or_cond_or_primary_expression(state: &mut ParserState) -> Result<E
             // otherwise, continue
         },
         Expr::Variable(_) => {
+            /* 
+            if state.try_proceed(Token::FatArrow) {
+                let statements = arrow_function_body(state)?;
+                return Ok(Expr::ArrowFunc(Box::new(Function { params: vec![expr], statements })))
+            }
+            */
             // variable could be either an assignment or a condexpr.
             // continue
         },
@@ -253,7 +258,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
 }
 pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
     let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &mut element, true)?;
-    Ok(Array(OwnedSlice::from_vec(elements)))
+    Ok(Array(elements))
 }
 
 pub fn element(state: &mut ParserState) -> Result<Expr, ParserError> {
@@ -272,7 +277,7 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
 
 pub fn record(state: &mut ParserState) -> Result<Record, ParserError> {
     let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &mut prop_def, true)?;
-    Ok(Record(OwnedSlice::from_vec(props)))
+    Ok(Record(props))
 }
 /* 
 pub fn pure_prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {

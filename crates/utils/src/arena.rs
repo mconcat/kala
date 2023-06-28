@@ -1,7 +1,8 @@
-use std::alloc::{alloc, dealloc, Layout, Allocator};
+use std::alloc::{alloc, dealloc, Layout, Allocator, AllocError};
 use std::collections::LinkedList;
-use std::marker::PhantomData;
-use std::mem::size_of;
+use std::mem::{size_of, ManuallyDrop};
+use std::ptr::NonNull;
+use std::cell::Cell;
 
 pub const BLOCK_SIZE_BITS_1K: usize = 10;
 pub const BLOCK_SIZE_1K: usize = (1 << BLOCK_SIZE_BITS_1K) / size_of::<usize>();
@@ -29,7 +30,7 @@ fn align_size(byte_size: usize) -> usize {
 fn align_size(byte_size: usize) -> usize {
     ((byte_size - 1) >> 3) + 1
 }
-
+/* 
 #[derive(Debug)]
 pub struct Box<T: Sized> {
     ptr: *const usize,
@@ -45,28 +46,25 @@ impl<T: Sized> Box<T> {
         unsafe { &mut *(self.ptr as *mut T) }
     }
 }
-
-#[derive(Debug)]
-pub enum AllocError {
-    OutOfMemory,
-}
-
+*/
 #[derive(Debug)]
 pub struct Arena<const BlockSize: usize> {
-    list: LinkedList<BumpBlock<BlockSize>>
+    list: Cell<NonNull<LinkedList<BumpBlock<BlockSize>>>>
 }
 
 impl<const BlockSize: usize> Arena<BlockSize> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let mut list = LinkedList::new();
         list.push_front(BumpBlock::new());
         Self {
-            list,
+            list: Cell::new(NonNull::new(&mut list as *mut LinkedList<BumpBlock<BlockSize>>).unwrap()),
         }
     }
+}
 
-    pub fn allocate<T: Sized>(&mut self, data: T) -> Result<Box<T>, AllocError> {
-        let alloc_size = align_size(size_of::<T>());
+unsafe impl<const BlockSize: usize> Allocator for Arena<BlockSize> {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        let alloc_size = align_size(layout.size());
         let block = self.list.front_mut().unwrap();
         let alloc = block.inner_alloc(alloc_size);
 
@@ -78,15 +76,13 @@ impl<const BlockSize: usize> Arena<BlockSize> {
             self.list.push_front(block);
             ptr
         };
+        
+        Ok(NonNull::from(unsafe{std::slice::from_raw_parts_mut(ptr as *mut u8, layout.size())}))
+    }
 
-        unsafe {
-            *(ptr as *mut T) = data;
-        }
-
-        Ok(Box {
-            ptr,
-            phantom: PhantomData,
-        })
+    unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: Layout) {
+        // Arena doesn't deallocate
+        return
     }
 }
 
