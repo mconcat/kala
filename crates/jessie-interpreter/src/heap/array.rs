@@ -1,5 +1,3 @@
-use crate::{memory::memory::Pointer, slot::Slot};
-
 pub struct Array {
     arr: Pointer<[Slot]>
 }

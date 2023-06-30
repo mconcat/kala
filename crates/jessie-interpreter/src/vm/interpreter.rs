@@ -3,7 +3,7 @@ use std::mem::MaybeUninit;
 use jessie_ast::*;
 use utils::{FxMap, FxMapPool};
 
-use crate::{vm::opcode::Opcode, slot::{Slot, SlotTag, number::{bound_i32, promote_i64, promote_i32}}, memory::memory::Memory, types::number::Number};
+use crate::{vm::opcode::Opcode, stack::{Slot, SlotTag, TypedSlot}, memory::memory::Memory, heap::number::Number};
 
 // Interpreter exeuctes a single script. 
 pub struct Interpreter {
@@ -11,12 +11,14 @@ pub struct Interpreter {
     code: Vec<Opcode>,
     pc: usize,
     fp: usize,
-
-    memory: Memory,
     // map_pool: FxMapPool<Slot>, // meaningless for now as we don't deallocate
 }
 
 impl Interpreter {
+    pub fn push_stack<T: Into<Slot>>(&mut self, value: T) {
+        self.stack.push(value.into());
+    }
+    
     pub fn const_read_bytes_from_code<const count: usize>(&mut self) -> &[u8; count] {
         let offset = self.pc;
         self.pc += count;
@@ -67,6 +69,20 @@ impl Interpreter {
         unsafe{&*(self.stack.as_ptr().add(offset) as *const [Slot; count])}
     }
 
+    pub fn const_pop_typed_slots_from_stack<const count: usize>(&mut self) -> &[TypedSlot; count] {
+        if count > self.stack.len() {
+            panic!("out of bounds");
+        }
+        let offset = self.stack.len() - count;
+        unsafe{self.stack.set_len(offset)};
+        let slots = unsafe{&*(self.stack.as_ptr().add(offset) as *const [Slot; count])};
+        let mut result = MaybeUninit::<[TypedSlot; count]>::uninit();
+        for (i, slot) in slots.iter().enumerate() {
+            result[i] = slot.into_typed()
+        }
+        result
+    }
+
     pub fn pop_slots_from_stack(&mut self, count: usize) -> &[Slot] {
         if count > self.stack.len() {
             panic!("out of bounds");
@@ -74,195 +90,6 @@ impl Interpreter {
         let offset = self.stack.len() - count;
         unsafe{self.stack.set_len(offset)};
         unsafe{std::mem::transmute(&self.stack[offset..self.stack.len()])}
-    }
-
-    unsafe fn op_binary_number(&mut self, a: Slot, b: Slot, i32op: fn(i32, i32) -> i64, numop: fn(&Number, &Number) -> (Number, bool)) -> Slot {
-        let a_ptr = a.get_number_pointer();
-        let b_ptr = b.get_number_pointer();
-        if a_ptr.is_null() && b_ptr.is_null() {
-            let res = i32op(a.value, b.value);
-            if bound_i32(res) {
-                return Slot::new_i32(res as i32);
-            }
-            let res_ptr = self.memory.allocate_number(promote_i64(res));
-            return Slot::new_number(res_ptr);
-        }
-
-        let a = if a_ptr.is_null() {
-            promote_i32(a.value)
-        } else {
-            *a_ptr
-        };
-
-        let b = if b_ptr.is_null() {
-            promote_i32(b.value)
-        } else {
-            *b_ptr
-        };
-
-        let (res, overflow) = numop(a, b);
-        if !overflow {
-            return Slot::new_number(self.memory.allocate_number(res));
-        }
-
-        if res.0 < 0 {
-            // overflow
-            unimplemented!("Infinity")
-        } else {
-            // underflow
-            unimplemented!("-Infinity")
-        }
-    }
-
-    unsafe fn op_binary_bigint<'a>(&mut self, a: Slot, b: Slot, i32op: fn(i32, i32) -> i64, numop: fn(i32, &'a [u64], i32, &'a [u64]) -> (i32, &'a [u64])) -> Slot {
-        let a_ptr = a.get_bigint_pointer();
-        let b_ptr = b.get_bigint_pointer();
-        if a_ptr.is_null() && b_ptr.is_null() {
-            let res = i32op(a.value, b.value);
-            if bound_i32(res) {
-                return Slot::new_b32(res as i32);
-            }
-            let res_ptr = self.memory.allocate_bigint(&[res.abs()]);
-            return Slot::new_bigint(res.signum() as i32, res_ptr);
-        }
-
-        let a_abs = if a_ptr.is_null() {
-            &[a.value.abs() as u64][..]
-        } else {
-            &*a_ptr
-        };
-
-        let b_abs = if b_ptr.is_null() {
-            &[b.value.abs() as u64][..]
-        } else {
-            &*b_ptr
-        };
-
-        let (sign, abs) = numop(a.value.signum(), a_abs, b.value.signum(), b_abs);
-
-        let ptr = self.memory.allocate_bigint(abs);
-        Slot::new_bigint(sign * abs.len() as i32, ptr)
-    }
-
-    unsafe fn op_comp_number(&mut self, a: Slot, b: Slot, i32op: fn(i32, i32) -> bool, numop: fn(i128, i128) -> bool) -> Slot {
-        let a_ptr = a.get_number_pointer();
-        let b_ptr = b.get_number_pointer();
-        if a_ptr.is_null() && b_ptr.is_null() {
-            return Slot::new_bool(i32op(a.value, b.value));
-        }
-
-        let a = if a_ptr.is_null() {
-            promote_i32(a.value)
-        } else {
-            *a_ptr
-        };
-
-        let b = if b_ptr.is_null() {
-            promote_i32(b.value)
-        } else {
-            *b_ptr
-        };
-
-        Slot::new_bool(numop(a, b))
-    }
-
-    unsafe fn op_comp_bigint(&mut self, a: Slot, b: Slot, i32op: fn(i32, i32) -> bool, numop: fn(i32, &[u64], i32, &[u64]) -> bool) -> Slot {
-        let a_ptr = a.get_bigint_pointer();
-        let b_ptr = b.get_bigint_pointer();
-        if a_ptr.is_null() && b_ptr.is_null() {
-            return Slot::new_bool(i32op(a.value, b.value));
-        }
-
-        let a_abs = if a_ptr.is_null() {
-            &[a.value.abs() as u64][..]
-        } else {
-            &*a_ptr
-        };
-
-        let b_abs = if b_ptr.is_null() {
-            &[b.value.abs() as u64][..]
-        } else {
-            &*b_ptr
-        };
-
-        Slot::new_bool(numop(a.value.signum(), a_abs, b.value.signum(), b_abs))
-    }
-
-    unsafe fn op_add_number(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_binary_number(a, b, |a, b| (a as i64 + b as i64), Number::overflowing_add)
-    }
-
-    unsafe fn op_add_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_binary_bigint(a, b, |a, b| (a as i64 + b as i64), |a, b, c, d| (a + c, b))
-    }
-
-    unsafe fn op_sub_number(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_binary_number(a, b, |a, b| (a as i64 - b as i64), |a, b| a.overflowing_sub(b))
-    }
-
-    unsafe fn op_sub_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_binary_bigint(a, b, |a, b| (a as i64 - b as i64), |a, b, c, d| (a - c, b))
-    }
-
-    unsafe fn op_mul_number(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_binary_number(a, b, |a, b| (a as i64 * b as i64), |a, b| a.overflowing_mul(b))
-    }
-
-    unsafe fn op_mul_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_binary_bigint(a, b, |a, b| (a as i64 * b as i64), |a, b, c, d| (a * c, b))
-    }
-
-    unsafe fn op_div_number(&mut self, a: Slot, b: Slot) -> Slot {
-        unimplemented!("tricky")
-    }
-    
-    unsafe fn op_div_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        unimplemented!("tricky")
-    }
-
-    unsafe fn op_mod_number(&mut self, a: Slot, b: Slot) -> Slot {
-        unimplemented!("tricky")
-    }
-
-    unsafe fn op_mod_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        unimplemented!("tricky")
-    }
-
-    // TODO: revisit the entier comparison functions later
-
-    unsafe fn op_less_number(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_comp_number(a, b, |a, b| a < b, |a, b| a < b)
-    }
-
-    unsafe fn op_less_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        // TODO: copilot wrote, b and d might be little endian order,
-        // but the comparison operator < might be in big endian order.
-        // check both later
-        self.op_comp_bigint(a, b, |a, b| a < b, |a, b, c, d| a < c || (a == c && b < d))
-    }
-
-    unsafe fn op_less_equal_number(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_comp_number(a, b, |a, b| a <= b, |a, b| a <= b)
-    }
-
-    unsafe fn op_less_equal_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_comp_bigint(a, b, |a, b| a <= b, |a, b, c, d| a < c || (a == c && b <= d))
-    }
-
-    unsafe fn op_greater_number(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_comp_number(a, b, |a, b| a > b, |a, b| a > b)
-    }
-
-    unsafe fn op_greater_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_comp_bigint(a, b, |a, b| a > b, |a, b, c, d| a > c || (a == c && b > d))
-    }
-
-    unsafe fn op_greater_equal_number(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_comp_number(a, b, |a, b| a >= b, |a, b| a >= b)
-    }
-
-    unsafe fn op_greater_equal_bigint(&mut self, a: Slot, b: Slot) -> Slot {
-        self.op_comp_bigint(a, b, |a, b| a >= b, |a, b, c, d| a > c || (a == c && b >= d))
     }
 
     unsafe fn coerce_number_to_bigint(&mut self, a: Slot) -> Slot {
@@ -277,7 +104,6 @@ impl Interpreter {
         Slot::new_bigint(i64::from_le_bytes(buf))
     }
 
-
     pub fn eval_opcode(&mut self) {
         let op = self.code[self.pc];
         self.pc += 1;
@@ -288,30 +114,30 @@ impl Interpreter {
             Opcode::Null => self.stack.push(Slot::new_null()),
             Opcode::Integer1 => {
                 let bytes = self.const_read_bytes_from_code::<1>();
-                self.stack.push(Slot::new_i32(i8::from_le_bytes(*bytes) as i32));
+                self.stack.push(Slot::new_number_inline(i8::from_le_bytes(*bytes) as i32));
             },
             Opcode::Integer2 => {
                 let bytes = self.const_read_bytes_from_code::<2>();
-                self.stack.push(Slot::new_i32(i16::from_le_bytes(*bytes) as i32));
+                self.stack.push(Slot::new_number_inline(i16::from_le_bytes(*bytes) as i32));
             },
             Opcode::Integer4 => {
                 let bytes = self.const_read_bytes_from_code::<4>();
-                self.stack.push(Slot::new_i32(i32::from_le_bytes(*bytes)));
+                self.stack.push(Slot::new_number_inline(i32::from_le_bytes(*bytes)));
             },
             Opcode::Number => {
                 unimplemented!("Number")
             },
             Opcode::Bigint1 => {
                 let bytes = self.const_read_bytes_from_code::<1>();
-                self.stack.push(Slot::new_b32(self.code[self.pc+1] as i32));
+                self.stack.push(Slot::new_bigint_inline(self.code[self.pc+1] as i32));
             },
             Opcode::Bigint2 => {
                 let mut bytes = self.const_read_bytes_from_code::<2>();
-                self.stack.push(Slot::new_b32(i16::from_le_bytes(*bytes) as i32));
+                self.stack.push(Slot::new_bigint_inline(i16::from_le_bytes(*bytes) as i32));
             },
             Opcode::Bigint4 => {
                 let mut bytes = self.const_read_bytes_from_code::<4>(); 
-                self.stack.push(Slot::new_b32(i32::from_le_bytes(*bytes)));
+                self.stack.push(Slot::new_bigint_inline(i32::from_le_bytes(*bytes)));
             },
             Opcode::Bigint => {
                 unimplemented!("Bigint")
@@ -347,58 +173,33 @@ impl Interpreter {
                 
             },
             Opcode::Add => {   
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                match (a.tag(), b.tag()) {
-                    (SlotTag::Number, SlotTag::Number) => {
-                        self.stack.push(unsafe { self.op_add_number(a, b) });
-                    },
-                    (SlotTag::Bigint, SlotTag::Bigint) => {
-                        self.stack.push(unsafe { self.op_add_bigint(a, b) });
-                    },
-                    (SlotTag::String, SlotTag::String) => {
-                        // DIVERGENCE: ecmascript allows string concatenation
-                        self.throw_type_error("cannot add strings");
-                    },
-                    (SlotTag::Number, SlotTag::Bigint) | (SlotTag::Bigint, SlotTag::Number) => {
-                        self.throw_type_error("cannot add number and bigint");
-                    },
-                    _ => {
-                        self.throw_type_error("cannot add");
-                    }
+                let [b, a] = self.const_pop_typed_slots_from_stack::<2>();
+
+                match (a, b) {
+                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a+b),
+                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a+b),
+                    // DIVERGENCE: ecmascript allows string concatenation
+                    (TypedSlot::String(a), TypedSlot::String(b)) => self.throw_type_error("cannot add strings"),
+                    (TypedSlot::Number(_), TypedSlot::Bigint(_)) | (TypedSlot::Bigint(_), TypedSlot::Number(_)) => self.throw_type_error("cannot add number and bigint"),
+                    _ => self.throw_type_error("cannot add"),
                 }
             },
             Opcode::Sub => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                match (a.tag(), b.tag()) {
-                    (SlotTag::Number, SlotTag::Number) => {
-                        self.stack.push(unsafe { self.op_sub_number(a, b) });
-                    },
-                    (SlotTag::Bigint, SlotTag::Bigint) => {
-                        self.stack.push(unsafe { self.op_sub_bigint(a, b) });
-                    },
-                    (SlotTag::Number, SlotTag::Bigint) | (SlotTag::Bigint, SlotTag::Number) => {
-                        self.throw_type_error("cannot sub number and bigint");
-                    },
-                    _ => {
-                        self.throw_type_error("cannot sub");
-                    }
+                let [b, a] = self.const_pop_typed_slots_from_stack::<2>();
+                match (a, b) {
+                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a-b),
+                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a-b),
+                    (TypedSlot::Number(_), TypedSlot::Bigint(_)) | (TypedSlot::Bigint(_), TypedSlot::Number(_)) => self.throw_type_error("cannot sub number and bigint"),
+                    _ => self.throw_type_error("cannot sub"),
                 }
             },
             Opcode::Mul => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                match (a.tag(), b.tag()) {
-                    (SlotTag::Number, SlotTag::Number) => {
-                        self.stack.push(unsafe { self.op_mul_number(a, b) });
-                    },
-                    (SlotTag::Bigint, SlotTag::Bigint) => {
-                        self.stack.push(unsafe { self.op_mul_bigint(a, b) });
-                    },
-                    (SlotTag::Number, SlotTag::Bigint) | (SlotTag::Bigint, SlotTag::Number) => {
-                        self.throw_type_error("cannot mul number and bigint");
-                    },
-                    _ => {
-                        self.throw_type_error("cannot mul");
-                    }
+                let [b, a] = self.const_pop_typed_slots_from_stack::<2>();
+                match (a, b) {
+                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a*b),
+                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a*b),
+                    (TypedSlot::Number(_), TypedSlot::Bigint(_)) | (TypedSlot::Bigint(_), TypedSlot::Number(_)) => self.throw_type_error("cannot mul number and bigint"),
+                    _ => self.throw_type_error("cannot mul"),
                 }
             },
             Opcode::Div => {
