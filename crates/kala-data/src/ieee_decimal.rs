@@ -163,7 +163,7 @@ impl Decimal64 {
             0b0000 => {
                 let biased_exponent = self.exponent_direct();
                 let mantissa = self.mantissa_direct();
-                let class = match exponent {
+                let class = match biased_exponent {
                     0 => match mantissa {
                         0 => if sign { NumberClass::NegativeZero } else { NumberClass::PositiveZero },
                         _ => if sign { NumberClass::NegativeSubnormal } else { NumberClass::PositiveSubnormal },
@@ -183,16 +183,16 @@ impl Decimal64 {
             0b1001 |
             0b1010 |
             0b1011 => {
-                let exponent = self.exponent_direct();
+                let biased_exponent = self.exponent_direct();
                 let mantissa = self.mantissa_direct();
                 (biased_exponent, mantissa, if sign { NumberClass::NegativeNormal } else { NumberClass::PositiveNormal })
             },
             0b1100 |
             0b1101 |
             0b1110 => {
-                let exponent = self.exponent_extended();
+                let biased_exponent = self.exponent_extended();
                 let mantissa = self.mantissa_extended();
-                let class = match exponent {
+                let class = match biased_exponent {
                     0 => if sign { NumberClass::NegativeSubnormal } else { NumberClass::PositiveSubnormal },
                     _ => if sign { NumberClass::NegativeNormal } else { NumberClass::PositiveNormal },
                 };
@@ -244,7 +244,7 @@ impl Add<Self> for Decimal64 {
                 };
 
                 // 2. add the mantissa of the smaller number to the mantissa of the larger number
-                let denormal_mantissa = a_mantissa + b_mantissa
+                let denormal_mantissa = a_mantissa + b_mantissa;
 
                 // 3. normalize the result
                 let (normalized_exponent, normalized_mantissa) = Self::normalize(denormal_exponent, denormal_mantissa);
@@ -260,7 +260,7 @@ impl Add<Self> for Decimal64 {
 }
 
 impl Neg<Self> for Decimal64 {
-    fn neg(self) -> Self {
+    fn neg(mut self) -> Self {
         if self.is_exotic() {
             return self;
         }
@@ -391,4 +391,8 @@ impl Div<Self> for Decimal64 {
                     let shift = b_biased_exponent - a_biased_exponent;
                     a_mantissa = Self::divide_by_tens_power(a_mantissa, shift);
                     b_biased_exponent
-                }
+                };
+            }
+        }
+    }
+}

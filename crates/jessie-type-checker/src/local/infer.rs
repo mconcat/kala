@@ -1,7 +1,7 @@
 // Local row type inference without subtype relation
 // We assume that subtype usage mostly happens in between different function calls.
 
-use jessie_ast::{Function, Statement};
+use jessie_ast::{Function, Statement, Expr};
 
 pub struct InferenceState {
 
@@ -9,7 +9,7 @@ pub struct InferenceState {
 
 pub fn infer_top_level_function(state: &mut InferenceState, function: &Function) {
     for statement in function.statements {
-        infer_statement(state, statement);
+        infer_statement(state, &statement);
     }
 }
 
