@@ -121,7 +121,7 @@ pub fn infer_function_expr(state: &mut InferenceState, x: &Box<Function>, ty: &m
             }
             Statement::Block(s) => {
                 let block_parent = state.enter_block_scope();
-                infer_block(state, s.statements)
+                infer_block(state, s.statements);
                 state.exit_block_scope(block_parent);
             }
             Statement::IfStatement(s) => {
@@ -151,7 +151,7 @@ pub fn infer_function_expr(state: &mut InferenceState, x: &Box<Function>, ty: &m
     Ok(())
 }
 
-pub fn infer_function_body_statement(state: &mut InferenceState, x: &Statement)
+pub fn infer_function_body_statement(state: &mut InferenceState, x: &Statement);
 
 pub fn infer_assginment(state: &mut InferenceState, x: &Box<Assignment>, ty: &mut Option<BoundType>) -> Result<(), String> {
 

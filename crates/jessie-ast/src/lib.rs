@@ -1,5 +1,3 @@
-#![feature(once_cell)]
-
 pub mod operation;
 pub mod expression;
 pub mod statement;
