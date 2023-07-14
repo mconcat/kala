@@ -1,16 +1,19 @@
 use std::mem::MaybeUninit;
 
-use jessie_ast::*;
-use utils::{FxMap, FxMapPool};
+use crate::{vm::opcode::Opcode, stack::{Slot, SlotTag, TypedSlot}};
 
-use crate::{vm::opcode::Opcode, stack::{Slot, SlotTag, TypedSlot}, memory::memory::Memory, heap::number::Number};
-
+// TODO: migrate to register machine
 // Interpreter exeuctes a single script. 
 pub struct Interpreter {
     stack: Vec<Slot>,
     code: Vec<Opcode>,
-    pc: usize,
-    fp: usize,
+
+    ra: usize, // return address, caller saved
+    sp: usize, // stack pointer, callee saved
+    fp: usize, // frame pointer, callee saved
+
+    pc: usize, // program counter
+
     // map_pool: FxMapPool<Slot>, // meaningless for now as we don't deallocate
 }
 
@@ -96,7 +99,7 @@ impl Interpreter {
         let a_ptr = a.get_number_pointer();
         if a_ptr.is_null() {
             return Slot::new_bigint(a.value as i64)
-        } 
+        }
         
         let a_value = &*a_ptr;
         let mut buf = [0u8; 8];
@@ -284,6 +287,7 @@ impl Interpreter {
                 self.stack.push(!a);
             },
             Opcode::Call => {
+                // 
             },
             Opcode::Branch1 => {
                 let offset = self.const_read_bytes_from_code::<1>()[0] as usize;
@@ -327,7 +331,7 @@ impl Interpreter {
             Opcode::BranchElse1 => {
                 let a = self.stack.pop().unwrap();
                 if a.is_falsy() {
-                    let offset = i32::from_le_bytes(*self.const_read_bytes_from_code::<4>());
+                    let offset = i8::from_le_bytes(*self.const_read_bytes_from_code::<1>());
                     self.pc += offset;
                     return
                 } 
@@ -335,7 +339,7 @@ impl Interpreter {
             Opcode::BranchElse2 => {
                 let a = self.stack.pop().unwrap();
                 if a.is_falsy() {
-                    let offset = i32::from_le_bytes(*self.const_read_bytes_from_code::<4>());
+                    let offset = i16::from_le_bytes(*self.const_read_bytes_from_code::<2>());
                     self.pc += offset;
                     return
                 }
@@ -356,6 +360,7 @@ impl Interpreter {
                 self.stack.push(a);
             },
             Opcode::DupAt => {
+                let offset = self.const_read_bytes_from_code::<1>();
                 let a = self.stack[self.stack.len() - 1 - self.code[self.pc] as usize];
                 self.stack.push(a);
             },
@@ -366,12 +371,12 @@ impl Interpreter {
                 std::mem::swap(&mut self.stack[self.stack.len() - 1], &mut self.stack[self.stack.len() - 2]);
             },
             Opcode::ConstLocal1 => {
-                let index = self.code[self.pc+1] as usize;
+                let index = self.const_read_bytes_from_code::<1>()[0];
+
                 self.stack.push(self.locals[index]);
                 self.pc += 1;
             },
             Opcode::LetLocal1 => {
-                
             },
             Opcode::GetLocal1 => {
 

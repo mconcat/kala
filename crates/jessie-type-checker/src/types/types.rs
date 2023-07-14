@@ -4,6 +4,7 @@ pub enum Type {
     String,
     Boolean,
     Undefined,
+    Null,
 
     Function {
         type_parameters: Vec<String>,

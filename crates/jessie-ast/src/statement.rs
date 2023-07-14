@@ -5,9 +5,9 @@ use crate::{expression::Expr, DeclarationIndex};
 pub enum Statement {
     // The actual declaration is stored in the innermost function. DeclarationIndicies point to them.
     // When encountered, declaration statements initializes the variable to undefined, or with init value.
-    LocalDeclaration(Vec<DeclarationIndex>),
-    FunctionDeclaration(DeclarationIndex),
-    Block(Block),
+    LocalDeclaration(Box<Vec<usize>>),
+    FunctionDeclaration(usize),
+    Block(Box<Block>),
     IfStatement(Box<IfStatement>),
     // ForStatement(ForStatement),
     WhileStatement(Box<WhileStatement>),
@@ -36,7 +36,6 @@ pub struct IfStatement {
     pub consequent: Block,
     pub alternate: ElseArm,
 }
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ElseArm {

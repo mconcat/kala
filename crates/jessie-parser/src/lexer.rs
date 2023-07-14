@@ -62,11 +62,74 @@ impl ArrayLike for VecToken {
     }
 }
 
-type Lexer = ParserState<Str>;
+pub struct Lexer {
+    state: ParserState<Str>,
+    parenthesize_stack: Vec<ParenthesisIndex>,
+}
+
+impl Lexer {
+    pub fn new(input: Str) -> Self {
+        Lexer {
+            state: ParserState::new(input, vec![]),
+            parenthesize_stack: Vec::new(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.state.is_empty()
+    }
+
+    pub fn lookahead_1(&self) -> Option<char> {
+        self.state.lookahead_1()
+    }
+
+    pub fn lookahead_2(&self) -> Option<char> {
+        self.state.lookahead_2()
+    }
+
+    pub fn lookahead_3(&self) -> Option<char> {
+        self.state.lookahead_3()
+    }
+
+    pub fn lookahead_4(&self) -> Option<char> {
+        self.state.lookahead_4()
+    }
+
+    pub fn lookahead_n(&self, n: usize) -> Option<char> {
+        self.state.lookahead_n(n)
+    }
+
+    pub fn proceed_with(&mut self, token: Token) -> Token {
+        self.state.proceed_with(token)
+    }
+
+    pub fn proceed(&mut self) -> Option<char> {
+        self.state.proceed()
+    }
+
+    pub fn consume(&mut self, token: Str) -> Result<(), String> {
+        self.state.consume(token)
+    }
+    
+    pub fn open_paren(&mut self, index: usize) {
+        self.parenthesize_stack.push(ParenthesisIndex(index));
+    }
+
+    pub fn close_paren(&mut self) -> Result<usize, String> {
+        match self.parenthesize_stack.pop() {
+            Some(ParenthesisIndex(index)) => Ok(index),
+            _ => Err("Parenthesis mismatch".to_string()),
+        }
+    }
+}
+
+pub struct ParenthesisIndex(usize);
 
 // Valid jessie tokens
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    EOF,
+
     // Keyword
     Break,
     Case,
@@ -156,6 +219,12 @@ pub enum Token {
     AsteriskEqual, // *=
     SlashEqual, // /=
     PercentEqual, // %=
+    BarEqual, // |=
+    AmpersandEqual, // &=
+    CaretEqual, // ^=
+    LAngleLAngleEqual, // <<=
+    RAngleRAngleEqual, // >>=
+    RAngleRAngleRAngleEqual, // >>>=
     // TODO: Add more assignment operators
     // Unary
     TypeOf, // typeof
@@ -164,6 +233,8 @@ pub enum Token {
     // Punctuation
     LeftParen, // (
     RightParen, // )
+    ArrowLeftParen, // (, followed by =>
+    ArrowRightParen, // ), followed by =>
     LeftBrace, // {
     RightBrace, // }
     LeftBracket, // [
@@ -183,16 +254,18 @@ pub enum Token {
     // Literals
     Undefined,
     Identifier(SharedString),
-    String(String),
-    Integer(String),
-    Decimal(String),
-    Bigint(String),
+    String(SharedString),
+    Integer(SharedString),
+    Decimal(SharedString),
+    Bigint(SharedString),
 
     // ????
     Instanceof,
     Require,
     Static,
+
 }
+
 
 #[inline]
 fn given_keyword_or_ident(lexer: &mut Lexer, keyword: &'static str, token: Token) -> Result<Token, String> {
@@ -410,190 +483,262 @@ fn keyword_or_ident(lexer: &mut Lexer) -> Result<Token, String> {
     }
 }
 
-pub fn lex(lexer: &mut Lexer) -> Result<Vec<Token>, String> {
-    let mut result = vec![];
+pub fn lex_jessie(input: String) -> Result<Vec<Token>, String> {
+    let mut result = Vec::new();
+    let mut lexer = Lexer::new(Str(input));
+    lex(&mut lexer, &mut result)?;
+    Ok(result)
+}
 
-    while !lexer.is_empty() {
-        match lexer.lookahead_1() {
-            Some('a'..='z') => result.push(keyword_or_ident(lexer)?),
-            Some('A'..='Z'|'_') => result.push(ident(lexer)?),
-            Some('0'..='9') => result.push(parse_number_or_bigint(lexer)?),
-            Some('"'|'\'') => result.push(parse_string(lexer)?),
-            // Punctuation
-            Some('(') => result.push(lexer.proceed_with(Token::LeftParen)),
-            Some(')') => result.push(lexer.proceed_with(Token::RightParen)),
-            Some('{') => result.push(lexer.proceed_with(Token::LeftBrace)),
-            Some('}') => result.push(lexer.proceed_with(Token::RightBrace)),
-            Some('[') => result.push(lexer.proceed_with(Token::LeftBracket)),
-            Some(']') => result.push(lexer.proceed_with(Token::RightBracket)),
-            Some(',') => result.push(lexer.proceed_with(Token::Comma)),
-            Some('.') => {
-                if lexer.lookahead_2() == Some('.') && lexer.lookahead_3() == Some('.') {
-                    lexer.proceed();
-                    lexer.proceed();
-                    lexer.proceed();
-                    result.push(Token::DotDotDot);
-                } else {
-                    result.push(lexer.proceed_with(Token::Dot));
-                }
-            },
-            Some(':') => result.push(lexer.proceed_with(Token::Colon)),
-            Some(';') => result.push(lexer.proceed_with(Token::Semicolon)),
-            Some('?') => result.push(lexer.proceed_with(Token::Question)),
-            Some('`') => result.push(lexer.proceed_with(Token::QuasiQuote)),
-            Some('$') => result.push(lexer.proceed_with(Token::Dollar)),
-            Some('/') => {
-                if lexer.lookahead_2() == Some('/') {
-                    lexer.proceed();
-                    lexer.proceed();
-                    result.push(Token::DoubleSlash);
-                } else if lexer.lookahead_2() == Some('*') {
-                    lexer.proceed();
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::SlashAsterisk));
-                    enter_block_comment(lexer, &mut result);
-                } else {
-                    if lexer.lookahead_2() == Some('=') {
-                        lexer.proceed();
-                        lexer.proceed();
-                        result.push(Token::SlashEqual);
-                    } else {
-                        result.push(lexer.proceed_with(Token::Slash));
-                    }
-                }
-            },
-            // Operators
-            Some('+') => {
-                if lexer.lookahead_2() == Some('+') {
-                    return Err("Increment operator not supported yet".to_string());
-                } else if lexer.lookahead_2() == Some('=') {
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::PlusEqual));
-                } else {
-                    result.push(lexer.proceed_with(Token::Plus));
-                }
-            },            
-            Some('-') => {
-                if lexer.lookahead_2() == Some('-') {
-                    return Err("Decrement operator not supported yet".to_string());
-                } else if lexer.lookahead_2() == Some('=') {
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::MinusEqual));
-                } else {
-                    result.push(lexer.proceed_with(Token::Minus));
-                }
-            },
-            Some('*') => {
-                if lexer.lookahead_2() == Some('=') {
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::AsteriskEqual));
-                } else if lexer.lookahead_2() == Some('*') {
-                    lexer.proceed();
-                    if lexer.lookahead_3() == Some('=') {
-                        return Err("Exponentiation assignment operator not supported yet".to_string())
-                        // lexer.proceed();
-                        // result.push(lexer.proceed_with(Token::AsteriskAsteriskEqual);
-                    } else {
-                        result.push(lexer.proceed_with(Token::AsteriskAsterisk));
-                    }
-                } else {
-                    result.push(lexer.proceed_with(Token::Asterisk));
-                }
-            },
-            Some('%') => {
-                if lexer.lookahead_2() == Some('=') {
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::PercentEqual));
-                } else {
-                    result.push(lexer.proceed_with(Token::Percent));
-                }
-            },
-            Some('&') => {
-                if lexer.lookahead_2() == Some('&') {
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::AmpAmp));
-                } else if lexer.lookahead_2() == Some('=') {
-                    return Err("BitwiseAnd assignment operator not supported yet".to_string());
-                    // lexer.proceed();
-                    // result.push(lexer.proceed_with(Token::AmpersandEqual);
-                } else {
-                    result.push(lexer.proceed_with(Token::Ampersand));
-                }
-            },
-            Some('|') => {
-                if lexer.lookahead_2() == Some('|') {
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::BarBar));
-                } else if lexer.lookahead_2() == Some('=') {
-                    return Err("BitwiseOr assignment operator not supported yet".to_string());
-                    // lexer.proceed();
-                    // result.push(lexer.proceed_with(Token::AssignOp(AssignOp::AssignBitOr));
-                } else {
-                    result.push(lexer.proceed_with(Token::Bar));
-                }
-            },
-            Some('^') => {
-                if lexer.lookahead_2() == Some('=') {
-                    return Err("BitwiseXor assignment operator not supported yet".to_string());
-                    // lexer.proceed();
-                    // result.push(lexer.proceed_with(Token::CaretEqual);
-                } else {
-                    result.push(lexer.proceed_with(Token::Caret));
-                }
-            },
-            Some('~') => result.push(lexer.proceed_with(Token::Tilde)),
-            Some('!') => {
-                if lexer.lookahead_2() == Some('=') {
-                    if lexer.lookahead_3() == Some('=') {
-                        lexer.proceed();
-                        lexer.proceed();
-                        result.push(lexer.proceed_with(Token::BangEqualEqual));
-                    } else {
-                        return Err("!= operator not supported".to_string());
-                    }
-                } else {
-                    result.push(lexer.proceed_with(Token::Bang));
-                }
-            },
-            Some('=') => {
-                if lexer.lookahead_2() == Some('=') {
-                    if lexer.lookahead_3() == Some('=') {
-                        lexer.proceed();
-                        lexer.proceed();
-                        result.push(lexer.proceed_with(Token::EqualEqualEqual));
-                    } else {
-                        return Err("== operator not supported".to_string());
-                    }
-                } else {
-                    result.push(lexer.proceed_with(Token::Equal));
-                }
-            },
-            Some('<') => { // TODO: type annotations
-                if lexer.lookahead_2() == Some('<') {
-                    if lexer.lookahead_3() == Some('=') {
-                        return Err("<<= operator not supported yet".to_string());
- //                        lexer.proceed();
- //                        lexer.proceed();
-//                         result.push(lexer.proceed_with(Token::AssignOp(AssignOp::AssignLShift));
-                    } else {
-                        lexer.proceed();
-                        result.push(lexer.proceed_with(Token::LAngleLAngle));
-                    }
-                } else if lexer.lookahead_2() == Some('=') {
-                    lexer.proceed();
-                    result.push(lexer.proceed_with(Token::LAngleEqual));
-                } else {
-                    result.push(lexer.proceed_with(Token::LAngle));
-                }
-            },
-            Some('>') => unimplemented!(),
-            None => unreachable!("Lookahead returned None when it should have returned Some"),
-            Some(c) => return Err(format!("Unexpected character {}", c)),
-        }
-        consume_whitespace(lexer); // TODO: exclude comment cases from whitespace
+fn table(lexer: &mut Lexer, result: &mut Vec<Token>, token: Token) -> Result<(), String> {
+    match token {
+        Token::LeftParen => {
+            lexer.open_paren(result.len()-1);
+        },
+        Token::RightParen => {
+            let open_index = lexer.close_paren()?;
+            let next_token = tokenize(lexer, result)?;
+            match next_token {
+                Token::FatArrow => {
+                    let close_index = result.len()-2; // one before the fat arrow 
+                    result[open_index] = Token::ArrowLeftParen;
+                    result[close_index] = Token::ArrowRightParen;
+                },
+                _ => table(lexer, result, next_token)?,
+            }
+        },
+        _ => {},
     }
 
-    Ok(result)
+    Ok(())
+}
+
+fn lex(lexer: &mut Lexer, result: &mut Vec<Token>) -> Result<(), String> {
+    loop {
+        let token = tokenize(lexer, result)?;
+        if token == Token::EOF {
+            return Ok(())
+        }
+        table(lexer, result, token)?;
+    }
+}
+
+// Function lex consumes the input string, returns a single Token, and modifies the lexer state if needed
+fn tokenize(lexer: &mut Lexer, result: &mut Vec<Token>) -> Result<Token, String> {
+    consume_whitespace(lexer);
+    let res = match lexer.lookahead_1() {
+        Some('a'..='z') => keyword_or_ident(lexer)?,
+        Some('A'..='Z'|'_') => ident(lexer)?,
+        Some('0'..='9') => parse_number_or_bigint(lexer)?,
+        Some('"'|'\'') => parse_string(lexer)?,
+        // Punctuation
+        Some('(') => lexer.proceed_with(Token::LeftParen),
+        Some(')') => lexer.proceed_with(Token::RightParen),
+        Some('{') => lexer.proceed_with(Token::LeftBrace),
+        Some('}') => lexer.proceed_with(Token::RightBrace),
+        Some('[') => lexer.proceed_with(Token::LeftBracket),
+        Some(']') => lexer.proceed_with(Token::RightBracket),
+        Some(',') => lexer.proceed_with(Token::Comma),
+        Some('.') => {
+            if lexer.lookahead_2() == Some('.') && lexer.lookahead_3() == Some('.') {
+                lexer.proceed();
+                lexer.proceed();
+                lexer.proceed();
+                Token::DotDotDot
+            } else {
+                lexer.proceed_with(Token::Dot)
+            }
+        },
+        Some(':') => lexer.proceed_with(Token::Colon),
+        Some(';') => lexer.proceed_with(Token::Semicolon),
+        Some('?') => lexer.proceed_with(Token::Question),
+        Some('`') => lexer.proceed_with(Token::QuasiQuote),
+        Some('$') => lexer.proceed_with(Token::Dollar),
+        Some('/') => {
+            if lexer.lookahead_2() == Some('/') {
+                unreachable!("line comment should have been handled by consume_whitespace")
+            } else if lexer.lookahead_2() == Some('*') {
+                unreachable!("block comment should have been handled by consume_whitespace")
+            } else {
+                if lexer.lookahead_2() == Some('=') {
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::SlashEqual
+                } else {
+                    lexer.proceed_with(Token::Slash)
+                }
+            }
+        },
+        // Operators
+        Some('+') => {
+            if lexer.lookahead_2() == Some('+') {
+                return Err("Increment operator not supported yet".to_string());
+            } else if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::PlusEqual
+            } else {
+                lexer.proceed_with(Token::Plus)
+            }
+        },            
+        Some('-') => {
+            if lexer.lookahead_2() == Some('-') {
+                return Err("Decrement operator not supported yet".to_string());
+            } else if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::MinusEqual
+            } else {
+                lexer.proceed_with(Token::Minus)
+            }
+        },
+        Some('*') => {
+            if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::AsteriskEqual
+            } else if lexer.lookahead_2() == Some('*') {
+                lexer.proceed();
+                if lexer.lookahead_3() == Some('=') {
+                    return Err("Exponentiation assignment operator not supported yet".to_string())
+                    // lexer.proceed();
+                    // result.push(lexer.proceed_with(Token::AsteriskAsteriskEqual);
+                } else {
+                    lexer.proceed_with(Token::AsteriskAsterisk)
+                }
+            } else if lexer.lookahead_2() == Some('/') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::AsteriskSlash
+            } else {
+                lexer.proceed_with(Token::Asterisk)
+            }
+        },
+        Some('%') => {
+            if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::PercentEqual
+            } else {
+                lexer.proceed_with(Token::Percent)
+            }
+        },
+        Some('&') => {
+            if lexer.lookahead_2() == Some('&') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::AmpAmp
+            } else if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::AmpersandEqual
+            } else {
+                lexer.proceed_with(Token::Ampersand)
+            }
+        },
+        Some('|') => {
+            if lexer.lookahead_2() == Some('|') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::BarBar
+            } else if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::BarEqual
+            } else {
+                lexer.proceed_with(Token::Bar)
+            }
+        },
+        Some('^') => {
+            if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::CaretEqual
+            } else {
+                lexer.proceed_with(Token::Caret)
+            }
+        },
+        Some('~') => lexer.proceed_with(Token::Tilde),
+        Some('!') => {
+            if lexer.lookahead_2() == Some('=') {
+                if lexer.lookahead_3() == Some('=') {
+                    lexer.proceed();
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::BangEqualEqual
+                } else {
+                    return Err("!= operator not supported".to_string());
+                }
+            } else {
+                lexer.proceed_with(Token::Bang)
+            }
+        },
+        Some('=') => {
+            if lexer.lookahead_2() == Some('=') {
+                if lexer.lookahead_3() == Some('=') {
+                    lexer.proceed();
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::EqualEqualEqual
+                } else {
+                    return Err("== operator not supported".to_string());
+                }
+            } else {
+                lexer.proceed_with(Token::Equal)
+            }
+        },
+        Some('<') => { // TODO: type annotations
+            if lexer.lookahead_2() == Some('<') {
+                if lexer.lookahead_3() == Some('=') {
+                    lexer.proceed();
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::LAngleLAngleEqual
+                } else {
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::LAngleLAngle
+                }
+            } else if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::LAngleEqual
+            } else {
+                lexer.proceed_with(Token::LAngle)
+            }
+        },
+        Some('>') => {
+            if lexer.lookahead_2() == Some('>') {
+                if lexer.lookahead_3() == Some('=') {
+                    lexer.proceed();
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::RAngleRAngleEqual
+                } else if lexer.lookahead_3() == Some('>') {
+                    lexer.proceed();
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::RAngleRAngleRAngle
+                } else {
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::RAngleRAngle
+                }
+            } else if lexer.lookahead_2() == Some('=') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::RAngleEqual
+            } else {
+                lexer.proceed_with(Token::RAngle)
+            } 
+        } 
+        None => Token::EOF,
+        Some(c) => return Err(format!("Unexpected character {}", c)),
+    };
+
+    result.push(res.clone());
+
+    Ok(res)
 }
 
 pub fn check_whitespace_nonident(c1: Option<char>, c2: Option<char>) -> Result<(), String> {
@@ -662,10 +807,6 @@ pub fn consume_whitespace(state: &mut Lexer) {
             _ => break,
         }
     }
-}
-
-fn enter_block_comment(state: &mut Lexer, buf: &mut Vec<Token>) -> Result<(), String> {
-    unimplemented!("enter_block_comment")
 }
 
 fn ident(state: &mut Lexer) -> Result<Token, String> {
@@ -799,13 +940,13 @@ pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
                 break;
             }
         } 
-        return Ok(Token::Decimal(number))
+        return Ok(Token::Decimal(number.into()))
     } else if state.lookahead_1() == Some('n') {
         state.proceed();
-        return Ok(Token::Bigint(number))
+        return Ok(Token::Bigint(number.into()))
     }
 
-    Ok(Token::Integer(number))
+    Ok(Token::Integer(number.into()))
 }
 
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
@@ -821,7 +962,7 @@ pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
             state.proceed();
         }
     }
-    Ok(Token::String(string))
+    Ok(Token::String(string.into()))
 }
 
 fn parse_ident(state: &mut Lexer) -> Result<Token, String> {
@@ -846,3 +987,4 @@ fn parse_ident(state: &mut Lexer) -> Result<Token, String> {
     }
     Ok(Token::Identifier(SharedString::from_string(ident)))
 }
+

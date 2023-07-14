@@ -1,5 +1,5 @@
 use jessie_ast::*;
-use crate::parser;
+use crate::{parser, pattern};
 use crate::{
     VecToken, Token,
 
@@ -74,6 +74,7 @@ pub fn function_internal(state: &mut ParserState, name: Option<SharedString>) ->
     }
 }
 
+/* 
 #[derive(Debug, PartialEq, Clone)]
 struct CoverParameter {
     expr: Expr,
@@ -118,21 +119,14 @@ impl CoverParameter {
         }
     }
 }
+*/
 
-fn destructing_array_parameter_or_array_literal(state: &mut ParserState) -> Result<CoverParameter, ParserError> {
+fn destructing_array_parameter(state: &mut ParserState) -> Result<CoverParameter, ParserError> {
+    let element_patterns = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &pattern, true)?;
 
-    let cover_elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &expression_or_pattern, true)?;
-
-    let mut elements = Vec::with_capacity(cover_elements.len());
-    let mut is_transmutable_to_param = true;
-    for cover_elem in cover_elements {
-        elements.push(cover_elem.expr);
-        is_transmutable_to_param &= cover_elem.is_transmutable_to_param;
-    }
-
-    Ok(CoverParameter { expr: Expr::Array(Box::new(Array(elements))), is_transmutable_to_param })
+    Ok(ArrayPattern(element_patterns))
 }
-
+/* 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CoverProperty {
     prop: PropDef,
@@ -177,13 +171,11 @@ impl CoverProperty {
         }
     }
 }
-
-pub fn prop_def_or_prop_param(state: &mut ParserState) -> Result<CoverProperty, ParserError> {
+*/
+pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
         let rest = expression_or_pattern(state)?;
-        return Ok(CoverProperty{
-            prop: PropDef::Spread(rest.expr),
-            is_transmutable_to_param: rest.is_transmutable_to_param,
+        return Ok(PropDef::Spread(rest.expr),
         })
     }
     
@@ -277,7 +269,7 @@ fn expression_or_pattern(state: &mut ParserState) -> Result<CoverParameter, Pars
         _ => expression(state).map(CoverParameter::new_expr),
     }
 }
-
+*/
 pub fn arrow_function_body(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
@@ -291,150 +283,25 @@ pub fn arrow_function_body(state: &mut ParserState) -> Result<Vec<Statement>, Pa
     }
 }
 
-
-////////
-/// 
-/// CPEAAPL :
-/// ( Expression ) // Both valid for parenthesized and arrow function
-/// ( Expression , ) // INVALID as group expressions are not allowed
-/// ( ) // Valid for arrow function
-/// ( ... BindingIdentifier ) // Valid for arrow function
-/// ( ... BindingPattern ) // Valid for arrow function
-/// ( Expression , ... BindingIdentifier ) 
-/// ( Expression , ... BindingPattern )
-/// 
-
-// If an expression starts with a left parenthesis, it can be either a parenthesized expression or an arrow function.
-// Parenthesized arrow function arguments have the following structure:
-// (arg1, arg2, ..., argN)
-// Where
-// param <- pattern | ...pattern | variable=expression
-// pattern <- identifier | [repeated param] | {repeated property}
-// property <- identifier | identifier:pattern | ...pattern | identifier=expression
-//
-// Parenthesized expression cannot have comma inside, but arrow function arguments can.
-// Parenthesized expression cannot have spread operator, but arrow function arguments can.
-// Parenthesized expression cannot have default value, but arrow function arguments can.
-// Parenthesized expression cannot have colons, but arrow function arguments can.
-// Function arguments cannot have values except for the righthand side of the default value.
-//
-pub fn arrow_or_paren_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
-    // Split into three cases:
-    // () => Parenthesized expression cannot be empty, nullary arrow function.
-    // (CPEAAPL) => Required to cover both cases only in unary case.
-    // (param, ...) => No group expression in Jessie, n-ary arrow function.
-
-    state.proceed(); // consume left paren
-    
-
-    // nullary arrow function
-    if state.try_proceed(Token::RightParen) {
-        state.consume_1(Token::FatArrow)?;
-
-        let parent_scope = state.enter_function_scope(Vec::new());
-
-        let statements = arrow_function_body(state)?;
-        let (declarations, captures) = state.exit_function_scope(parent_scope);
-        // no need to settle, nullary function
-
-        let function = Function {
-            name: None,
-            captures,
-            parameters: vec![],
-            declarations: declarations,
-            statements,
-        };
-
-        return Ok(Expr::ArrowFunc(Box::new(function)))
+pub fn arrow_expr(state: &mut ParserState) -> Result<Expr, ParserError> { 
+    let params = repeated_elements(state, Some(Token::ArrowLeftParen), Token::ArrowRightParen, &param, true)?;
+    if !state.try_proceed(Token::FatArrow) {
+        return state.err_expected("=>", state.lookahead_1())
     }
+    let parent_scope = state.enter_function_scope(Vec::new());
+    let mut parameters = Vec::with_capacity(params.len());
+    state.scope.declare_parameters(params, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
 
-    // unary spread parameter
-    if state.try_proceed(Token::DotDotDot) {
-        unimplemented!("spread parameter")
-        /*
-        let arg = param(state)?;
+    let statements = arrow_function_body(state)?;
+    let (declarations, captures) = state.exit_function_scope(parent_scope);
 
-        let mut declarations = vec![];
-        let parent_scope = state.enter_function_scope(declarations);
-        
+    let function = Function {
+        name: None,
+        captures,
+        parameters,
+        declarations,
+        statements,
+    };
 
-        let parameters = Rc::new(Declaration::Parameters(vec![Pattern::Rest(Box::new(arg))]));
-        state.scope.settle_declaration(parameters.clone());
-        let body = arrow_function_body(state)?;
-        let (scope, unbound_uses) = state.exit_block_scope(parent_scope);
-        let func = Box::new(Function::from_body(None, parameters, None, body, scope, unbound_uses));
-        return Ok(Expr::ArrowFunc(func))
-        */
-    }
-
-    let expr = expression_or_pattern(state)?;
-
-    println!("cpeaapl expr: {:?}", expr);
-
-    if !expr.is_transmutable_to_param {
-        state.consume_1(Token::RightParen)?;
-        return Ok(Expr::ParenedExpr(Box::new(expr.expr)))
-    }
-
-    // Possibly a unary arrow parameter.
-    match state.lookahead_1() {
-        // If a comma follows, it is an n-ary arrow function.
-        // TODO: spread element should come only at the last
-        Some(Token::Comma) => {
-            state.proceed();
-            let rest = repeated_elements(state, None, Token::RightParen, &|state| param(state), true)?;
-
-            let parent_scope = state.enter_function_scope(Vec::new());
-
-            let mut parameters = Vec::with_capacity(rest.len() + 1);
-
-            state.scope.declare_parameter(expr.into_param(), &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
-            state.scope.declare_parameters(rest, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
-
-            let statements = arrow_function_body(state)?;
-            let (declarations, captures) = state.exit_function_scope(parent_scope);
-
-            let function = Function {
-                name: None,
-                captures,
-                parameters: parameters,
-                declarations: declarations,
-                statements,
-            };
-
-            return Ok(Expr::ArrowFunc(Box::new(function)))
-
-        },
-        // If a right paren follows, try parse a fat arrow.
-        Some(Token::RightParen) => {
-            state.proceed();
-            match state.lookahead_1() {
-                // If a fat arrow follows, it is a unary arrow function.
-                Some(Token::FatArrow) => {
-                    state.proceed();
-
-                    let parent_scope = state.enter_function_scope(Vec::new());
-
-                    let mut parameters = Vec::with_capacity(1);
-                    state.scope.declare_parameter(expr.into_param(), &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
-
-                    let statements = arrow_function_body(state)?;
-
-                    let (declarations, captures) = state.exit_function_scope(parent_scope);
-
-                    let function = Function { name: None, captures, parameters, declarations: declarations, statements };
-                    
-                    return Ok(Expr::ArrowFunc(Box::new(function)))
-                },
-                // Otherwise, it is a parenthesized expression.
-                _ => {
-                    return Ok(Expr::ParenedExpr(Box::new(expr.into_expr())))
-                } 
-            }
-        }
-        // No other token should follow after.
-        c => state.err_expected("end of the parenthesized expression or another arrow parameter", c),
-    }
+    Ok(Expr::ArrowFunc(Box::new(function)))
 }
-
-

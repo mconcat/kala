@@ -27,15 +27,15 @@ mod tests {
         ("function f(x, y) {
             return x+y;   
         }", {
-            let param_x = variable("x"); 
-            let param_y = variable("y");
+            let param_x = parameter("x", 0); 
+            let param_y = parameter("y", 1);
             function_expr(
                 Some("f"),
                 vec![],
-                vec![param_x, param_y],
+                unsafe{vec![param_x.clone().unsafe_into(), param_y.clone().unsafe_into()]},
                 vec![],
                 vec![
-                    return_statement(add(variable("x"), variable("y"))),
+                    return_statement(add(param_x, param_y)),
                 ],
             )
         }),
@@ -103,15 +103,15 @@ mod tests {
                 vec![unsafe{var_x.clone().unsafe_into()}],
                 vec![var_y, var_z],
                 vec![
-                    const_statement("y", DeclarationIndex::Local(0)),
+                    const_statement("y", 0),
                     block(vec![
-                        let_statement("z", DeclarationIndex::Local(1)),
+                        let_statement("z", 1),
                         return_statement(add(add(variable("x"), variable("y")), variable("z"))),
                     ]),
                 ],
             )
         }),
-        /* 
+
         ("function f(x) {
             return function(y) {
                 return x+y;
@@ -139,7 +139,7 @@ mod tests {
                     ),
                 ],
             )
-        })*/
+        })
         ]
     }
 
@@ -148,9 +148,7 @@ mod tests {
         expr_test_cases().iter().for_each(|case| {
             println!("===========");
             println!("test for {}", case.0);
-            let mut lexer_state = ParserState::new(Str(case.0.to_string()), vec![]);
-            println!("lexer_state: {:?}", lexer_state);
-            let tokenstream = lex(&mut lexer_state).unwrap();
+            let tokenstream = lex_jessie(case.0.to_string()).unwrap();
             println!("tokenstream: {:?}", tokenstream);
             let mut state = ParserState::new(VecToken(tokenstream), vec![]);
 

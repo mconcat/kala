@@ -1,3 +1,5 @@
+use utils::SharedString;
+
 use crate::{Expr, VariableCell};
 use std::mem;
 
@@ -34,7 +36,7 @@ pub enum LValue {
 #[derive(Debug, PartialEq, Clone)]
 pub enum LValueCallPostOp {
     Index(Expr) = 0,
-    Member(String) = 1,
+    Member(SharedString) = 1,
 }
 
 #[derive(Debug, PartialEq, Clone)]

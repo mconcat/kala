@@ -24,19 +24,19 @@ pub fn boolean(b: bool) -> Expr {
 }
 
 pub fn number(n: i64) -> Expr {
-    data_literal(DataLiteral::Integer(n.to_string()))
+    data_literal(DataLiteral::Integer(n.to_string().into()))
 }
 
 pub fn decimal(n: &str) -> Expr {
-    data_literal(DataLiteral::Decimal(n.to_string()))
+    data_literal(DataLiteral::Decimal(n.to_string().into()))
 }
 
 pub fn string(s: &str) -> Expr {
-    data_literal(DataLiteral::String(s.to_string()))
+    data_literal(DataLiteral::String(s.to_string().into()))
 }
 
 pub fn bigint(s: u64) -> Expr {
-    data_literal(DataLiteral::Bigint(s.to_string()))
+    data_literal(DataLiteral::Bigint(s.to_string().into()))
 }
 
 // Array
@@ -165,6 +165,10 @@ pub fn variable_initialized(name: &str, declaration_index: DeclarationIndex) -> 
     Expr::Variable(Box::new(VariableCell::initialized(SharedString::from_str(name), declaration_index, vec![])))
 }
 
+pub fn parameter(name: &str, parameter_index: usize) -> Expr {
+    Expr::Variable(Box::new(VariableCell::initialized(SharedString::from_str(name), DeclarationIndex::Parameter(parameter_index), vec![])))
+}
+
 pub fn spread(expr: Expr) -> Expr {
     Expr::Spread(Box::new(expr))
 }
@@ -198,8 +202,8 @@ pub fn const_declaration(name: &str, expr: Expr) -> LocalDeclaration {
     }
 }
 
-pub fn const_statement(name: &str, decl: DeclarationIndex) -> Statement {
-    Statement::LocalDeclaration(vec![decl])
+pub fn const_statement(name: &str, decl: usize) -> Statement {
+    Statement::LocalDeclaration(Box::new(vec![decl]))
 }
 
 pub fn let_declaration(name: &str, expr: Expr) -> LocalDeclaration {
@@ -209,8 +213,8 @@ pub fn let_declaration(name: &str, expr: Expr) -> LocalDeclaration {
     }
 }
 
-pub fn let_statement(name: &str, decl: DeclarationIndex) -> Statement {
-    Statement::LocalDeclaration(vec![decl])
+pub fn let_statement(name: &str, decl: usize) -> Statement {
+    Statement::LocalDeclaration(Box::new(vec![decl]))
 }
 /* 
 pub fn capture(name: &str, declaration_index: DeclarationIndex) -> CaptureDeclaration {
@@ -222,5 +226,5 @@ pub fn capture(name: &str, declaration_index: DeclarationIndex) -> CaptureDeclar
 }
 */
 pub fn block(statements: Vec<Statement>) -> Statement {
-    Statement::Block(Block(statements))
+    Statement::Block(Box::new(Block(statements)))
 }

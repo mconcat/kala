@@ -24,9 +24,9 @@ type ParserError = parser::ParserError<Option<Token>>;
 pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
     // putting whitespace in consumes is a hack, need to fix later
     match state.lookahead_1() {
-        Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(x)), // TODO: implement statement level record literal?
-        Some(Token::Const) => const_decl(state).map(|x| Statement::LocalDeclaration(x)),
-        Some(Token::Let) => let_decl(state).map(|x| Statement::LocalDeclaration(x)),
+        Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(Box::new(x))), // TODO: implement statement level record literal?
+        Some(Token::Const) => const_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
+        Some(Token::Let) => let_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
         Some(Token::Function) => function_decl(state).map(|x| Statement::FunctionDeclaration(x)),
         Some(Token::If) => if_statement(state).map(|x| Statement::IfStatement(Box::new(x))),
         Some(Token::While) => while_statement(state).map(|x| Statement::WhileStatement(Box::new(x))),
@@ -70,7 +70,7 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
 }
 
 
-fn const_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserError> {
+fn const_decl(state: &mut ParserState) -> Result<Vec<usize>, ParserError> {
     state.consume_1(Token::Const)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -79,7 +79,7 @@ fn const_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserEr
     }, false)
 }
 
-fn let_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserError> {
+fn let_decl(state: &mut ParserState) -> Result<Vec<usize>, ParserError> {
     state.consume_1(Token::Let)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -87,7 +87,7 @@ fn let_decl(state: &mut ParserState) -> Result<Vec<DeclarationIndex>, ParserErro
     }, false)
 }
 
-fn function_decl(state: &mut ParserState) -> Result<DeclarationIndex, ParserError> {
+fn function_decl(state: &mut ParserState) -> Result<usize, ParserError> {
     state.consume_1(Token::Function)?;
     let name = identifier(state)?;
     let parent_scope = state.enter_block_scope();

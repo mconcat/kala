@@ -80,6 +80,12 @@ impl<T> Deref for SharedSlice<T> {
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub struct SharedString(pub Rc<str>);
 
+impl From<String> for SharedString {
+    fn from(value: String) -> Self {
+        SharedString::from_string(value)
+    }
+}
+
 impl Deref for SharedString {
     type Target = str;
 

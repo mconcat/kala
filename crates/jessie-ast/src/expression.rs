@@ -70,11 +70,11 @@ pub enum DataLiteral {
     Null,
     False,
     True,
-    Integer(String),
-    Decimal(String),
-    String(String),
+    Integer(SharedString),
+    Decimal(SharedString),
+    String(SharedString),
     Undefined,
-    Bigint(String),
+    Bigint(SharedString),
 }
 
 

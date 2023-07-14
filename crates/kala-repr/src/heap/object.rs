@@ -2,7 +2,7 @@ use std::cell::Ref;
 
 use utils::FxMap;
 
-use crate::{memory::memory::Pointer, slot::Slot};
+use crate::{slot::Slot};
 
 pub struct Object {
     properties: FxMap<Slot>,

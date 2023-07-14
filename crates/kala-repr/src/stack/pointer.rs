@@ -1,8 +1,16 @@
 use std::{marker::PhantomData, ops::Deref};
 
+use crate::reference::ReferenceHeader;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct null32 {
+    inner: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct full32 {
     inner: u32,
 }
 
@@ -55,52 +63,7 @@ impl<T> np32<T> {
     }
 }
 
-pub trait ReferenceHeader {
-    fn len(&self) -> usize;
-}
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct ref32<Header, Body> {
-    inner: u32,
-    phantom: PhantomData<*mut (Header, [Body])>,
-}
-
-impl<Header: ReferenceHeader, Body> ref32<Header, Body> {
-    fn deref(&self) -> &(Header, &[Body]) {
-        if self.is_null() {
-            panic!("Attempted to dereference a null pointer");
-        }
-        let header: Header = unsafe { *std::mem::transmute::<u64, *const Header>(self.inner as u64) };
-        let body: &[Body] = unsafe { std::slice::from_raw_parts(std::mem::transmute::<u64, *const Body>((self.inner + std::mem::size_of::<Header>() as u32) as u64), header.len()) };
-        &(header, body)
-    }
-}
-
-impl<Header, Body> ref32<Header, Body> {
-    pub fn new(header: Header, body: &[Body]) -> Self {
-        let ptr = Box::new((header, *body));
-        
-        let (p64, _) = ptr.to_raw_parts();
-        let p32 = (p64 as u64).try_into().unwrap();
-
-        Self {
-            inner: p32,
-            phantom: PhantomData,
-        }
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.inner == 0
-    }
-
-    pub fn as_raw_pointer(&self) -> *mut T {
-        if self.is_null() {
-            panic!("Attempted to dereference a null pointer");
-        }
-        unsafe { std::mem::transmute(self.inner as u64) }
-    }
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]

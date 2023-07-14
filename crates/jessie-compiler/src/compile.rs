@@ -88,27 +88,16 @@ pub fn integer(state: &mut CompilerState, s: String) -> Result<(), String> {
     let i = s.parse::<i64>().map_err(|_| format!("Could not parse {} as an integer", s))?;
     if i >= 0 && i <= 255 {
         state.opcodes.push(Opcode::Integer1);
-        state.opcodes.push(i as u8);
+        state.opcodes.extend_from_slice(&i8::to_le_bytes(i as i8))
     } else if i >= 0 && i <= 65535 {
         state.opcodes.push(Opcode::Integer2);
-        state.opcodes.push((i >> 8) as u8);
-        state.opcodes.push((i & 0xff) as u8);
+        state.opcodes.extend_from_slice(&i16::to_le_bytes(i as i16))
     } else if i >= 0 && i <= 4294967295 {
         state.opcodes.push(Opcode::Integer4);
-        state.opcodes.push((i >> 24) as u8);
-        state.opcodes.push(((i >> 16) & 0xff) as u8);
-        state.opcodes.push(((i >> 8) & 0xff) as u8);
-        state.opcodes.push((i & 0xff) as u8);
+        state.opcodes.extend_from_slice(&i32::to_le_bytes(i as i32))
     } else {
-        state.opcodes.push(Opcode::Number);
-        state.opcodes.push((i >> 56) as u8);
-        state.opcodes.push(((i >> 48) & 0xff) as u8);
-        state.opcodes.push(((i >> 40) & 0xff) as u8);
-        state.opcodes.push(((i >> 32) & 0xff) as u8);
-        state.opcodes.push(((i >> 24) & 0xff) as u8);
-        state.opcodes.push(((i >> 16) & 0xff) as u8);
-        state.opcodes.push(((i >> 8) & 0xff) as u8);
-        state.opcodes.push((i & 0xff) as u8);
+        state.opcodes.push(Opcode::Integer8);
+        state.opcodes.extend_from_slice(&i64::to_le_bytes(i))
     };
     Ok(())
 }
@@ -126,23 +115,8 @@ pub fn decimal(state: &mut CompilerState, s: String) -> Result<(), String> {
     
     state.opcodes.push(Opcode::Number);
 
-    state.opcodes.push((f >> 56) as u8);
-    state.opcodes.push(((f >> 48) & 0xff) as u8);
-    state.opcodes.push(((f >> 40) & 0xff) as u8);
-    state.opcodes.push(((f >> 32) & 0xff) as u8);
-    state.opcodes.push(((f >> 24) & 0xff) as u8);
-    state.opcodes.push(((f >> 16) & 0xff) as u8);
-    state.opcodes.push(((f >> 8) & 0xff) as u8);
-    state.opcodes.push((f & 0xff) as u8);
-
-    state.opcodes.push((i >> 56) as u8);
-    state.opcodes.push(((i >> 48) & 0xff) as u8);
-    state.opcodes.push(((i >> 40) & 0xff) as u8);
-    state.opcodes.push(((i >> 32) & 0xff) as u8);
-    state.opcodes.push(((i >> 24) & 0xff) as u8);
-    state.opcodes.push(((i >> 16) & 0xff) as u8);
-    state.opcodes.push(((i >> 8) & 0xff) as u8);
-    state.opcodes.push((i & 0xff) as u8);
+    state.opcodes.extend_from_slice(&u64::to_le_bytes(f));
+    state.opcodes.extend_from_slice(&i64::to_le_bytes(i));
 
     Ok(())
 }
@@ -152,17 +126,13 @@ pub fn string(state: &mut CompilerState, s: String) -> Result<(), String> {
     bytes.push(0);
     if bytes.len() <= 255 {
         state.opcodes.push(Opcode::String1);
-        state.opcodes.push(bytes.len() as u8);
+        state.opcodes.extend_from_slice(&(bytes.len() as u8).to_le_bytes());
     } else if bytes.len() <= 65535 {
         state.opcodes.push(Opcode::String2);
-        state.opcodes.push((bytes.len() >> 8) as u8);
-        state.opcodes.push((bytes.len() & 0xff) as u8);
+        state.opcodes.extend_from_slice(&(bytes.len() as u16).to_le_bytes())
     } else {
         state.opcodes.push(Opcode::String4);
-        state.opcodes.push((bytes.len() >> 24) as u8);
-        state.opcodes.push(((bytes.len() >> 16) & 0xff) as u8);
-        state.opcodes.push(((bytes.len() >> 8) & 0xff) as u8);
-        state.opcodes.push((bytes.len() & 0xff) as u8);
+        state.opcodes.extend_from_slice(&(bytes.len() as u32).to_le_bytes())
     }
 
     state.opcodes.append(&mut bytes);
@@ -171,11 +141,28 @@ pub fn string(state: &mut CompilerState, s: String) -> Result<(), String> {
 }
 
 pub fn bigint(state: &mut CompilerState, s: String) -> Result<(), String> {
-    unimplemented!()
+    if let Ok(i) = s.parse::<i64>() {
+        if i >= 0 && i <= 255 {
+            state.opcodes.push(Opcode::Bigint1);
+            state.opcodes.extend_from_slice(&i8::to_le_bytes(i as i8))
+        } else if i >= 0 && i <= 65535 {
+            state.opcodes.push(Opcode::Bigint2);
+            state.opcodes.extend_from_slice(&i16::to_le_bytes(i as i16))
+        } else if i >= 0 && i <= 4294967295 {
+            state.opcodes.push(Opcode::Bigint4);
+            state.opcodes.extend_from_slice(&i32::to_le_bytes(i as i32))
+        } else {
+            state.opcodes.push(Opcode::Bigint8);
+            state.opcodes.extend_from_slice(&i64::to_le_bytes(i))
+        };
+        return Ok(())
+    }
+
+    unimplemented!("bigint larger than 64 bits")
 }
 
 pub fn array(state: &mut CompilerState, arr: Array) -> Result<(), String> {
-    unimplemented!()    
+    
 }
 
 pub fn record(state: &mut CompilerState, data: Record) -> Result<(), String> {

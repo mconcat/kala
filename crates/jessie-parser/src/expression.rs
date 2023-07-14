@@ -1,12 +1,11 @@
 use jessie_ast::*;
-use crate::{parser, prop_def_or_prop_param, CoverProperty, arrow_function_body};
+use crate::{parser, prop_def_or_prop_param, CoverProperty, arrow_expr};
 use crate::{
     VecToken, Token,
 
     repeated_elements,
         
     function_expr,
-    arrow_or_paren_expr,
     cond_expr_with_leftmost,
     cond_expr_with_leftmost_no_power,
     call_expr_internal,
@@ -48,16 +47,14 @@ pub fn expression(state: &mut ParserState) -> Result<Expr, ParserError> {
         // Parenthesized expression or arrow function
         // (x + y)
         // (x, y) => x + y
+        Some(Token::ArrowLeftParen) => arrow_expr(state),
         Some(Token::LeftParen) => {
-            let expr = arrow_or_paren_expr(state)?;
+            state.proceed();
+            let expr = expression(state)?;
+            state.consume_1(Token::RightParen)?;
             // if the expression is parenthesized expression(a primary expression), 
             // it can be a leftmost expression for a CondExpr.
-            if let Expr::ParenedExpr(_) = expr {
-                println!("arrow_or_paren_expr: {:?}", expr);
-                cond_expr_with_leftmost(state, expr)
-            } else {
-                Ok(expr)
-            }
+            cond_expr_with_leftmost(state, expr)
         }
 
         _ => assign_or_cond_or_primary_expression(state),
@@ -244,14 +241,14 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::QuasiQuote) => unimplemented!("QuasiExpr not implemented"),
         Some(Token::LeftBracket) => array(state).map(|x| Expr::Array(Box::new(x))),
         Some(Token::LeftBrace) => record(state).map(|x| Expr::Record(Box::new(x))),
-        Some(Token::String(s)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::String(s)))),
-        Some(Token::Integer(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Integer(n)))),
-        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(n)))),
+        Some(Token::String(s)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::String(s.into())))),
+        Some(Token::Integer(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Integer(n.into())))),
+        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(n.into())))),
         Some(Token::Null) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Null))),
         Some(Token::True) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::True))),
         Some(Token::False) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::False))),
         Some(Token::Undefined) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Undefined))),
-        Some(Token::Bigint(b)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Bigint(b)))),
+        Some(Token::Bigint(b)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Bigint(b.into())))),
         Some(Token::Function) => function_expr(state).map(|x| Expr::FunctionExpr(Box::new(x))),
         _ => use_variable(state).map(|x| Expr::Variable(Box::new(x))),
     }

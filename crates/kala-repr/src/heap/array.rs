@@ -1,5 +1,8 @@
+use crate::{Slot, pointer::np32};
+
 pub struct Array {
-    arr: Pointer<[Slot]>
+    // the length of the array is stored in the reference header
+    ptr: *mut Slot,
 }
 
 impl From<Slot> for Array {

@@ -6,13 +6,11 @@ use utils::{SharedString};
 pub struct Function {
     pub name: Option<SharedString>,
 
-    // index 0 is reserved
+    pub captures: Vec<CaptureDeclaration>, 
 
-    pub captures: Vec<CaptureDeclaration>, // indexed by [1..captures.len+1]
+    pub parameters: Vec<ParameterDeclaration>, 
 
-    pub parameters: Vec<ParameterDeclaration>, // indexed by [-parameters.len..0]
-
-    pub declarations: Vec<LocalDeclaration>, // indexed by [captures.len+1..captures.len+declarations.len+1]
+    pub declarations: Vec<LocalDeclaration>, 
 
     // block body
     pub statements: Vec<Statement>,
@@ -224,7 +222,7 @@ pub enum PropertyAccess {
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Clone)] 
-pub struct PropertyAccessChain(Vec<PropertyAccess>);
+pub struct PropertyAccessChain(pub Vec<PropertyAccess>);
 
 impl PropertyAccessChain {
     pub fn empty() -> Self {

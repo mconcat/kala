@@ -3,12 +3,6 @@
 version = 3
 
 [[package]]
-name = "bumpalo"
-version = "3.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3e2c3daef883ecc1b5d58c15adae93470a91d425f3532ba1695849656af3fc1"
-
-[[package]]
 name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -31,21 +25,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "jessie-compiler"
+name = "kala-interpreter"
 version = "0.1.0"
 dependencies = [
  "jessie-ast",
- "jessie-interpreter",
+ "kala-repr",
+ "utils",
 ]
 
 [[package]]
-name = "jessie-interpreter"
+name = "kala-repr"
 version = "0.1.0"
-dependencies = [
- "bumpalo",
- "jessie-ast",
- "utils",
-]
 
 [[package]]
 name = "utils"
