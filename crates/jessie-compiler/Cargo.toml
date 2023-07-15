@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 jessie-ast = { version = "0.1.0", path = "../jessie-ast" }
-jessie-interpreter = { version = "0.1.0", path = "../jessie-interpreter" }
+kala-interpreter = { version = "0.1.0", path = "../kala-interpreter" }

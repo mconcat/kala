@@ -259,13 +259,14 @@ pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
 }
 
 pub fn element(state: &mut ParserState) -> Result<Expr, ParserError> {
-    if state.try_proceed(Token::DotDotDot) {
+    let expr = if state.try_proceed(Token::DotDotDot) {
         let expr = expression(state)?;
-        Ok(Expr::Spread(Box::new(expr)))
+        Expr::Spread(Box::new(expr))
     } else {
-        let expr = expression(state)?;
-        Ok(expr)
-    }
+        expression(state)?
+    };
+
+    Ok(expr)
 }
 
 pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
@@ -345,42 +346,49 @@ pub fn prop_name(state: &mut ParserState) -> Result<Box<Field>, ParserError> {
 
 
 pub fn arg(state: &mut ParserState) -> Result<Expr, ParserError> {
-    // TODO: spread parameter can only come at the end
-    if state.try_proceed(Token::DotDotDot) {
-        let e = expression(state)?;
-        Ok(Expr::Spread(Box::new(e)))
-    } else {
-        let expr = expression(state)?;
-        Ok(expr)
+    let is_spread = state.try_proceed(Token::DotDotDot);
+
+    let expr = expression(state)?;
+
+    if is_spread {
+        if let Some(next_token) = state.lookahead_1() {
+            return Err(ParserError::InvalidExpression(
+                next_token, 
+                "spread parameter can only come at the end".to_owned()))
+        }
+
+        Ok(Expr::Spread(Box::new(expr)))
     }
+
+    Ok(expr)
 }
 
 
 
 fn lookahead_operator(state: &mut ParserState) -> bool {
     match state.lookahead_1() {
-        Some(Token::Question) |
-        Some(Token::Plus) |
-        Some(Token::Minus) |
-        Some(Token::Asterisk) |
-        Some(Token::Slash) |
-        Some(Token::Percent) |
-        Some(Token::AsteriskAsterisk) |
-        Some(Token::Ampersand) |
-        Some(Token::Bar) |
-        Some(Token::Caret) |
-        Some(Token::LAngle) |
-        Some(Token::RAngle) |
-        Some(Token::LAngleEqual) |
-        Some(Token::RAngleEqual) |
-        Some(Token::EqualEqualEqual) |
-        Some(Token::BangEqualEqual) |
-        Some(Token::LAngleLAngle) |
-        Some(Token::RAngleRAngle) |
-        Some(Token::RAngleRAngleRAngle) |
-        Some(Token::AmpAmp) |
-        Some(Token::BarBar) |
-        Some(Token::QuestionQuestion) => true,
+        Some(Token::Question)
+        | Some(Token::Plus)
+        | Some(Token::Minus)
+        | Some(Token::Asterisk)
+        | Some(Token::Slash)
+        | Some(Token::Percent)
+        | Some(Token::AsteriskAsterisk)
+        | Some(Token::Ampersand)
+        | Some(Token::Bar)
+        | Some(Token::Caret)
+        | Some(Token::LAngle)
+        | Some(Token::RAngle)
+        | Some(Token::LAngleEqual)
+        | Some(Token::RAngleEqual)
+        | Some(Token::EqualEqualEqual)
+        | Some(Token::BangEqualEqual)
+        | Some(Token::LAngleLAngle)
+        | Some(Token::RAngleRAngle)
+        | Some(Token::RAngleRAngleRAngle)
+        | Some(Token::AmpAmp)
+        | Some(Token::BarBar)
+        | Some(Token::QuestionQuestion) => true,
         _ => false,
     }
 }

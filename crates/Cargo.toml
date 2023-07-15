@@ -9,9 +9,11 @@ edition = "2021"
 members = [
     "jessie-ast",
     "jessie-compiler",
-    "jessie-interpreter",
     "jessie-parser",
     "jessie-type-checker",
+    "kala-interpreter",
+    "kala-repr",
+    "kala-vm",
     "kala-data",
     "utils",
 ]
