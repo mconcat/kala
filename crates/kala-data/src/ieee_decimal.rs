@@ -367,6 +367,7 @@ impl Decimal64 {
         (biased_exponent, mantissa)
     }
 
+    /// Rounds the current Decimal64 to the nearest even number.
     pub fn round(&self, mantissa: u64) -> Self {
         let (mut biased_exponent, _, number_class) = Self::into_parts(&self);
 
@@ -381,6 +382,13 @@ impl Decimal64 {
             _ => {}
         }
 
+        // If the biased exponent is 0, this means the Decimal64 is either a subnormal number
+        // or zero. In this case, the function also simply returns the original Decimal64.
+        if biased_exponent == 0 {
+            // for subnormal numbers, return the same value
+            return *self;
+        }
+
         let frac_part = mantissa as f64 / 10.0_f64.powf(Self::T as f64);
         let integer_part = mantissa as f64 / 10.0_f64.powf(Self::T as f64);
 
@@ -389,7 +397,8 @@ impl Decimal64 {
         } else if frac_part < 0.5 {
             integer_part.floor()
         } else {
-            // for exactly half, round to the nearest even number
+            // If the fractional part is exactly 0.5, we apply "round half to even(banker's rounding)" mode.
+            // This means that we round to the nearest even number. 
             if integer_part % 2.0 == 0.0 {
                 integer_part
             } else {
@@ -603,7 +612,7 @@ impl Mul<Self> for Decimal64 {
                 let denormal_exponent = a_biased_exponent + b_biased_exponent - 255; // TODO: parameterize
             
                 // 2. Multiply the mantissas of the two numbers
-                let denormal_mantissa = (a_mantissa as u128 * b_mantissa as u128);
+                let denormal_mantissa = a_mantissa as u128 * b_mantissa as u128;
                 
                 unimplemented!()
             }
