@@ -1,6 +1,5 @@
 use crate::{Statement, Expr, Pattern, DataLiteral, Field, OptionalPattern};
 use std::{rc::Rc, cell::OnceCell, cell::RefCell, borrow::BorrowMut, option};
-use utils::{SharedString};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {

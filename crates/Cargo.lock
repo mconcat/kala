@@ -75,7 +75,7 @@ name = "jessie-compiler"
 version = "0.1.0"
 dependencies = [
  "jessie-ast",
- "jessie-interpreter",
+ "kala-interpreter",
 ]
 
 [[package]]
@@ -109,6 +109,22 @@ name = "kala-data"
 version = "0.1.0"
 dependencies = [
  "derive_more",
+]
+
+[[package]]
+name = "kala-interpreter"
+version = "0.1.0"
+dependencies = [
+ "jessie-ast",
+ "kala-repr",
+ "utils",
+]
+
+[[package]]
+name = "kala-repr"
+version = "0.1.0"
+dependencies = [
+ "utils",
 ]
 
 [[package]]

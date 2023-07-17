@@ -51,7 +51,7 @@ pub fn function_internal(state: &mut ParserState, name: Option<SharedString>) ->
 
     let mut parameters = Vec::with_capacity(parameter_patterns.len());
     state.scope.declare_parameters(parameter_patterns, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
- 
+
     println!("parameters {:?}", parameters);
     println!("scope {:?}", state.scope);
 
@@ -175,16 +175,12 @@ impl CoverProperty {
 pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
         let rest = expression_or_pattern(state)?;
-        return Ok(PropDef::Spread(rest.expr),
-        })
-    }
-    
-    if state.lookahead_1() == Some(Token::QuasiQuote) {
-        return state.err_unimplemented("quasiquote")
+        return Ok(PropDef::Spread(rest.expr));
     }
 
     let prop_name = prop_name(state)?;
     println!("lookahead {:?}", state.lookahead_1());
+
     match state.lookahead_1() {
         Some(Token::Colon) => {
             state.proceed();
@@ -207,6 +203,9 @@ pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
                 prop: PropDef::Shorthand(prop_name, var),
                 is_transmutable_to_param: true,
             })
+        },
+        Some(Token::QuasiQuote) => {
+            unimplemented!("quasiquote")
         },
         _ => {
             state.err_expected(": for property pair", state.lookahead_1())
@@ -240,7 +239,7 @@ fn assignment_or_parameter_or_optional(state: &mut ParserState) -> Result<CoverP
 
         // Expression can be a parameter if it is strictly a form of variable = expression
         Expr::Assignment(ref assign) => if let Assignment(AssignOp::Assign, LValue::Variable(_), _) = **assign {
-           Ok(CoverParameter::new(expr)) 
+            Ok(CoverParameter::new(expr)) 
         } else {
             Ok(CoverParameter::new_expr(expr))
         },
@@ -269,7 +268,7 @@ fn expression_or_pattern(state: &mut ParserState) -> Result<CoverParameter, Pars
         _ => expression(state).map(CoverParameter::new_expr),
     }
 }
-*/
+
 pub fn arrow_function_body(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
