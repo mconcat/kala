@@ -35,22 +35,7 @@ impl LexicalScope {
     pub fn replace_variable_map(&mut self, variables: VariablePointerMap) -> VariablePointerMap {
         std::mem::replace(&mut self.variables, variables)
     }
-/* 
-    // Replaces itself with an empty lexical scope(parent declarations and empty variable trie)
-    // Returns lexical scope with empty declarations and parent variable trie
-    pub fn replace_with_child(&mut self, variables: Map<VariablePointer>) -> Self {
-        let parent_variables = std::mem::replace(&mut self.variables, variables);
 
-        Self {
-            declarations: Vec::new(),
-            variables: parent_variables,
-        }
-    }
-
-    pub fn recover_parent(&mut self, parent: Self) -> Map<VariablePointer> {
-        std::mem::replace(&mut self.variables, parent.variables)
-    }
-*/
     fn next_declaration_index(&mut self) -> usize {
         self.declarations.len()
     }
@@ -58,11 +43,11 @@ impl LexicalScope {
     fn declare(&mut self, name: &SharedString, declaration_index: DeclarationIndex, property_access: PropertyAccessChain, is_hoisting_allowed: bool) -> Option<()> {
         if let Some(cell) = self.variables.get(name) {
             println!("declare exists {:?} {:?}", name, cell);
-            // Variable has been occured in this scope
+            // Variable has been occurred in this scope
 
             if is_hoisting_allowed {
                 if cell.set(declaration_index, property_access.clone()).is_err() {
-                    // Variable has been declared, redeclaration is not allowed
+                    // Variable has been declared, re-declaration is not allowed
                     return None
                 }
             } else {
@@ -71,7 +56,7 @@ impl LexicalScope {
                 // however the use_variable call inside param() makes sort of "usage" before the declaration,
                 // so we just proceed, super adhoc, need to be fixed later
                 if cell.set(declaration_index, property_access.clone()).is_err() {
-                    // Variable has been declared, redeclaration is not allowed
+                    // Variable has been declared, re-declaration is not allowed
                     return Some(()) // XXXXXXX
                 }
 
@@ -84,7 +69,7 @@ impl LexicalScope {
             Some(())
         } else {
             println!("declare not exists {:?}", name);
-            // Variable has not been occured in this scope
+            // Variable has not been occurred in this scope
             let cell = VariablePointer::initialized(declaration_index, property_access.clone());
             self.variables.insert(name, cell.clone());
 
@@ -100,13 +85,29 @@ impl LexicalScope {
     fn visit_pattern_internal(&mut self, pattern: &Pattern, declaration_index: DeclarationIndex, property_access: &mut Vec<PropertyAccess>, is_hoisting_allowed: bool) -> Option<()> {
 
         match pattern {
-            Pattern::Rest(x) => unimplemented!("Rest pattern is not supported yet"),
+            Pattern::Rest(pattern) => {
+                // directly visit the inner pattern
+                self.visit_pattern_internal(pattern, declaration_index, property_access, is_hoisting_allowed)
+            }
             Pattern::Optional(opt) => {
-                unimplemented!("Optional pattern is not supported yet")
-                /* 
-                let OptionalPattern(_, jessie_ast::LValueOptional::Variable(var), default) = *opt;
-                self.declare(&name, declaration_index, property_access, Some(init), is_hoisting_allowed)
-                */
+                let OptionalPattern(_, LValueOptional::Variable(var), default) = opt;
+
+                property_access.push(PropertyAccess::Property(var.name.clone()));
+
+                self.declare(
+                    &var.name, 
+                    declaration_index.clone(), 
+                    PropertyAccessChain::from_vec(property_access.clone()), 
+                    is_hoisting_allowed,
+                )?;
+
+                property_access.pop();
+
+                // recursively visit both the pattern and the default expression inside the Optional
+                // adding any variables it contains to the current scope with the given declaration index.
+                self.visit_pattern_internal(pattern, declaration_index.clone(), property_access, is_hoisting_allowed)?;
+                // if it contains any variables, it will add them to the current scope with the given declaration index.
+                self.visit_pattern_internal(&default, declaration_index, property_access, is_hoisting_allowed)
             }
             Pattern::ArrayPattern(elements) => {
                 let mut index = 0;
@@ -128,17 +129,20 @@ impl LexicalScope {
                         }
                         PropParam::KeyValue(field, value) => {
                             property_access.push(PropertyAccess::Property(field.clone()));
+                            // This will add any variables it contains to the current scope with the given declaration index.
                             self.visit_pattern_internal(&value, declaration_index.clone(), property_access, is_hoisting_allowed)?;
                             property_access.pop();
                         }
-                        /* 
-                        PropParam::Optional(name, init) => {
-                            access.push_str(name.as_str());
-                            self.declare(&name, declaration_index, property_access, Some(init), is_hoisting_allowed)?;
-                        }
-                        */
                         PropParam::Rest(name) => {
-                            unimplemented!("Rest property is not supported yet")
+                            property_access.push(PropertyAccess::Property(name.clone()));
+                            self.visit_pattern_internal(
+                                &name, 
+                                declaration_index.clone(), 
+                                property_access, 
+                                is_hoisting_allowed,
+                            )?;
+
+                            property_access.pop();
                         }
                     }
                 }
