@@ -90,6 +90,8 @@ impl LexicalScope {
                 self.visit_pattern_internal(pattern, declaration_index, property_access, is_hoisting_allowed)
             }
             Pattern::Optional(opt) => {
+                // TODO: CPEAAPL approach has been changed from transmuting from lexer side analysis. 
+                // We don't need to match the memory representations between pattern and expression, remove the first value later
                 let OptionalPattern(_, LValueOptional::Variable(var), default) = opt;
 
                 property_access.push(PropertyAccess::Property(var.name.clone()));
