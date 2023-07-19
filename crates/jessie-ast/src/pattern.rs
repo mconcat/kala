@@ -1,4 +1,4 @@
-use crate::{Expr, ExprDiscriminant, VariableCell, Record, PropDefDiscriminant, Field, AssignOp, LValue, traits::{UnsafeInto}};
+use crate::{Expr, ExprDiscriminant, VariableCell, Record, PropDefDiscriminant, Field, AssignOp, LValue};
 
 // Pattern is a subset of Expr
 #[repr(u8)]
@@ -56,46 +56,3 @@ pub enum PropParam {
     Shorthand(Box<Field>, VariableCell) = PropDefDiscriminant::Shorthand as u8,
     Rest(Pattern) = PropDefDiscriminant::Spread as u8,
 }
-
-
-
-/* 
-impl Pattern {
-    pub fn rest(pattern: &'a Self) -> Self {
-        Pattern::Rest(pattern)
-    }
-
-    pub fn optional(name: &'a VariableCell, expr: &'a Expr) -> Self {
-        Pattern::Optional(name, expr)
-    }
-
-    pub fn array(patterns: &'a [Self]) -> Self {
-        Pattern::ArrayPattern(patterns)
-    }
-
-    pub fn record(props: &'a [PropParam]) -> Self {
-        Pattern::RecordPattern(props)
-    }
-
-    pub fn variable(name: &'a VariableCell) -> Self {
-        Pattern::Variable(name)
-    }
-}
-
-impl From<Expr> for Pattern {
-    fn from(value: Expr) -> Self {
-        // Expression can be converted to pattern only if it is 
-        // - a variable
-        // - an assignment to a variable
-        // - array compatible with destructuring
-        // - object compatible with destructuring
-        match value {
-            Expr::Variable(name) => Pattern::Variable(name.into()),
-            Expr::Assignment(assign) => unimplemented!("optional"),
-            Expr::Array(arr) => unimplemented!("array"),
-            Expr::Record(rec) => unimplemented!("record"), 
-            _ => panic!("Cannot convert expr to pattern"),
-        }
-    }
-}
-*/
