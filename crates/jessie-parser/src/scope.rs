@@ -1,7 +1,7 @@
 use std::cell::{RefCell, OnceCell};
 
 use fxhash::FxHashMap;
-use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, Variable, Function, DeclarationIndex, VariablePointer, PropertyAccessChain, OptionalPattern, LocalDeclaration, ParameterDeclaration, LValueOptional};
+use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, Variable, Function, DeclarationIndex, VariablePointer, OptionalPattern, LocalDeclaration, ParameterDeclaration, LValueOptional};
 use utils::{SharedString, Map};
 use crate::{map::VariablePointerMap, param};
 
@@ -51,11 +51,11 @@ impl LexicalScope {
         std::mem::replace(&mut self.variables, parent.variables)
     }
 */
-    fn next_declaration_index(&mut self) -> usize {
-        self.declarations.len()
+    fn next_declaration_index(&mut self) -> u32 {
+        self.declarations.len() as u32
     }
 
-    fn declare(&mut self, name: &SharedString, declaration_index: DeclarationIndex, property_access: PropertyAccessChain, is_hoisting_allowed: bool) -> Option<()> {
+    fn declare(&mut self, name: SharedString, declaration_index: DeclarationIndex, property_access: PropertyAccessChain, is_hoisting_allowed: bool) -> Option<()> {
         if let Some(cell) = self.variables.get(name) {
             println!("declare exists {:?} {:?}", name, cell);
             // Variable has been occured in this scope
@@ -92,6 +92,14 @@ impl LexicalScope {
         }
     }
 
+    fn declaration_visitor(&mut self, index: DeclarationIndex, is_hoisting_allowed: bool) -> &mut FnMut(SharedString, Vec<PropertyAccess>) {
+        &mut |name: SharedString, property_access: Vec<PropertyAccess>| {
+            self.declare(name, declaration_index.clone(), PropertyAccessChain::from_vec(property_access.clone()), is_hoisting_allowed)?;
+
+            self.declare(&var.name, declaration_index, PropertyAccessChain::from_vec( property_access.clone()), is_hoisting_allowed)
+        }
+    }
+
     fn visit_pattern(&mut self, pattern: &Pattern, declaration_index: DeclarationIndex, is_hoisting_allowed: bool) -> Option<()> {
         let mut property_access = Vec::new();
         self.visit_pattern_internal(pattern, declaration_index, &mut property_access, is_hoisting_allowed)
@@ -123,7 +131,7 @@ impl LexicalScope {
                     match prop {
                         PropParam::Shorthand(field, var) => {
                             property_access.push(PropertyAccess::Property(field.clone()));
-                            self.declare(&field.name(), declaration_index.clone(), PropertyAccessChain::from_vec(property_access.clone()), is_hoisting_allowed)?;
+                            
                             property_access.pop();
                         }
                         PropParam::KeyValue(field, value) => {
@@ -147,13 +155,13 @@ impl LexicalScope {
             }
             Pattern::Variable(var) => {
                 // The variable declarations are already set by the caller, but it is 
-                self.declare(&var.name, declaration_index, PropertyAccessChain::from_vec( property_access.clone()), is_hoisting_allowed)
+                
             }
         }
     }
 
     pub fn declare_parameter(&mut self, pattern: Pattern, result: &mut Vec<ParameterDeclaration>) -> Option<()> {
-        let param_index = result.len();
+        let param_index = result.len() as u32;
         println!("declare_parameter {:?} {:?}", pattern, param_index);
         let decl = match pattern {
             Pattern::Optional(pat) => {
@@ -176,14 +184,14 @@ impl LexicalScope {
         Some(())
     }
 
-    pub fn declare_variable_parameter(&mut self, name: &SharedString, index: usize) -> Option<ParameterDeclaration> {
+    pub fn declare_variable_parameter(&mut self, name: &SharedString, index: u32) -> Option<ParameterDeclaration> {
         let decl = ParameterDeclaration::Variable { name: name.clone() };
-        self.declare(name, DeclarationIndex::Parameter(index), PropertyAccessChain::empty(), false)?;
+        self.declare(name, DeclarationIndex::Parameter(index as u32), PropertyAccessChain::empty(), false)?;
 
         Some(decl)
     }
 
-    pub fn declare_pattern_parameter(&mut self, pattern: &Pattern, param_index: usize) -> Option<ParameterDeclaration> {
+    pub fn declare_pattern_parameter(&mut self, pattern: &Pattern, param_index: u32) -> Option<ParameterDeclaration> {
         let decl = ParameterDeclaration::Pattern { 
             pattern: pattern.clone(),
         };
@@ -193,17 +201,17 @@ impl LexicalScope {
         Some(decl)
     }
 
-    pub fn declare_optional_parameter(&mut self, name: &SharedString, default: Expr, index: usize) -> Option<ParameterDeclaration> {
+    pub fn declare_optional_parameter(&mut self, name: &SharedString, default: Expr, index: u32) -> Option<ParameterDeclaration> {
         let decl = ParameterDeclaration::Optional { name: name.clone(), default };
         self.declare(name, DeclarationIndex::Parameter(index), PropertyAccessChain::empty(), false)?;
 
         Some(decl)
     }
 
-    pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<usize> {
+    pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<u32> {
         let index = self.next_declaration_index();
 
-        self.visit_pattern(&pattern, DeclarationIndex::Local(index), true)?;
+        self.visit_pattern(&pattern, DeclarationIndex::Local(index as u32), true)?;
 
         let decl = LocalDeclaration::Let {
             pattern: pattern.clone(),
@@ -214,10 +222,10 @@ impl LexicalScope {
         Some(index)
     }
 
-    pub fn declare_const(&mut self, pattern: Pattern, value: Option<Expr>) -> Option<usize> {
+    pub fn declare_const(&mut self, pattern: Pattern, value: Option<Expr>) -> Option<u32> {
         let index = self.next_declaration_index();
 
-        self.visit_pattern(&pattern, DeclarationIndex::Local(index), true)?;
+        self.visit_pattern(&pattern, DeclarationIndex::Local(index as u32), true)?;
 
         let decl = LocalDeclaration::Const {
             pattern,
@@ -229,8 +237,8 @@ impl LexicalScope {
         Some(index)
     }
 
-    pub fn declare_function(&mut self, function: Function) -> Option<usize> {
-        if function.name.is_none() {
+    pub fn declare_function(&mut self, function: Function) -> Option<u32> {
+        if !function.name.is_named() {
             return None
         }
 
@@ -241,7 +249,7 @@ impl LexicalScope {
         };
         self.declarations.push(decl);
 
-        self.declare(&function_name.unwrap(), DeclarationIndex::Local(index), PropertyAccessChain::empty(), true)?;
+        self.declare(function_name.get_name().unwrap(), DeclarationIndex::Local(index as u32), vec![], true)?;
 
         Some(index)
     }

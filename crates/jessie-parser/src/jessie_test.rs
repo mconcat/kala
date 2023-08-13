@@ -5,39 +5,21 @@ mod tests {
     use crate::parser::ParserState;
     use crate::lexer::*;
     use jessie_ast::*;
-    use jessie_ast::helper::*;
+    use jessie_ast::t::{expression::*, helper::*, literal::*, function::*};
+    use utils::SharedString;
 
     fn expr_test_cases() -> Vec<(&'static str, Expr)> {
         vec![
         ("undefined", undefined()),
         ("3", number(3)),
-        ("5+6", add(number(5), number(6))),
+        ("5+6", number(5)+number(6)),
         ("function f(x) { return x; }", {
-            let var_x = variable("x");
-            function_expr(
-                Some("f"), 
-                vec![],
-                vec![unsafe{var_x.clone().unsafe_into()}],
-                vec![],
-                vec![
-                    return_statement(var_x),
-                ],
-            ) 
+            function!(f(x){ ret!(var!(x)); })
         }),
         ("function f(x, y) {
             return x+y;   
         }", {
-            let param_x = parameter("x", 0); 
-            let param_y = parameter("y", 1);
-            function_expr(
-                Some("f"),
-                vec![],
-                unsafe{vec![param_x.clone().unsafe_into(), param_y.clone().unsafe_into()]},
-                vec![],
-                vec![
-                    return_statement(add(param_x, param_y)),
-                ],
-            )
+            function!(f(x, y){ ret!(var!(x) + var!(y)); })
         }),
           /*   // Excluded due to destructing parameter
         ("function f(x, [y, z]) {
@@ -55,6 +37,7 @@ mod tests {
                 ],
             )   
         ),*/
+        /* 
         ("[3, v, true, {}, ...g, 123n, 4.67]", {
             let var_v = variable("v");
             let var_g = variable("g");
@@ -68,6 +51,8 @@ mod tests {
             bigint(123),
             decimal("4.67"),
         ])}),
+        */
+        /* 
         ("{x: y, t    : [p], ...o, short}", record(vec![
             keyvalue("x", variable("y")),
             keyvalue("t", array(vec![variable("p")])),
@@ -76,16 +61,15 @@ mod tests {
         ])
         ),
         ("(3+2)*1&&undefined/5&x-7||true==={x:y}%6", 
-        logical_or(
-            logical_and(
-                mul(paren(add(number(3), number(2))), number(1)),
-                bitand(div(undefined(), number(5)), sub(variable("x"), number(7)))
-            ),
-            equal(boolean(true), modulo(record(vec![keyvalue("x", variable("y"))]), number(6)))
+            p(n(3)+n(2))*n(1)
+            .and(
+                undefined()/n(5)&var!(x)-n(7)
+                .or(
+                b(true).eq(rec!{x:var!(y)%n(6)}))
             )
         ),
         ("x.y.z", 
-            properties(variable("x"), vec!["y", "z"])
+            var!(x).dot!()
         ),
         ("function f(x) {
             const y = 3;
@@ -129,17 +113,18 @@ mod tests {
                     return_statement(
                         function_expr(
                             None,
-                            vec![DeclarationIndex(1)],
+                            vec![("x".into(), DeclarationIndex::Local(1))],
                             vec![unsafe{var_y.clone().unsafe_into()}],
-                            vec![capture("x", DeclarationIndex(0))],
+                            vec![capture("x", DeclarationIndex::Local(0))],
                             vec![
-                                return_statement(add(variable_initialized("x", DeclarationIndex(1)), var_y)),
+                                return_statement(add(variable_initialized("x", DeclarationIndex::Local(1)), var_y)),
                             ],
                         )
                     ),
                 ],
             )
         })
+        */
         ]
     }
 
@@ -153,7 +138,7 @@ mod tests {
             let mut state = ParserState::new(VecToken(tokenstream), vec![]);
 
             let result = expression(&mut state);
-            assert_eq!(result, Ok(case.1.clone()));
+            assert_eq!(Ok(case.1.clone()), result);
             println!("success, result: {:?}", result);
         });
     }

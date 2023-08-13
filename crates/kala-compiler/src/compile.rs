@@ -4,7 +4,7 @@ use jessie_ast::*;
 use jessie_interpreter::opcode::Opcode;
 
 struct CompilerState {
-    opcodes: Vec<u8>,    
+    instructions: Vec<Instruction
 }
 
 pub fn expr(state: &mut CompilerState, expr: Expr) -> Result<(), String> {

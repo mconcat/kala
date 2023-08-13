@@ -1,5 +1,5 @@
 use jessie_ast::*;
-use crate::{parser, prop_def_or_prop_param, CoverProperty, arrow_expr};
+use crate::{parser, arrow_expr};
 use crate::{
     VecToken, Token,
 
@@ -42,7 +42,7 @@ pub fn expression(state: &mut ParserState) -> Result<Expr, ParserError> {
         // Function expression
         // function f(x) { return x + 1; }
         
-        Some(Token::Function) => function_expr(state).map(|x| Expr::FunctionExpr(Box::new(x))),
+        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Box::new(x))),
 
         // Parenthesized expression or arrow function
         // (x + y)
@@ -115,7 +115,7 @@ pub fn assign_or_cond_or_primary_expression(state: &mut ParserState) -> Result<E
     println!("expr {:?} {:?}", expr, only_member_post_op);
 
     match expr {
-        Expr::DataLiteral(_) | Expr::FunctionExpr(_) => {
+        Expr::DataLiteral(_) | Expr::Function(_) => {
             // not a lvalue, cannot be an assignment.
             // jump to cond expression parsing.
             return cond_expr_with_leftmost(state, expr)
@@ -243,13 +243,13 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::LeftBrace) => record(state).map(|x| Expr::Record(Box::new(x))),
         Some(Token::String(s)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::String(s.into())))),
         Some(Token::Integer(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Integer(n.into())))),
-        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(n.into())))),
+        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(false, n)))),
         Some(Token::Null) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Null))),
         Some(Token::True) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::True))),
         Some(Token::False) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::False))),
         Some(Token::Undefined) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Undefined))),
-        Some(Token::Bigint(b)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Bigint(b.into())))),
-        Some(Token::Function) => function_expr(state).map(|x| Expr::FunctionExpr(Box::new(x))),
+        Some(Token::Bigint(sign, abs)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Bigint(sign, abs)))),
+        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Box::new(x))),
         _ => use_variable(state).map(|x| Expr::Variable(Box::new(x))),
     }
 }
@@ -270,7 +270,32 @@ pub fn element(state: &mut ParserState) -> Result<Expr, ParserError> {
 }
 
 pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
-    prop_def_or_prop_param(state).map(CoverProperty::into_prop)
+    if state.try_proceed(Token::DotDotDot) {
+        let expr = expression(state)?;
+        return Ok(PropDef::Spread(expr))
+    }
+
+    let prop_name = prop_name(state)?;
+    match state.lookahead_1() {
+        // Method
+        Some(Token::LeftParen) => {
+            unimplemented!("method def")
+        },
+        // KeyValue
+        Some(Token::Colon) => {
+            state.proceed();
+            let expr = expression(state)?;
+            Ok(PropDef::KeyValue(prop_name, expr))
+        },
+        // Shorthand
+        Some(Token::Comma) | Some(Token::RightBrace) => {
+            let var = state.scope.use_variable(&prop_name.dynamic_property);
+            Ok(PropDef::Shorthand(prop_name, Box::new(var)))
+        },
+        _ => {
+            state.err_expected(": for property pair", state.lookahead_1())
+        }
+    }
 }
 
 pub fn record(state: &mut ParserState) -> Result<Record, ParserError> {
@@ -351,13 +376,22 @@ pub fn arg(state: &mut ParserState) -> Result<Expr, ParserError> {
     let expr = expression(state)?;
 
     if is_spread {
-        if let Some(next_token) = state.lookahead_1() {
-            return Err(ParserError::InvalidExpression(
-                next_token, 
-                "spread parameter can only come at the end".to_owned()))
+        match state.lookahead_1() {
+            Some(Token::Comma) => {
+                match state.lookahead_2() {
+                    Some(Token::RightParen) => {
+                        // spread is the last argument, ok
+                    },
+                    _ => return state.err_expected("right paren", state.lookahead_2()),
+                }
+            }
+            Some(Token::RightParen) => {
+                // spread is the last argument, ok
+            }
+            _ => return state.err_expected("comma or right paren", state.lookahead_1()),
         }
 
-        Ok(Expr::Spread(Box::new(expr)))
+        return Ok(Expr::Spread(Box::new(expr)))
     }
 
     Ok(expr)

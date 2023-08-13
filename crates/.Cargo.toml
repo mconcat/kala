@@ -8,9 +8,9 @@ edition = "2021"
 [workspace]
 members = [
     "jessie-ast",
-    "jessie-compiler",
     "jessie-parser",
     "jessie-type-checker",
+    "kala-compiler",
     "kala-interpreter",
     "kala-repr",
     "kala-vm",

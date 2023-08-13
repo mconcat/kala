@@ -1,5 +1,6 @@
-use crate::{operation::*, Function, Record, Assignment, VariableCell, VariablePointer, Field, traits::UnsafeInto, Pattern};
-use utils::{SharedString};
+use crate::{operation::*, Function, Record, Assignment, VariableCell, VariablePointer, Field, Pattern, PropDef};
+use utils::{SharedString, FxMap, Map};
+use sha3::{Digest, Sha3_256};
 
 // paren, function, literal, array, record, variable
 
@@ -8,8 +9,7 @@ pub enum ExprDiscriminant {
     DataLiteral = 0,
     Array = 1,
     Record = 2,
-    ArrowFunc = 3,
-    FunctionExpr = 4,
+    Function = 3,
     Assignment = 5,
     CondExpr = 6,
     BinaryExpr = 7,
@@ -30,8 +30,7 @@ pub enum Expr {
     DataLiteral(Box<DataLiteral>) = ExprDiscriminant::DataLiteral as u8,
     Array(Box<Array>) = ExprDiscriminant::Array as u8,
     Record(Box<Record>) = ExprDiscriminant::Record as u8,
-    ArrowFunc(Box<Function>) = ExprDiscriminant::ArrowFunc as u8,
-    FunctionExpr(Box<Function>) = ExprDiscriminant::FunctionExpr as u8,
+    Function(Box<Function>) = ExprDiscriminant::Function as u8,
     Assignment(Box<Assignment>) = ExprDiscriminant::Assignment as u8,
     CondExpr(Box<CondExpr>) = ExprDiscriminant::CondExpr as u8,
     BinaryExpr(Box<BinaryExpr>) = ExprDiscriminant::BinaryExpr as u8,
@@ -41,18 +40,6 @@ pub enum Expr {
     ParenedExpr(Box<Expr>) = ExprDiscriminant::ParenedExpr as u8,
     Variable(Box<VariableCell>) = ExprDiscriminant::Variable as u8,
     Spread(Box<Expr>) = ExprDiscriminant::Spread as u8, // for array elements
-}
-
-impl UnsafeInto<Pattern> for Expr {
-    unsafe fn unsafe_into(self) -> Pattern {
-        match self {
-            Expr::Variable(v) => Pattern::Variable(v),
-            Expr::Spread(e) => Pattern::Rest(std::mem::transmute(e)),
-            Expr::Array(a) => Pattern::ArrayPattern(std::mem::transmute(a)),
-            Expr::Record(r) => Pattern::RecordPattern(std::mem::transmute(r)),
-            _ => panic!("cannot convert {:?} into Pattern", self),
-        }
-    }
 }
 
 #[repr(transparent)]
@@ -70,86 +57,12 @@ pub enum DataLiteral {
     Null,
     False,
     True,
-    Integer(SharedString),
-    Decimal(SharedString),
+    Integer(i64),
+    Decimal(bool, [u64;2]),
     String(SharedString),
     Undefined,
-    Bigint(SharedString),
+    Bigint(bool, Box<[u64]>),
 }
-
-
-
-/*
-impl Expr {
-    pub fn new_number(n: i64) -> Self {
-        Expr::DataLiteral(DataLiteral::Integer(n.to_string()))
-    }
-
-    pub fn new_add(l: Expr, r: Expr) -> Self {
-        Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Add, l, r)))
-    }
-
-    pub fn new_sub(l: Expr, r: Expr) -> Self {
-        Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Sub, l, r)))
-    }
-}
-
-*/
-
-
-/*
-#[derive(Debug, PartialEq, Clone)]
-pub enum BlockOrExpr {
-    Block(Vec<Statement>),
-    Expr(Expr), // only appears for arrow functions
-}
-*/
-
-/* 
-// Function is used for function declaration, function expressions, and arrow functions.
-#[derive(Debug, PartialEq, Clone)]
-pub struct Function{
-    pub name: Option<DefVariable>,
-
-
-    pub parameters: DeclarationPointer, // must be Parameters, TODO
-    pub typeann: Option<TypeAnn>,
-    
-    // block body
-    pub statements: Vec<Statement>,
-
-    // arrow function expression body
-    pub expression: Option<Expr>,
-
-    pub scope: Scope,
-
-    pub captures: Option<Vec<(Field, MutableDeclarationPointer)>>, 
-}
-
-impl Function {
-    pub fn from_body(name: Option<DefVariable>, parameters: DeclarationPointer, typeann: Option<TypeAnn>, block_or_expr: BlockOrExpr, scope: Scope) -> Self {
-        match block_or_expr {
-            BlockOrExpr::Block(statements) => Function {
-                name,
-                parameters,
-                typeann,
-                statements,
-                expression: None,
-                scope,
-            },
-            BlockOrExpr::Expr(expression) => Function {
-                name,
-                parameters,
-                typeann,
-                statements: vec![],
-                expression: Some(expression),
-                scope,
-            },
-        }
-    }
-}
-
-*/
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BinaryExpr(pub BinaryOp, pub Expr, pub Expr);

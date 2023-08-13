@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 utils = { version = "0.1.0", path = "../utils" }
+sha3 = "0.10.8"

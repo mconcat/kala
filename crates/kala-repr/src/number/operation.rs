@@ -1,62 +1,12 @@
-use std::{ops::{Deref, Add, Sub, Mul, Div}, net::AddrParseError};
+use std::{ops::{Deref, Add, Sub, Mul, Div, Neg}};
 
-use crate::SlotPointer;
-
-use super::{SlotTag, pointer::np32, Slot};
-
-pub const POSITIVE_INFINITY: i128 = 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
-
-pub const NEGATIVE_INFINITY: i128 = 0x8000_0000_0000_0000_0000_0000_0000_0000;
-
-pub const NAN_SLOT: u64 = SlotTag::Number.attach(0xFFFF_FFFF_FFFF_FFFF);
-
-#[repr(C)]
-pub struct NumberSlot {
-	value: i32,
-	pointer: np32<i128>,
-}
-
-impl NumberSlot {
-	pub fn new(value: i128) -> Self {
-		Self{ value: 0, pointer: np32::new(value) }
-	}
-
-	pub fn new_inline(value: i32) -> Self {
-		Self{ value, pointer: np32::null() }
-	}
-
-	pub const fn new_positive_infinity() -> Self {
-		Self{ value: 0, pointer: np32::new(i128::MAX) }
-	}
-
-	pub const fn new_negative_infinity() -> Self {
-		Self{ value: 0, pointer: np32::new(i128::MIN) }
-	}
-}
-
-impl Into<Slot> for NumberSlot {
-	fn into(self) -> Slot {
-		Slot{ pointer: SlotPointer(unsafe{std::mem::transmute::<Self, u64>(self)} | SlotTag::Number) }
-	}	
-}
-
-impl Deref for NumberSlot {
-	type Target = i128;
-
-	fn deref(&self) -> &Self::Target {
-		if self.pointer.is_null() {
-			&i128::from(self.value)
-		} else {
-			unsafe {&*self.pointer}
-		}
-	}
-}
+use super::NumberSlot;
 
 impl Add for NumberSlot {
 	type Output = Self;
 
 	fn add(self, rhs: Self) -> Self::Output {
-		if self.pointer.is_null() && rhs.pointer.is_null() {
+		if self.is_inline() && rhs.is_inline() {
 			let (res, overflow) = self.value.overflowing_add(rhs.value);
 			if overflow {
 				return NumberSlot::new(res as i128)
@@ -64,17 +14,8 @@ impl Add for NumberSlot {
 			return NumberSlot::new_inline(res) 
 		}
 
-		let self_value = if self.pointer.is_null() {
-			self.value as i128
-		} else {
-			*self.pointer
-		};
-
-		let rhs_value = if rhs.pointer.is_null() {
-			rhs.value as i128
-		} else {
-			*rhs.pointer
-		};
+		let self_value: i128 = self.into();
+		let rhs_value: i128 = rhs.into();
 
 		let (res, overflow) = self_value.overflowing_add(rhs_value);
 		if overflow {
@@ -101,27 +42,17 @@ impl Sub for NumberSlot {
 	type Output = Self; 
 
 	fn sub(self, rhs: Self) -> Self::Output {
-		if self.pointer.is_null() && rhs.pointer.is_null() {
+		if self.is_inline() && rhs.is_inline() {
 			let (res, overflow) = self.value.overflowing_sub(rhs.value);
 			if overflow {
 				//return NumberSlot::new(res as i128)
 				unimplemented!("overflow")
 			}
 			return NumberSlot::new_inline(res) 
-		}
+		}	
 
-		let self_value = if self.pointer.is_null() {
-			self.value as i128
-		} else {
-			*self.pointer
-		};
-
-		let rhs_value = if rhs.pointer.is_null() {
-			rhs.value as i128
-		} else {
-			*rhs.pointer
-		};
-
+		let self_value: i128 = self.into();
+		let rhs_value: i128 = rhs.into();
 		let (res, overflow) = self_value.overflowing_sub(rhs_value);
 		if overflow {
 			if res < 0 {
@@ -139,7 +70,7 @@ impl Mul for NumberSlot {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self::Output {
-		if self.pointer.is_null() && rhs.pointer.is_null() {
+		if self.is_inline() && rhs.is_inline() {
 			let (res, overflow) = self.value.overflowing_mul(rhs.value);
 			if overflow {
 				unimplemented!("overflow")
@@ -148,17 +79,8 @@ impl Mul for NumberSlot {
 			return NumberSlot::new_inline(res) 
 		}
 
-		let self_value = if self.pointer.is_null() {
-			self.value as i128
-		} else {
-			*self.pointer
-		};
-
-		let rhs_value = if rhs.pointer.is_null() {
-			rhs.value as i128
-		} else {
-			*rhs.pointer
-		};
+		let self_value: i128 = self.into();
+		let rhs_value: i128 = rhs.into();
 
 		let self_lo = self_value & 0xFFFF_FFFF_FFFF_FFFF;
 		let self_hi = self_value >> 64;
@@ -198,7 +120,7 @@ impl Div for NumberSlot {
 	type Output = Self;
 
 	fn div(self, rhs: Self) -> Self::Output {
-		if self.pointer.is_null() && rhs.pointer.is_null() {
+		if self.is_inline() && rhs.is_inline() {
 			if rhs.value == 0 {
 				unimplemented!("divide by zero, TODO: throw")
 			}
@@ -214,18 +136,19 @@ impl Div for NumberSlot {
 			// else, fallthrough
 		}
 
-		let self_value = if self.pointer.is_null() {
-			self.value as i128
-		} else {
-			*self.pointer
-		};
-
-		let rhs_value = if rhs.pointer.is_null() {
-			rhs.value as i128
-		} else {
-			*rhs.pointer
-		};
-
 		unimplemented!("long division")
 	}
+}
+
+impl Neg for NumberSlot {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        if self.is_inline() {
+            return NumberSlot::new_inline(-self.value)
+        }
+
+        let value: i128 = self.into();
+        NumberSlot::new(-value)
+    }
 }

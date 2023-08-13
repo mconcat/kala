@@ -42,7 +42,7 @@ pub enum LValueCallPostOp {
 #[derive(Debug, PartialEq, Clone)]
 pub struct CallLValue {
     pub expr: Expr,
-    pub post_op: Vec<LValueCallPostOp>,
+    pub post_ops: Vec<LValueCallPostOp>,
 }
 
 impl From<LValue> for Expr {

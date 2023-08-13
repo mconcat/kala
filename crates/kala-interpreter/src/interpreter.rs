@@ -1,34 +1,37 @@
-use std::ops;
+use std::ops::{self, FromResidual};
 
-use kala_repr::Slot;
+use jessie_ast::{DeclarationIndex, CaptureDeclaration, LocalDeclaration, Variable, ParameterDeclaration, PropertyAccess, Expr};
+use kala_repr::slot::Slot;
+
+use crate::expression::eval_expr;
 
 pub struct Frame {
-    pub captures: Vec<Slot>,
-    pub arguments: Vec<Slot>,
-    pub locals: Vec<Slot>,
+    pub captures: Vec<(Variable, Slot)>,
+    pub arguments: Vec<(ParameterDeclaration, Slot)>,
+    pub locals: Vec<(LocalDeclaration, Slot)>,
 }
 
 impl Frame {
-    pub fn get_capture(&mut self, index: usize) -> &mut Slot {
+    pub fn get_capture(&mut self, index: u32) -> (&mut Variable, &mut Slot) {
         self.captures.get_mut(index).unwrap()
     }
 
-    pub fn get_argument(&mut self, index: usize) -> &mut Slot {
+    pub fn get_argument(&mut self, index: u32) -> (&mut ParameterDeclaration, &mut Slot) {
         self.arguments.get_mut(index).unwrap()
     }
 
-    pub fn get_local(&mut self, index: usize) -> &mut Slot {
+    pub fn get_local(&mut self, index: u32) -> (&mut LocalDeclaration, &mut Slot) {
         self.locals.get_mut(index).unwrap()
     }
 
     pub fn get_variable(&mut self, variable: Variable) -> &mut Slot {
-        let mut var = match variable {
-            Variable::Capture(index) => self.get_capture(index),
-            Variable::Parameter(index) => self.get_argument(index),
-            Variable::Local(index) => self.get_local(index),
+        let mut var = match variable.declaration_index {
+            DeclarationIndex::Capture(index) => self.get_capture(index),
+            DeclarationIndex::Parameter(index) => self.get_argument(index),
+            DeclarationIndex::Local(index) => self.get_local(index),
         };
 
-        for access in variable.property_access.0 {
+        for access in variable.property_access {
             match access {
                 PropertyAccess::Property(field) => {
                     var = var.get_property(field);
@@ -43,92 +46,79 @@ impl Frame {
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
-pub enum ThrowCompletion {
-    Normal = 0,
-    Throw(Slot) = 2,
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum Completion {
     Normal = 0, // Normal completion, execution continues without inturrupt
-    Value(Slot) = 1, // evaluation result of an expression
+    Value(Slot) = 1, // evaluation result of an expression, discarded when treated as a statement
     Throw(Slot) = 2, // Throw, unwinds the execution until the innermost try-catch
-    Break = 3, // Break, unwinds the execution until the innermost loop
+    Break = 3, // Break, unwinds the execution until the innermost loop. 
     Continue = 4,
     Return(Slot) = 5, // Return, unwinds the execution until the innermost function call
     ReturnEmpty = 6,
 }
 
+impl FromResidual for Completion {
+    fn from_residual(residual: Self) -> Self {
+        residual
+    }
+}
+
+impl ops::Try for Completion {
+    type Output = Slot;
+
+    type Residual = Self;
+
+    fn from_output(output: Self::Output) -> Self {
+        Self::Value(output)
+    }
+
+    fn branch(self) -> ops::ControlFlow<Self::Residual, Self::Output> {
+        match self {
+            Self::Normal => ops::ControlFlow::Continue(Slot::new_undefined()),
+            Self::Value(v) => ops::ControlFlow::Continue(v),
+            Self::Throw(v) => ops::ControlFlow::Break(self),
+            Self::Break => ops::ControlFlow::Break(self),
+            Self::Continue => ops::ControlFlow::Break(self),
+            Self::Return(v) => ops::ControlFlow::Break(self),
+            Self::ReturnEmpty => ops::ControlFlow::Break(self),
+        }
+    }
+}
+
+#[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum Evaluation {
     Value(Slot) = 1,
     Throw(Slot) = 2,
 }
 
+impl FromResidual for Evaluation {
+    fn from_residual(residual: Self) -> Self {
+        residual
+    }
+}
+
 impl ops::Try for Evaluation {
-    type Ok = Slot;
-    type Error = Slot;
+    type Output = Slot;
+    type Residual = Self;
 
-    fn into_result(self) -> Result<Self::Ok, Self::Error> {
+    fn from_output(output: Self::Output) -> Self {
+        Self::Value(output)
+    }
+
+    fn branch(self) -> ops::ControlFlow<Self::Residual, Self::Output> {
         match self {
-            Self::Value(v) => Ok(v),
-            Self::Throw(v) => Err(v),
+            Self::Value(v) => ops::ControlFlow::Continue(v),
+            Self::Throw(v) => ops::ControlFlow::Break(self),
         }
-    }
-}
-
-impl ops::Try for ThrowCompletion {
-    type Ok = ();
-    type Error = Slot;
-
-    fn into_result(self) -> Result<Self::Ok, Self::Error> {
-        match self {
-            ThrowCompletion::Normal => Ok(()),
-            ThrowCompletion::Throw(v) => Err(v),
-        }
-    }
-
-    fn from_error(v: Self::Error) -> Self {
-        Self::Throw(v)
-    }
-
-    fn from_ok(v: Self::Ok) -> Self {
-        Self::Normal
-    }
-}
-
-impl ops::Try for Completion {
-    type Ok = ();
-    type Error = Self;
-
-    fn into_result(self) -> Result<Self::Ok, Self::Error> {
-        match self {
-            Completion::Normal => Ok(()),
-            Completion::Value(_) => Ok(()),
-            _ => Err(self),
-        }
-    }
-
-    fn from_error(v: Self::Error) -> Self {
-        v
-    }
-
-    fn from_ok(v: Self::Ok) -> Self {
-        Self::Normal
-    }
-}
-
-impl Into<Completion> for ThrowCompletion {
-    fn into(self) -> Completion {
-        unsafe{std::mem::transmute(self)}
     }
 }
 
 impl Into<Completion> for Evaluation {
     fn into(self) -> Completion {
-        unsafe{std::mem::transmute(self)}
+        unsafe {std::mem::transmute(self)}
     }
 }
+
 /* 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlockFlag(pub u32);
@@ -197,5 +187,19 @@ impl BlockFlag {
 }
 */
 pub struct Interpreter {
-    pub frame: Frame,
+    pub frame: Vec<Frame>,
+}
+
+impl Interpreter {
+    fn get_frame(&mut self) -> &mut Frame {
+        self.frame.get_mut(self.frame.len()-1)
+    }
+    
+    pub fn initialize_local(&mut self, index: u32) -> Completion{
+        let (decl, slot) = self.get_frame().get_local(i);
+        let initial_value_expr = decl.get_initial_value().unwrap_or(Expr::undefined());
+        let initial_value = eval_expr(self, &initial_value_expr)?;
+        *slot = initial_value;
+        Completion::Normal
+    }
 }

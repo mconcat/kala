@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 
-use jessie_ast::{VariableCell, VariablePointer, Variable, DeclarationIndex, PropertyAccessChain, LocalDeclaration, CaptureDeclaration};
+use jessie_ast::{VariableCell, VariablePointer, Variable, DeclarationIndex, LocalDeclaration, CaptureDeclaration};
 
 use crate::{scope::LexicalScope, map::VariablePointerMap, map::VariablePointerMapPool};
 
@@ -249,11 +249,11 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
                 // make a capturing declaration targeting upper scope, set the local pointer to reference it
                 let capture_cell = VariableCell::uninitialized(name.clone());
                 let decl = CaptureDeclaration::Local { name: name.clone(), variable: capture_cell.clone() };
-                let capture_index = DeclarationIndex::Capture(captures.len());
+                let capture_index = DeclarationIndex::Capture(captures.len() as u32);
                 captures.push(decl);
 
                 // Set the ptr to reference the new declaration
-                ptr.set(capture_index.clone(), PropertyAccessChain::empty()).unwrap();
+                ptr.set(capture_index.clone(), vec![]).unwrap();
 
                 // assert equivalence
                 self.scope.assert_equivalence(&name, capture_cell.ptr);

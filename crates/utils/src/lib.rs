@@ -1,4 +1,4 @@
-pub mod arena;
+// pub mod arena;
 pub mod types;
 pub mod map;
 

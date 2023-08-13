@@ -1,5 +1,5 @@
 [package]
-name = "jessie-interpreter"
+name = "kala-vm"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,3 +9,4 @@ edition = "2021"
 jessie-ast = { version = "0.1.0", path = "../jessie-ast" }
 bumpalo = { version = "3.9", features = ["allocator_api"] }
 utils = { version = "0.1.0", path = "../utils" }
+kala-repr = { version = "0.1.0", path = "../kala-repr" }

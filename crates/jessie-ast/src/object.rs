@@ -5,20 +5,12 @@ use utils::{SharedString};
 #[derive(Debug, PartialEq, Clone)]
 pub struct Record(pub Vec<PropDef>);
 
-pub enum PropDefDiscriminant {
-    KeyValue = 0, 
-    Shorthand = 1,
-    Spread = 2,
-    // Getter = 3,
-    // Setter = 4,
-}
-
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropDef {
-    KeyValue(Box<Field>, Expr) = PropDefDiscriminant::KeyValue as u8,
-    Shorthand(Box<Field>, VariableCell) = PropDefDiscriminant::Shorthand as u8,
-    Spread(Expr) = PropDefDiscriminant::Spread as u8,
+    KeyValue(Box<Field>, Expr),
+    Shorthand(Box<Field>, Box<VariableCell>),
+    Spread(Expr),
     // Getter(Function) = PropDefDiscriminant::Getter as u8,
     // Setter(Function) = PropDefDiscriminant::Setter as u8,
 }

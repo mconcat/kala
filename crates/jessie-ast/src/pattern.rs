@@ -1,4 +1,6 @@
-use crate::{Expr, ExprDiscriminant, VariableCell, Record, PropDefDiscriminant, Field, AssignOp, LValue, traits::{UnsafeInto}};
+use utils::{FxMap, Map, SharedString};
+
+use crate::{Expr, ExprDiscriminant, VariableCell, Record, Field, AssignOp, LValue, PropertyAccess, DeclarationIndex};
 
 // Pattern is a subset of Expr
 #[repr(u8)]
@@ -12,14 +14,50 @@ pub enum Pattern {
 }
 
 impl Pattern {
-    pub fn optional(lvalue: VariableCell, expr: Expr) -> Self {
-        Pattern::Optional(Box::new(OptionalPattern(OptionalOp::Optional, LValueOptional::Variable(Box::new(lvalue)), expr)))
+    pub fn visit(&self, index: DeclarationIndex, f: &mut impl FnMut(SharedString, Vec<PropertyAccess>)) {
+        let mut access = vec![];
+        self.visit_internal(index, &mut access, f);
+    }
+
+    pub(crate) fn visit_internal(&self, index: DeclarationIndex, property_access: &mut Vec<PropertyAccess>, f: &mut impl FnMut(SharedString, Vec<PropertyAccess>)) {
+        match self {
+            Self::Rest(pat) => unimplemented!("rest pattern"),
+            Self::Optional(pat) => unimplemented!("optional"),
+            Self::ArrayPattern(pat) => {
+                for (i, elem) in (&pat.0).iter().enumerate() {
+                    property_access.push(PropertyAccess::Element(i as u32));
+                    elem.visit_internal(index, property_access, f);
+                    property_access.pop();
+                }
+            }
+            Self::RecordPattern(pat) => 
+            for prop in &pat.0 {
+                match prop {
+                    PropParam::KeyValue(k, v) => {
+                        property_access.push(PropertyAccess::Property(k.clone()));
+                        v.visit_internal(index, property_access, f);
+                        property_access.pop();
+                    },
+                    PropParam::Rest(v) => {
+                        unimplemented!("rest")
+                    },
+                    PropParam::Shorthand(k, v) => {
+                        property_access.push(PropertyAccess::Property(k.clone()));
+                        f(v.name.clone(), property_access.clone());
+                        property_access.pop();
+                    }, 
+                }
+            },
+            Self::Variable(x) => {
+                f(x.name.clone(), property_access.clone())
+            }
+        }
     }
 }
 
-impl UnsafeInto<Expr> for Pattern {
-    unsafe fn unsafe_into(self) -> Expr {
-        std::mem::transmute(self)
+impl Pattern {
+    pub fn optional(lvalue: VariableCell, expr: Expr) -> Self {
+        Pattern::Optional(Box::new(OptionalPattern(OptionalOp::Optional, LValueOptional::Variable(Box::new(lvalue)), expr)))
     }
 }
 
@@ -52,9 +90,9 @@ pub struct RecordPattern(pub Vec<PropParam>);
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropParam {
-    KeyValue(Box<Field>, Pattern) = PropDefDiscriminant::KeyValue as u8,
-    Shorthand(Box<Field>, VariableCell) = PropDefDiscriminant::Shorthand as u8,
-    Rest(Pattern) = PropDefDiscriminant::Spread as u8,
+    KeyValue(Box<Field>, Pattern),
+    Shorthand(Box<Field>, Box<VariableCell>),
+    Rest(Box<VariableCell>),
 }
 
 

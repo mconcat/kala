@@ -1,386 +1,299 @@
-use std::mem::MaybeUninit;
+use kala_repr::Slot;
 
-use crate::{vm::opcode::Opcode, stack::{Slot, SlotTag, TypedSlot}};
+use super::instruction::{InstructionImmediate, InstructionUpdate, InstructionJump, InstructionBranch, InstructionLoad, InstructionStore, InstructionRegister, Instruction, Opcode};
 
-// TODO: migrate to register machine
-// Interpreter exeuctes a single script. 
 pub struct Interpreter {
     stack: Vec<Slot>,
-    code: Vec<Opcode>,
 
-    ra: usize, // return address, caller saved
-    sp: usize, // stack pointer, callee saved
-    fp: usize, // frame pointer, callee saved
-
+    ra: usize, // return address after return
+    fp: usize, // current frame base
+    sp: usize, // current stack top
     pc: usize, // program counter
-
-    // map_pool: FxMapPool<Slot>, // meaningless for now as we don't deallocate
 }
 
 impl Interpreter {
-    pub fn push_stack<T: Into<Slot>>(&mut self, value: T) {
-        self.stack.push(value.into());
+    pub fn read_register(&self, register: u8) -> Slot {
+        self.stack[self.fp + register as usize]
     }
+
+    pub fn write_register(&mut self, register: u8, value: Slot) {
+        self.stack[self.fp + register as usize] = value;
+    }
+
+    pub fn op(&mut self, op: Instruction) {
+        match op.untyped.operation {
+            Opcode::AddI => self.op_addi(op.immediate),
+            Opcode::MulI => self.op_muli(op.immediate),
+            Opcode::ModI => self.op_modi(op.immediate),
+            Opcode::SltI => self.op_slti(op.immediate),
+            Opcode::SltIU => self.op_sltiu(op.immediate),
+            Opcode::AndI => self.op_andi(op.immediate),
+            Opcode::OrI => self.op_ori(op.immediate),
+            Opcode::XorI => self.op_xori(op.immediate),
+            Opcode::SllI => self.op_slli(op.immediate),
+            Opcode::SrlI => self.op_srli(op.immediate),
+            Opcode::SraI => self.op_srai(op.immediate),
+            Opcode::LuI => self.op_lui(op.immediate),
+
+            Opcode::Add => self.op_add(op.register),
+            Opcode::Sub => self.op_sub(op.register),
+            Opcode::Mul => self.op_mul(op.register),
+            Opcode::Div => self.op_div(op.register),
+            Opcode::Mod => self.op_mod(op.register),
+            Opcode::Pow => self.op_pow(op.register),
+            Opcode::Slt => self.op_slt(op.register),
+            Opcode::SltU => self.op_sltu(op.register),
+            Opcode::And => self.op_and(op.register),
+            Opcode::Or => self.op_or(op.register),
+            Opcode::Xor => self.op_xor(op.register),
+            Opcode::Sll => self.op_sll(op.register),
+            Opcode::Srl => self.op_srl(op.register),
+            Opcode::Sra => self.op_sra(op.register),
+
+            Opcode::Jal => self.op_jal(op.jump),
+            Opcode::Jalr => self.op_jalr(op.immediate),
+            Opcode::Beq => self.op_beq(op.branch),
+            Opcode::Bne => self.op_bne(op.branch),
+            Opcode::Blt => self.op_blt(op.branch),
+            Opcode::Bge => self.op_bge(op.branch),
+            Opcode::Throw => self.op_throw(op),
+            Opcode::Catch => self.op_catch(op),
+
+            Opcode::Load => self.op_load(op.load),
+            Opcode::Store => self.op_store(op.store),
+            Opcode::AllocI => self.op_alloci(op.immediate),
+            Opcode::Alloc => self.op_alloc(op.register),
+
+            Opcode::CallI => self.op_calli(op.immediate),
+            Opcode::Call => self.op_call(op.register),
+            Opcode::Return => self.op_return(op.immediate),
+            Opcode::Unwind => self.op_unwind(op.immediate),
+
+
+            Opcode::AwaitCall => unimplemented!("AwaitCall"),
+            Opcode::AwaitCallI => unimplemented!("AwaitCallI"),
+            Opcode::Eval => unimplemented!("Eval"),
+
+
+            _ => unimplemented!("Opcode {:?}", op.untyped.operation),
+        }
+    }
+
+    fn op_immediate(&mut self, op: InstructionImmediate, f: fn(Slot, Slot) -> Slot) {
+        let a = self.read_register(op.source_0);
+        let b = Slot::from_existing_type(a, op.immediate);
+        let c = f(a, b);
+        self.write_register(op.destination, c);
+    }
+
+    pub fn op_addi(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::add);
+    }
+
+    pub fn op_muli(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::mul);
+    }
+
+    pub fn op_modi(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::rem);
+    }
+
+    pub fn op_slti(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::slt);
+    }
+
+    pub fn op_sltiu(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::sltu);   
+    }
+
+    pub fn op_andi(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::bit_and);
+    }
+
+    pub fn op_ori(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::bit_or);
+    }
+
+    pub fn op_xori(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::bit_xor);
+    }
+
+    pub fn op_slli(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::shl);
+    }
+
+    pub fn op_srli(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::shr);
+    }
+
+    pub fn op_srai(&mut self, op: InstructionImmediate) {
+        self.op_immediate(op, Slot::sar);
+    }
+
+    pub fn op_lui(&mut self, op: InstructionImmediate) {
     
-    pub fn const_read_bytes_from_code<const count: usize>(&mut self) -> &[u8; count] {
-        let offset = self.pc;
-        self.pc += count;
-        if self.pc >= self.code.len() {
-            panic!("out of bounds");
-        }
-        unsafe{&*(self.code.as_ptr().add(offset) as *const [u8; count])}
     }
 
-    pub fn read_bytes_from_code(&mut self, count: usize) -> &[u8] {
-        let offset = self.pc;
-        self.pc += count;
-        if self.pc >= self.code.len() {
-            panic!("out of bounds");
-        }
-        unsafe{std::mem::transmute(&self.code[offset..self.pc])}
+    fn op_register(&mut self, op: InstructionRegister, f: fn(Slot, Slot) -> Slot) {
+        let a = self.read_register(op.source_0);
+        let b = self.read_register(op.source_1);
+        let c = f(a, b);
+        self.write_register(op.destination, c);
     }
 
-    pub fn const_read_opcodes_from_code<const count: usize>(&mut self) -> &[Opcode; count] {
-        let offset = self.pc;
-        self.pc += count;
-        if self.pc >= self.code.len() {
-            panic!("out of bounds");
-        }
-        unsafe{&*(self.code.as_ptr().add(offset) as *const [Opcode; count])}
+    pub fn op_add(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::add);
     }
 
-    pub fn read_opcodes_from_code(&mut self, count: usize) -> &[Opcode] {
-        let offset = self.pc;
-        self.pc += count;
-        if self.pc >= self.code.len() {
-            panic!("out of bounds");
-        }
-        unsafe{std::mem::transmute(&self.code[offset..self.pc])}
+    pub fn op_mul(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::mul);
     }
 
-    pub fn const_push_slots<const count: usize>(&mut self, slots: &[Slot; count]) {
-        self.stack.extend_from_slice(slots);
+    pub fn op_mod(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::rem);
     }
 
-    // Should not push to the stack before consuming all the slots.
-    pub fn const_pop_slots_from_stack<const count: usize>(&mut self) -> &[Slot; count] {
-        if count > self.stack.len() {
-            panic!("out of bounds");
-        }
-        let offset = self.stack.len() - count;
-        unsafe{self.stack.set_len(offset)};
-        unsafe{&*(self.stack.as_ptr().add(offset) as *const [Slot; count])}
+    pub fn op_slt(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::slt);
     }
 
-    pub fn const_pop_typed_slots_from_stack<const count: usize>(&mut self) -> &[TypedSlot; count] {
-        if count > self.stack.len() {
-            panic!("out of bounds");
-        }
-        let offset = self.stack.len() - count;
-        unsafe{self.stack.set_len(offset)};
-        let slots = unsafe{&*(self.stack.as_ptr().add(offset) as *const [Slot; count])};
-        let mut result = MaybeUninit::<[TypedSlot; count]>::uninit();
-        for (i, slot) in slots.iter().enumerate() {
-            result[i] = slot.into_typed()
-        }
-        result
+    pub fn op_sltu(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::sltu);
     }
 
-    pub fn pop_slots_from_stack(&mut self, count: usize) -> &[Slot] {
-        if count > self.stack.len() {
-            panic!("out of bounds");
-        }
-        let offset = self.stack.len() - count;
-        unsafe{self.stack.set_len(offset)};
-        unsafe{std::mem::transmute(&self.stack[offset..self.stack.len()])}
+    pub fn op_and(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::bit_and);
     }
 
-    unsafe fn coerce_number_to_bigint(&mut self, a: Slot) -> Slot {
-        let a_ptr = a.get_number_pointer();
-        if a_ptr.is_null() {
-            return Slot::new_bigint(a.value as i64)
-        }
-        
-        let a_value = &*a_ptr;
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(&a_ptr[..8]);
-        Slot::new_bigint(i64::from_le_bytes(buf))
+    pub fn op_or(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::bit_or);
     }
 
-    pub fn eval_opcode(&mut self) {
-        let op = self.code[self.pc];
-        self.pc += 1;
-        match op {
-            Opcode::True => self.stack.push(Slot::new_true()),
-            Opcode::False => self.stack.push(Slot::new_false()),
-            Opcode::Undefined => self.stack.push(Slot::new_undefined()),
-            Opcode::Null => self.stack.push(Slot::new_null()),
-            Opcode::Integer1 => {
-                let bytes = self.const_read_bytes_from_code::<1>();
-                self.stack.push(Slot::new_number_inline(i8::from_le_bytes(*bytes) as i32));
-            },
-            Opcode::Integer2 => {
-                let bytes = self.const_read_bytes_from_code::<2>();
-                self.stack.push(Slot::new_number_inline(i16::from_le_bytes(*bytes) as i32));
-            },
-            Opcode::Integer4 => {
-                let bytes = self.const_read_bytes_from_code::<4>();
-                self.stack.push(Slot::new_number_inline(i32::from_le_bytes(*bytes)));
-            },
-            Opcode::Number => {
-                unimplemented!("Number")
-            },
-            Opcode::Bigint1 => {
-                let bytes = self.const_read_bytes_from_code::<1>();
-                self.stack.push(Slot::new_bigint_inline(self.code[self.pc+1] as i32));
-            },
-            Opcode::Bigint2 => {
-                let mut bytes = self.const_read_bytes_from_code::<2>();
-                self.stack.push(Slot::new_bigint_inline(i16::from_le_bytes(*bytes) as i32));
-            },
-            Opcode::Bigint4 => {
-                let mut bytes = self.const_read_bytes_from_code::<4>(); 
-                self.stack.push(Slot::new_bigint_inline(i32::from_le_bytes(*bytes)));
-            },
-            Opcode::Bigint => {
-                unimplemented!("Bigint")
-            },
-            Opcode::String1 => {
-                let len_bytes = self.const_read_bytes_from_code::<1>();
-                let len = len_bytes[0] as usize;
-                let string_bytes = self.read_bytes_from_code(len);
-                let string_ptr = self.memory.allocate_bytes::<str>(string_bytes);
-                self.stack.push(Slot::new_string(string_ptr));
-            },
-            Opcode::Array1 => {
-                let len_bytes = self.const_read_bytes_from_code::<1>();
-                let len = len_bytes[0] as usize;
-                // XXX is it word length of byte length, brain not working rn check it later
-                let slots = self.pop_slots_from_stack(len);
-                let array = self.memory.allocate_slots(slots);
-                self.stack.push(Slot::new_reference(array));
-            },
-            Opcode::Object => {
-                let len_bytes = self.const_read_bytes_from_code::<1>();
-                let len = len_bytes[0] as usize;
-                let pairs = self.pop_slots_from_stack(len*2);
-                let object = self.map_pool.get();
-                for i in (0..len) {
-                    let key_slot = pairs[i*2];
-                    let key = key_slot.to_string();
-                    let value = pairs[i*2+1];
-                    
-                }
-            },
-            Opcode::Function => {
-                
-            },
-            Opcode::Add => {   
-                let [b, a] = self.const_pop_typed_slots_from_stack::<2>();
+    pub fn op_xor(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::bit_xor);
+    }
 
-                match (a, b) {
-                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a+b),
-                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a+b),
-                    // DIVERGENCE: ecmascript allows string concatenation
-                    (TypedSlot::String(a), TypedSlot::String(b)) => self.throw_type_error("cannot add strings"),
-                    (TypedSlot::Number(_), TypedSlot::Bigint(_)) | (TypedSlot::Bigint(_), TypedSlot::Number(_)) => self.throw_type_error("cannot add number and bigint"),
-                    _ => self.throw_type_error("cannot add"),
-                }
-            },
-            Opcode::Sub => {
-                let [b, a] = self.const_pop_typed_slots_from_stack::<2>();
-                match (a, b) {
-                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a-b),
-                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a-b),
-                    (TypedSlot::Number(_), TypedSlot::Bigint(_)) | (TypedSlot::Bigint(_), TypedSlot::Number(_)) => self.throw_type_error("cannot sub number and bigint"),
-                    _ => self.throw_type_error("cannot sub"),
-                }
-            },
-            Opcode::Mul => {
-                let [b, a] = self.const_pop_typed_slots_from_stack::<2>();
-                match (a, b) {
-                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a*b),
-                    (TypedSlot::Number(a), TypedSlot::Number(b)) => self.push_stack(a*b),
-                    (TypedSlot::Number(_), TypedSlot::Bigint(_)) | (TypedSlot::Bigint(_), TypedSlot::Number(_)) => self.throw_type_error("cannot mul number and bigint"),
-                    _ => self.throw_type_error("cannot mul"),
-                }
-            },
-            Opcode::Div => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                match (a.tag(), b.tag()) {
-                    (SlotTag::Number, SlotTag::Number) => {
-                        self.stack.push(unsafe { self.op_div_number(a, b) });
-                    },
-                    (SlotTag::Bigint, SlotTag::Bigint) => {
-                        self.stack.push(unsafe { self.op_div_bigint(a, b) });
-                    },
-                    (SlotTag::Number, SlotTag::Bigint) | (SlotTag::Bigint, SlotTag::Number) => {
-                        self.throw_type_error("cannot div number and bigint");
-                    },
-                    _ => {
-                        self.throw_type_error("cannot div");
-                    }
-                }
-            },
-            Opcode::Mod => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                match (a.tag(), b.tag()) {
-                    (SlotTag::Number, SlotTag::Number) => {
-                        self.stack.push(unsafe { self.op_mod_number(a, b) });
-                    },
-                    (SlotTag::Bigint, SlotTag::Bigint) => {
-                        self.stack.push(unsafe { self.op_mod_bigint(a, b) });
-                    },
-                    (SlotTag::Number, SlotTag::Bigint) | (SlotTag::Bigint, SlotTag::Number) => {
-                        self.throw_type_error("cannot mod number and bigint");
-                    },
-                    _ => {
-                        self.throw_type_error("cannot mod");
-                    }
-                }
-            },
-            Opcode::Pow => {
-                unimplemented!()
-            },
-            Opcode::LessThan => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                match (a.tag(), b.tag()) {
-                    (SlotTag::Number, SlotTag::Number) => {
-                        self.stack.push(unsafe { self.op_less_than_number(a, b) });
-                    },
-                    (SlotTag::Bigint, SlotTag::Bigint) => {
-                        self.stack.push(unsafe { self.op_less_than_bigint(a, b) });
-                    },
-                    (SlotTag::Number, SlotTag::Bigint) => {
-                        self.stack.push(unsafe { self.op_less_than_bigint(a, b) });
-                    },
-                    (SlotTag::Bigint, SlotTag::Number) => {
-                        
-                    },
-                    _ => {
-                        self.throw_type_error("cannot less than");
-                    }
-                }
-            },
-            Opcode::LessThanEqual => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                self.stack.push(a <= b);
-            },
-            Opcode::GreaterThan => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                self.stack.push(a > b);
-            },
-            Opcode::GreaterThanEqual => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                self.stack.push(a >= b);
-            },
-            Opcode::StrictEqual => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                self.stack.push(a == b);
-            },
-            Opcode::StrictNotEqual => {
-                let [b, a] = self.const_pop_slots_from_stack::<2>();
-                self.stack.push(a != b);
-            },
-            Opcode::Not => {
-                let a = self.stack.pop().unwrap();
-                self.stack.push(!a);
-            },
-            Opcode::Call => {
-                // 
-            },
-            Opcode::Branch1 => {
-                let offset = self.const_read_bytes_from_code::<1>()[0] as usize;
-                self.pc += offset;
-                return
-            },
-            Opcode::Branch2 => {
-                let offset = i16::from_le_bytes(*self.const_read_bytes_from_code::<2>());
-                self.pc += offset;
-                return
-            },
-            Opcode::Branch4 => {
-                let offset = i32::from_le_bytes(*self.const_read_bytes_from_code::<4>());
-                self.pc += offset;
-                return
-            },
-            Opcode::BranchIf1 => {
-                let a = self.stack.pop().unwrap();
-                if a.is_truthy() {
-                    let offset = self.const_read_bytes_from_code::<1>()[0] as usize;
-                    self.pc += offset;
-                    return
-                }
-            },
-            Opcode::BranchIf2 => {
-                let a = self.stack.pop().unwrap();
-                if a.is_truthy() {
-                    let offset = i16::from_le_bytes(*self.const_read_bytes_from_code::<2>());
-                    self.pc += offset;
-                    return
-                }
-            },
-            Opcode::BranchIf4 => {
-                let a = self.stack.pop().unwrap();
-                if a.is_truthy() {
-                    let offset = i32::from_le_bytes(*self.const_read_bytes_from_code::<4>());
-                    self.pc += offset;
-                    return
-                }
-            },
-            Opcode::BranchElse1 => {
-                let a = self.stack.pop().unwrap();
-                if a.is_falsy() {
-                    let offset = i8::from_le_bytes(*self.const_read_bytes_from_code::<1>());
-                    self.pc += offset;
-                    return
-                } 
-            },
-            Opcode::BranchElse2 => {
-                let a = self.stack.pop().unwrap();
-                if a.is_falsy() {
-                    let offset = i16::from_le_bytes(*self.const_read_bytes_from_code::<2>());
-                    self.pc += offset;
-                    return
-                }
-            },
-            Opcode::BranchElse4 => {
-                let a = self.stack.pop().unwrap();
-                if a.is_falsy() {
-                    let offset = i32::from_le_bytes(*self.const_read_bytes_from_code::<4>());
-                    self.pc += offset;
-                    return
-                }
-            },
-            Opcode::Return => {
+    pub fn op_sll(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::shl);
+    }
 
-            },
-            Opcode::Dup => {
-                let a = self.stack.last().unwrap();
-                self.stack.push(a);
-            },
-            Opcode::DupAt => {
-                let offset = self.const_read_bytes_from_code::<1>();
-                let a = self.stack[self.stack.len() - 1 - self.code[self.pc] as usize];
-                self.stack.push(a);
-            },
-            Opcode::Pop => {
-                self.stack.pop();
-            },
-            Opcode::Swap => {
-                std::mem::swap(&mut self.stack[self.stack.len() - 1], &mut self.stack[self.stack.len() - 2]);
-            },
-            Opcode::ConstLocal1 => {
-                let index = self.const_read_bytes_from_code::<1>()[0];
+    pub fn op_srl(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::shr);
+    }
 
-                self.stack.push(self.locals[index]);
-                self.pc += 1;
-            },
-            Opcode::LetLocal1 => {
-            },
-            Opcode::GetLocal1 => {
+    pub fn op_sra(&mut self, op: InstructionRegister) {
+        self.op_register(op, Slot::sar);
+    }
 
-            }
+    pub fn op_jal(&mut self, op: InstructionJump) {
+        let jmp = op.immediate as isize * 4;
+        self.write_register(op.destination, self.pc + 4);
+        self.pc += jmp;
+    }
+
+    pub fn op_jalr(&mut self, op: InstructionImmediate) {
+        let jmp = (self.read_register(op.source_0) + op.immediate) * 4;
+        self.write_register(op.destination, self.pc + 4);
+        self.pc += jmp;
+    }
+
+    pub fn op_beq(&mut self, op: InstructionBranch) {
+        let a = self.read_register(op.source_0);
+        let b = self.read_register(op.source_1);
+        // XXX: since we can have multiple representation for a single value because of
+        // - inlined value
+        // - multiple levels of indirection when stored in the local variable
+        // so having simple equality check is not enough
+        // we may need to put type check in conditional branches too(right now the hints are not used in conditional branches)
+        if a == b {
+            let jmp = op.immediate as isize * 4;
+            self.pc += jmp;
         }
+    }
+
+    pub fn op_bne(&mut self, op: InstructionBranch) {
+        let a = self.read_register(op.source_0);
+        let b = self.read_register(op.source_1);
+        if a != b {
+            let jmp = op.immediate as isize * 4;
+            self.pc += jmp;
+        }
+    }
+
+    pub fn op_blt(&mut self, op: InstructionBranch) {
+        let a = self.read_register(op.source_0);
+        let b = self.read_register(op.source_1);
+        if a < b {
+            let jmp = op.immediate as isize * 4;
+            self.pc += jmp;
+        }
+    }
+
+    pub fn op_bge(&mut self, op: InstructionBranch) {
+        let a = self.read_register(op.source_0);
+        let b = self.read_register(op.source_1);
+        if a >= b {
+            let jmp = op.immediate as isize * 4;
+            self.pc += jmp;
+        }
+    }
+
+    pub fn op_load(&mut self, op: InstructionImmediate) {
+        let width = op.operation.memory_width();
+        let base = self.read_register(op.base);
+        let offset = op.offset as isize;
+        let address = base + offset;
+        let value = self.read_memory(address, width);
+        self.write_register(op.destination, value);
+    }
+
+    pub fn op_store(&mut self, op: InstructionImmediate) {
+        let width = op.operation.memory_width();
+        let base = self.read_register(op.base);
+        let offset = op.offset as isize;
+        let address = base + offset;
+        let value = self.read_register(op.source);
+        self.write_memory(address, width, value);
+    }
+
+    pub fn op_alloc(&mut self, op: InstructionRegister) {
+        let width = op.operation.memory_width();
+        let base = self.read_register(op.destination);
+        let offset = op.immediate as isize;
+        let address = base + offset;
+        self.write_register(op.destination, address);
+        self.write_memory(address, width, Slot::Undefined);
+    }
+
+    pub fn op_alloci(&mut self, op: InstructionImmediate) {
+        let width = op.operation.memory_width();
+        let base = self.read_register(op.destination);
+        let offset = op.immediate as isize;
+        let address = base + offset;
+        self.write_register(op.destination, address);
+        self.write_memory(address, width, Slot::Undefined);
+    }
+
+    pub fn op_calli(&mut self, op: InstructionImmediate) {
+        let arg_start = self.fp + op.source_0 as usize;
+        let arg_count = op.source_1 as usize;
+        let arg_end = self_start + arg_count;
+        let args = self.stack[arg_start..arg_end];
+        self.push_call_data(args);
+        self.jump(op.immediate);
+    }
+
+    pub fn op_call(&mut self, op: InstructionRegister) {
+        let arg_start = self.fp + op.source_0 as usize;
+        let arg_count = op.source_1 as usize;
+        let arg_end = self_start + arg_count;
+        let args = self.stack[arg_start..arg_end];
+        self.push_call_data_variadic(args);
+        let closure = self.read_register(op.destination);
+        self.jump_closure(closure);
+    }
+
+    pub fn op_return(&mut self, op: InstructionImmediate) {
+        let return_start: self.fp + op.
     }
 }

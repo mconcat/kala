@@ -1,6 +1,6 @@
 use jessie_ast::*;
 use crate::common::identifier;
-use crate::parser;
+use crate::{parser, use_variable};
 use crate::{
     VecToken, Token,
 
@@ -56,7 +56,7 @@ pub fn param(state: &mut ParserState) -> Result<Pattern, ParserError> {
 
 fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
-        return pattern(state).map(|x| PropParam::Rest(x))
+        return Ok(PropParam::Rest(Box::new(use_variable(state)?)))
     }
 
     let key = identifier(state)?;
@@ -78,7 +78,7 @@ fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
         _ => {
             let var = state.scope.use_variable(&key);
             let field = Box::new(Field::new_dynamic(key));
-            Ok(PropParam::Shorthand(field, var))
+            Ok(PropParam::Shorthand(field, Box::new(var)))
         }
     }
 }

@@ -1,10 +1,3 @@
-use crate::{Slot, pointer::np32};
-
-pub struct Array {
-    // the length of the array is stored in the reference header
-    ptr: *mut Slot,
-}
-
 impl From<Slot> for Array {
     fn from(slot: Slot) -> Self {
         let arr = unsafe {std::slice::from_raw_parts_mut(slot.get_slot_pointer(), slot.value.try_into().unwrap())};

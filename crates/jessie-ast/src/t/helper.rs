@@ -1,43 +1,12 @@
 use utils::{SharedString};
 
 use crate::{*};
-pub use crate::traits::UnsafeInto;
 
 // Expression
 
 // Data Literal
 
-fn data_literal(data_literal: DataLiteral) -> Expr {
-    Expr::DataLiteral(Box::new(data_literal))
-}
-
-pub fn undefined() -> Expr {
-    data_literal(DataLiteral::Undefined)
-}
-
-pub fn null() -> Expr {
-    data_literal(DataLiteral::Null)
-}
-
-pub fn boolean(b: bool) -> Expr {
-    data_literal(if b { DataLiteral::True } else { DataLiteral::False })
-}
-
-pub fn number(n: i64) -> Expr {
-    data_literal(DataLiteral::Integer(n.to_string().into()))
-}
-
-pub fn decimal(n: &str) -> Expr {
-    data_literal(DataLiteral::Decimal(n.to_string().into()))
-}
-
-pub fn string(s: &str) -> Expr {
-    data_literal(DataLiteral::String(s.to_string().into()))
-}
-
-pub fn bigint(s: u64) -> Expr {
-    data_literal(DataLiteral::Bigint(s.to_string().into()))
-}
+// literal.rs
 
 // Array
 
@@ -61,21 +30,22 @@ pub fn shorthand(key: &str, value: VariableCell) -> PropDef {
 */
 
 // Patterns
-
+/* 
 pub fn rest<T: UnsafeInto<Pattern>>(pattern: T) -> Pattern {
     Pattern::Rest(Box::new(unsafe{pattern.unsafe_into()}))
 }
+*/
 
 // Functions
 
 fn set_variable_pointers_for_pattern(pattern: &mut Pattern, decl_index: DeclarationIndex, property_access_chain: &mut Vec<PropertyAccess>) {
     match pattern {
         Pattern::Variable(cell) => {
-            cell.ptr.set(decl_index.clone(), PropertyAccessChain::from_vec(property_access_chain.clone()));
+            cell.ptr.set(decl_index.clone(), property_access_chain);
         },
         Pattern::ArrayPattern(array) => {
             for (i, pattern) in array.0.iter_mut().enumerate() {
-                property_access_chain.push(PropertyAccess::Element(i));
+                property_access_chain.push(PropertyAccess::Element(i as u32));
                 set_variable_pointers_for_pattern(pattern, decl_index.clone(), property_access_chain);
                 property_access_chain.pop();
             }
@@ -84,7 +54,7 @@ fn set_variable_pointers_for_pattern(pattern: &mut Pattern, decl_index: Declarat
     }
 }
 
-pub fn function_expr(name: Option<&str>, captures: Vec<(SharedString, DeclarationIndex)>, mut params: Vec<Pattern>, declarations: Vec<LocalDeclaration>, statements: Vec<Statement>) -> Expr {
+pub fn function_expr(name: FunctionName, captures: Vec<(SharedString, DeclarationIndex)>, mut params: Vec<Pattern>, declarations: Vec<LocalDeclaration>, statements: Vec<Statement>) -> Expr {
     let mut decl_index = 0;
     let mut param_decls = params.iter_mut().map(|pattern| {
         set_variable_pointers_for_pattern(pattern, DeclarationIndex::Parameter(decl_index), &mut Vec::new());
@@ -103,21 +73,19 @@ pub fn function_expr(name: Option<&str>, captures: Vec<(SharedString, Declaratio
         }
     }).collect::<Vec<CaptureDeclaration>>();
 
-    Expr::FunctionExpr(Box::new(Function{
-        name: name.map(SharedString::from_str),
+    Expr::Function(Box::new(Function{
+        name: name,
         captures: capture_decls,
         parameters: param_decls,
-        declarations: declarations,
-        statements: statements,
+        locals: declarations,
+        statements: Block { statements },
     }))
 }
 
 // BinaryExpr
 
-fn binary_expr(op: BinaryOp, l: Expr, r: Expr) -> Expr {
-    Expr::BinaryExpr(Box::new(BinaryExpr(op, l, r)))
-}
 
+/* 
 pub fn add(l: Expr, r: Expr) -> Expr {
     binary_expr(BinaryOp::Add, l, r)
 }
@@ -153,6 +121,7 @@ pub fn equal(l: Expr, r: Expr) -> Expr {
 pub fn bitand(l: Expr, r: Expr) -> Expr {
     binary_expr(BinaryOp::BitAnd, l, r)
 }
+*/
 
 
 // Variable
@@ -165,7 +134,7 @@ pub fn variable_initialized(name: &str, declaration_index: DeclarationIndex) -> 
     Expr::Variable(Box::new(VariableCell::initialized(SharedString::from_str(name), declaration_index, vec![])))
 }
 
-pub fn parameter(name: &str, parameter_index: usize) -> Expr {
+pub fn parameter(name: &str, parameter_index: u32) -> Expr {
     Expr::Variable(Box::new(VariableCell::initialized(SharedString::from_str(name), DeclarationIndex::Parameter(parameter_index), vec![])))
 }
 
@@ -182,7 +151,7 @@ pub fn properties(expr: Expr, props: Vec<&str>) -> Expr {
 }
 
 pub fn shorthand(name: &str) -> PropDef {
-    PropDef::Shorthand(Box::new(Field::new_dynamic(SharedString::from_str(name))), VariableCell::uninitialized(SharedString::from_str(name)))
+    PropDef::Shorthand(Box::new(Field::new_dynamic(SharedString::from_str(name))), Box::new(VariableCell::uninitialized(SharedString::from_str(name))))
 }
 
 pub fn paren(expr: Expr) -> Expr {
@@ -202,7 +171,7 @@ pub fn const_declaration(name: &str, expr: Expr) -> LocalDeclaration {
     }
 }
 
-pub fn const_statement(name: &str, decl: usize) -> Statement {
+pub fn const_statement(name: &str, decl: u32) -> Statement {
     Statement::LocalDeclaration(Box::new(vec![decl]))
 }
 
@@ -213,7 +182,7 @@ pub fn let_declaration(name: &str, expr: Expr) -> LocalDeclaration {
     }
 }
 
-pub fn let_statement(name: &str, decl: usize) -> Statement {
+pub fn let_statement(name: &str, decl: u32) -> Statement {
     Statement::LocalDeclaration(Box::new(vec![decl]))
 }
 /* 
@@ -226,5 +195,5 @@ pub fn capture(name: &str, declaration_index: DeclarationIndex) -> CaptureDeclar
 }
 */
 pub fn block(statements: Vec<Statement>) -> Statement {
-    Statement::Block(Box::new(Block(statements)))
+    Statement::Block(Box::new(Block{statements}))
 }

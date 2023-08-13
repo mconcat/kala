@@ -70,7 +70,7 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
 }
 
 
-fn const_decl(state: &mut ParserState) -> Result<Vec<usize>, ParserError> {
+fn const_decl(state: &mut ParserState) -> Result<Vec<u32>, ParserError> {
     state.consume_1(Token::Const)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -79,7 +79,7 @@ fn const_decl(state: &mut ParserState) -> Result<Vec<usize>, ParserError> {
     }, false)
 }
 
-fn let_decl(state: &mut ParserState) -> Result<Vec<usize>, ParserError> {
+fn let_decl(state: &mut ParserState) -> Result<Vec<u32>, ParserError> {
     state.consume_1(Token::Let)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -87,12 +87,12 @@ fn let_decl(state: &mut ParserState) -> Result<Vec<usize>, ParserError> {
     }, false)
 }
 
-fn function_decl(state: &mut ParserState) -> Result<usize, ParserError> {
+fn function_decl(state: &mut ParserState) -> Result<u32, ParserError> {
     state.consume_1(Token::Function)?;
     let name = identifier(state)?;
     let parent_scope = state.enter_block_scope();
     // TODO: support recursive reference to function
-    let function = function_internal(state, Some(name))?;
+    let function = function_internal(state, FunctionName::Named(name))?;
     state.exit_block_scope(parent_scope);
     state.scope.declare_function(function).ok_or(ParserError::DuplicateDeclaration)
 }
@@ -125,7 +125,7 @@ pub fn block(state: &mut ParserState) -> Result<Block, ParserError> {
     // Unbound uses list is only needed for function declarations, so we can ignore it here.
     state.exit_block_scope(parent_scope);
 
-    Ok(Block(statements))
+    Ok(Block{statements})
 }
 
 pub fn block_raw(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {

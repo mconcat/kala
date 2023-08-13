@@ -1,18 +1,94 @@
-use crate::{Statement, Expr, Pattern, DataLiteral, Field, OptionalPattern};
+use utils::{SharedString, FxMap, Map};
+
+use crate::{Statement, Expr, Pattern, DataLiteral, Field, OptionalPattern, Block};
 use std::{rc::Rc, cell::OnceCell, cell::RefCell, borrow::BorrowMut, option};
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum FunctionName {
+    Arrow,
+    Anonymous,
+    Named(SharedString),
+}
+
+impl FunctionName {
+    pub fn is_named(&self) -> bool {
+        match self {
+            FunctionName::Named(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn get_name(&self) -> Option<&SharedString> {
+        match self {
+            FunctionName::Named(name) => Some(name),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Function {
-    pub name: Option<SharedString>,
+    pub name: FunctionName,
 
     pub captures: Vec<CaptureDeclaration>, 
 
     pub parameters: Vec<ParameterDeclaration>, 
 
-    pub declarations: Vec<LocalDeclaration>, 
+    pub locals: Vec<LocalDeclaration>, 
 
     // block body
-    pub statements: Vec<Statement>,
+    pub statements: Block, 
+}
+
+impl Function {
+    /* 
+    // for testing
+    pub fn get_varaible_map(&self) -> FxMap<VariableCell> {
+        let mut map = FxMap::new();
+        for (i, capture) in self.captures.into_iter().enumerate() {
+            match capture {
+                CaptureDeclaration::Global { name } => {
+                    unimplemented!("global");
+                },
+                CaptureDeclaration::Local { name, variable } => { 
+                    map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Capture(i as u32), vec![])); 
+                },
+            }
+        };
+
+        for (i, parameter) in self.parameters.into_iter().enumerate() {
+            match parameter {
+                ParameterDeclaration::Optional { name, default } => { 
+                    map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Parameter(i as u32), vec![])); 
+                },
+                ParameterDeclaration::Pattern { pattern } => {
+                    pattern.initialize_variable_map(&mut map, DeclarationIndex::Parameter(i as u32), &mut vec![])
+                },
+                ParameterDeclaration::Variable { name } => {
+                    map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Parameter(i as u32), vec![]));
+                },
+            }
+        };
+
+        for (i, local) in self.locals.into_iter().enumerate() {
+            match local {
+                LocalDeclaration::Const { pattern, value } => {
+                    pattern.initialize_variable_map(&mut map, DeclarationIndex::Local(i as u32), &mut vec![])
+                },
+                LocalDeclaration::Let { pattern, value } => {
+                    pattern.initialize_variable_map(&mut map, DeclarationIndex::Local(i as u32), &mut vec![])
+                },
+                LocalDeclaration::Function { function } => {
+                    if let Some(name) = function.name.get_name() {
+                        map.insert(name, VariableCell::initialized(name.clone(), DeclarationIndex::Local(i as u32), vec![]));
+                    }
+                },
+            }
+        };
+
+        map
+    }
+    */
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,6 +100,15 @@ pub enum CaptureDeclaration {
     Global {
         name: SharedString,
     },
+}
+
+impl CaptureDeclaration {
+    pub fn uninitialized(name: SharedString) -> Self {
+        CaptureDeclaration::Local {
+            name: name.clone(),
+            variable: VariableCell::uninitialized(name),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -72,12 +157,22 @@ pub enum LocalDeclaration {
     }
 }
 
+impl LocalDeclaration {
+    pub fn get_initial_value(&self) -> &Option<Expr> {
+        match self {
+            LocalDeclaration::Const { pattern, value } => value,
+            LocalDeclaration::Let { pattern, value } => value,
+            LocalDeclaration::Function { function } => unreachable!("function declaration should not be called get_initial_value")
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 
 pub enum DeclarationIndex {
-    Parameter(usize),
-    Capture(usize),
-    Local(usize),
+    Parameter(u32),
+    Capture(u32),
+    Local(u32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -85,7 +180,7 @@ pub struct Variable {
     // index of the variable declaration in the innermost function 
     pub declaration_index: DeclarationIndex,
 
-    pub property_access: PropertyAccessChain,
+    pub property_access: Vec<PropertyAccess>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -96,16 +191,16 @@ impl VariablePointer {
         VariablePointer(Rc::new(RefCell::new(Rc::new(OnceCell::new()))))
     }
 
-    pub fn initialized(declaration_index: DeclarationIndex, property_access: PropertyAccessChain) -> Self {
+    pub fn initialized(declaration_index: DeclarationIndex, property_access: &mut Vec<PropertyAccess>) -> Self {
         let cell = OnceCell::new();
         cell.set(Variable {
             declaration_index,
-            property_access,
+            property_access: property_access.clone(),
         }).unwrap();
         VariablePointer(Rc::new(RefCell::new(Rc::new(cell))))
     }
 
-    pub fn set(&mut self, declaration_index: DeclarationIndex, property_access: PropertyAccessChain) -> Result<(), Variable> {
+    pub fn set(&mut self, declaration_index: DeclarationIndex, property_access: Vec<PropertyAccess>) -> Result<(), Variable> {
         let inner = (*self.0).borrow_mut();
 
         inner.set(Variable {
@@ -167,7 +262,7 @@ impl VariableCell {
         let mut cell = OnceCell::new();
         cell.set(Variable {
             declaration_index,
-            property_access: PropertyAccessChain::from_vec(property_access),
+            property_access,
         }).unwrap();
         let ptr = VariablePointer(Rc::new(RefCell::new(Rc::new(cell.clone()))));
         Self { name, cell, ptr }
@@ -215,33 +310,6 @@ impl VariableCell {
 #[derive(Debug, PartialEq, Clone)] 
 pub enum PropertyAccess {
     Property(Box<Field>),
-    Element(usize),
+    Element(u32),
     // Rest,
-}
-
-#[repr(transparent)]
-#[derive(Debug, PartialEq, Clone)] 
-pub struct PropertyAccessChain(pub Vec<PropertyAccess>);
-
-impl PropertyAccessChain {
-    pub fn empty() -> Self {
-        PropertyAccessChain(Vec::new())
-    }
-
-    pub fn from_vec(vec: Vec<PropertyAccess>) -> Self {
-        PropertyAccessChain(vec)
-    }
-/* 
-    pub fn push(&mut self, access: PropertyAccess) {
-        self.0.push(access)
-    }
-
-    pub fn pop(&mut self) -> Option<PropertyAccess> {
-        self.0.pop()
-    }
-
-    pub fn last_mut(&mut self) -> &mut PropertyAccess {
-        self.0.last_mut().unwrap()
-    }
-*/
 }

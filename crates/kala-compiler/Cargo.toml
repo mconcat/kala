@@ -1,5 +1,5 @@
 [package]
-name = "jessie-compiler"
+name = "kala-compiler"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 jessie-ast = { version = "0.1.0", path = "../jessie-ast" }
-kala-interpreter = { version = "0.1.0", path = "../kala-interpreter" }
+kala-vm = { version = "0.1.0", path = "../kala-vm" }

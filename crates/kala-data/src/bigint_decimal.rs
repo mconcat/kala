@@ -12,7 +12,8 @@ pub enum Decimal {
     NaN,
 }
 
-const PRECISION: i128 = 10**18;
+// 10**18
+const PRECISION: i128 = 1000000000000000000;
 
 impl Decimal {
     fn is_positive(&self) -> bool {

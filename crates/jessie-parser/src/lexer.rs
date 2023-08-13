@@ -255,9 +255,9 @@ pub enum Token {
     Undefined,
     Identifier(SharedString),
     String(SharedString),
-    Integer(SharedString),
-    Decimal(SharedString),
-    Bigint(SharedString),
+    Integer(i64),
+    Decimal([u64;2]),
+    Bigint(bool, Box<[u64]>),
 
     // ????
     Instanceof,
@@ -917,36 +917,38 @@ pub fn parse_number(state: &mut Lexer) -> Result<DataLiteral, String> {
  */
 pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
     // [1-9][0-9]*(\.[0-9]*|n)?
-    let mut number = String::new();
+    let mut number: u64 = 0;
     if state.lookahead_1().map(|x| x.is_ascii_digit()) != Some(true) {
         return Err("not a number".to_string())
     }
     while let Some(c) = state.lookahead_1() {
-        if c.is_ascii_digit() {
-            number.push(c);
+        if let Some(digit) = c.to_digit(10) {
+            number = number * 10 + digit as u64;
             state.proceed();
         } else {
             break;
         }
     }
+
     if state.lookahead_1() == Some('.') {
         state.proceed();
-        number.push('.');
+        let mut decimal: u64 = 0;
+        let mut precision = 0;
         while let Some(c) = state.lookahead_1() {
-            if c.is_ascii_digit() {
-                number.push(c);
+            if let Some(digit) = c.to_digit(10) {
+                number += (digit / 10u32.pow(precision)) as u64;
                 state.proceed();
             } else {
                 break;
             }
-        } 
-        return Ok(Token::Decimal(number.into()))
+        }
+        return Ok(Token::Decimal([number, decimal]))
     } else if state.lookahead_1() == Some('n') {
         state.proceed();
-        return Ok(Token::Bigint(number.into()))
+        return Ok(Token::Bigint(false, vec![number].into_boxed_slice()))
     }
 
-    Ok(Token::Integer(number.into()))
+    Ok(Token::Integer(number as i64))
 }
 
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {
