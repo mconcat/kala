@@ -17,7 +17,7 @@ pub fn eval_expr(interpreter: &mut Interpreter, expr: &Expr) -> Evaluation {
         Expr::UnaryExpr(unary) => eval_unary(interpreter, unary),
         Expr::CallExpr(call) => eval_call(interpreter, call),
         Expr::ParenedExpr(parened) => eval_expr(interpreter, &*parened),
-        Expr::Variable(variable) => eval_variable(interpreter, &*variable),
+        Expr::Variable(variable) => eval_variable(interpreter, &variable.get()),
         Expr::Spread(spread) => unreachable!("Spread should be handled by eval_array"),
     }
 }

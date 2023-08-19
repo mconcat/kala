@@ -21,10 +21,14 @@ pub struct NumberSlot {
 }
 
 impl NumberSlot {
-	pub fn new(value: i128) -> Self {
-		let ptr: u32 = (Box::leak(Box::new(value)) as *mut i128 as usize).try_into().unwrap();
+	pub fn new(alloc: value: i128) -> Self {
+		let ptr: usize = Box::leak(Box::new(value)) as *mut i128 as usize;
 
-		Self{ value: 0, pointer: ptr & 0xFFFF_FFFD}
+		println!("ptr: {:X}", ptr);
+
+		let ptr_value: u32 = ptr.try_into().unwrap();
+
+		Self{ value: 0, pointer: ptr_value & 0xFFFF_FFFD }
 	}
 
 	pub fn new_inline(value: i32) -> Self {
