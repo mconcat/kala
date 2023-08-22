@@ -4,9 +4,10 @@ const CHUNK_SIZE_BITS: usize = 65536; // in bits, 65536 / 8 = 8192 bytes
 
 const CHUNK_SIZE_BYTES: usize = CHUNK_SIZE_BITS / 8;
 
-const CHUNK_SIZE_SHIFT: usize = 16; // 2 << 16 = 65536
+const CHUNK_SIZE_LOG: usize = 13; // 2 << 13 = 65536 / 8
 
-pub struct Ref<T> {
+// Raw pointer to a memory location
+pub struct Ref<T: ?Sized> {
     ptr: u32,
     phantom: PhantomData<T>,
 }
@@ -64,7 +65,7 @@ impl Memory {
 }
 
 impl Memory {
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+    fn allocate(&self, layout: Layout) -> Result<u32, AllocError> {
         if layout.size() > CHUNK_SIZE_BYTES {
             return Err(AllocError);
         }
@@ -84,6 +85,12 @@ impl Memory {
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         // do nothing
         return
+    }
+
+    fn deref<T>(&self, ptr: u32) -> Option<T> {
+        let chunk_index = ptr as usize >> CHUNK_SIZE_LOG;
+        let chunk = self.chunks.get_mut().get(chunk_index)?;
+        let memory_index = ptr as usize % CHUNK_SIZE_BYTES
     }
 }
 
