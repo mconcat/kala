@@ -1,7 +1,7 @@
 
-use crate::slot::{Slot, SlotTag};
+use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
 
-use std::sync::LazyLock;
+use std::{sync::LazyLock, ops::{Deref}};
 
 pub const POSITIVE_INFINITY_VALUE: i128 = 0x7FFF_FFFF_FFFF_FFFF;
 
@@ -17,22 +17,18 @@ static NEGATIVE_INFINITY: LazyLock<NumberSlot> = LazyLock::new(|| NumberSlot::ne
 #[repr(C)]
 pub struct NumberSlot {
 	pub value: i32,
-	pub pointer: u32, // *mut i128 
+	pub pointer: Ref<i128>, // *mut i128 
 }
 
 impl NumberSlot {
-	pub fn new(alloc: value: i128) -> Self {
-		let ptr: usize = Box::leak(Box::new(value)) as *mut i128 as usize;
+	pub fn new(value: i128) -> Self {
+		let pointer = Ref::new_tagged(value, SlotTag::Number);
 
-		println!("ptr: {:X}", ptr);
-
-		let ptr_value: u32 = ptr.try_into().unwrap();
-
-		Self{ value: 0, pointer: ptr_value & 0xFFFF_FFFD }
+		Self{ value: 0, pointer }
 	}
 
 	pub fn new_inline(value: i32) -> Self {
-		Self{ value, pointer: 0 }
+		Self{ value, pointer: Ref::null() }
 	}
 
 	pub fn new_positive_infinity() -> Self {
@@ -44,7 +40,7 @@ impl NumberSlot {
 	}
 
 	pub fn is_inline(&self) -> bool {
-		self.pointer == 0
+		self.pointer.is_null() 
 	}
 }
 
@@ -56,10 +52,10 @@ impl Into<Slot> for NumberSlot {
 
 impl Into<i128> for NumberSlot {
 	fn into(self) -> i128{
-		if self.pointer == 0 {
+		if self.pointer.is_null() {
 			i128::from(self.value)
 		} else {
-			unsafe {*(self.pointer as *mut i128)}
+			*self.pointer	
 		}
 	}
 }

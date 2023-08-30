@@ -1,5 +1,5 @@
 pub mod slot;
-pub mod bigint;
+pub mod operation;
 
 pub use slot::*;
-pub use bigint::*;
+pub use operation::*;

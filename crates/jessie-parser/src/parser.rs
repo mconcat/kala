@@ -256,7 +256,7 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
                 ptr.set(capture_index.clone(), vec![]).unwrap();
 
                 // assert equivalence
-                self.scope.assert_equivalence(&name, capture_cell.ptr);
+                self.scope.assert_equivalence(name, capture_cell.ptr);
             }
         }
 
@@ -272,7 +272,7 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
         let ptrs = self.map_pool.drain(variables);
         for (name, ptr) in ptrs {
             if ptr.is_uninitialized() {
-                self.scope.assert_equivalence(&name, ptr/*TODO: optimize */);
+                self.scope.assert_equivalence(name, ptr/*TODO: optimize */);
             }
         }
     }

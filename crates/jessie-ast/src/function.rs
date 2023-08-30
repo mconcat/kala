@@ -191,7 +191,7 @@ impl VariablePointer {
         VariablePointer(Rc::new(RefCell::new(Rc::new(OnceCell::new()))))
     }
 
-    pub fn initialized(declaration_index: DeclarationIndex, property_access: &mut Vec<PropertyAccess>) -> Self {
+    pub fn initialized(declaration_index: DeclarationIndex, property_access: &Vec<PropertyAccess>) -> Self {
         let cell = OnceCell::new();
         cell.set(Variable {
             declaration_index,

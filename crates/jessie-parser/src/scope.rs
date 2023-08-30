@@ -1,9 +1,22 @@
 use std::cell::{RefCell, OnceCell};
 
 use fxhash::FxHashMap;
-use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, Variable, Function, DeclarationIndex, VariablePointer, OptionalPattern, LocalDeclaration, ParameterDeclaration, LValueOptional};
+use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, Variable, Function, DeclarationIndex, VariablePointer, OptionalPattern, LocalDeclaration, ParameterDeclaration, LValueOptional, PatternVisitor};
 use utils::{SharedString, Map};
 use crate::{map::VariablePointerMap, param};
+
+pub struct DeclarationVisitor<'a> {
+    scope: &'a mut LexicalScope,
+    is_hoisting_allowed: bool,
+}
+
+impl<'a> PatternVisitor for DeclarationVisitor<'a> {
+    fn visit(&mut self, index: DeclarationIndex, name: SharedString, property_access: Vec<PropertyAccess>) -> Option<()> {
+        self.scope.declare(name.clone(), index.clone(), &property_access, self.is_hoisting_allowed)?;
+
+        self.scope.declare(name.clone(), index, &property_access, self.is_hoisting_allowed)
+    }
+}
 
 #[derive(Debug)]
 pub struct LexicalScope {
@@ -55,8 +68,8 @@ impl LexicalScope {
         self.declarations.len() as u32
     }
 
-    fn declare(&mut self, name: SharedString, declaration_index: DeclarationIndex, property_access: PropertyAccessChain, is_hoisting_allowed: bool) -> Option<()> {
-        if let Some(cell) = self.variables.get(name) {
+    fn declare(&mut self, name: SharedString, declaration_index: DeclarationIndex, property_access: &Vec<PropertyAccess>, is_hoisting_allowed: bool) -> Option<()> {
+        if let Some(cell) = self.variables.get(name.clone()) {
             println!("declare exists {:?} {:?}", name, cell);
             // Variable has been occured in this scope
 
@@ -85,21 +98,13 @@ impl LexicalScope {
         } else {
             println!("declare not exists {:?}", name);
             // Variable has not been occured in this scope
-            let cell = VariablePointer::initialized(declaration_index, property_access.clone());
+            let cell = VariablePointer::initialized(declaration_index, &property_access);
             self.variables.insert(name, cell.clone());
 
             Some(())
         }
     }
-
-    fn declaration_visitor(&mut self, index: DeclarationIndex, is_hoisting_allowed: bool) -> &mut FnMut(SharedString, Vec<PropertyAccess>) {
-        &mut |name: SharedString, property_access: Vec<PropertyAccess>| {
-            self.declare(name, declaration_index.clone(), PropertyAccessChain::from_vec(property_access.clone()), is_hoisting_allowed)?;
-
-            self.declare(&var.name, declaration_index, PropertyAccessChain::from_vec( property_access.clone()), is_hoisting_allowed)
-        }
-    }
-
+/* 
     fn visit_pattern(&mut self, pattern: &Pattern, declaration_index: DeclarationIndex, is_hoisting_allowed: bool) -> Option<()> {
         let mut property_access = Vec::new();
         self.visit_pattern_internal(pattern, declaration_index, &mut property_access, is_hoisting_allowed)
@@ -159,17 +164,17 @@ impl LexicalScope {
             }
         }
     }
-
+*/
     pub fn declare_parameter(&mut self, pattern: Pattern, result: &mut Vec<ParameterDeclaration>) -> Option<()> {
         let param_index = result.len() as u32;
         println!("declare_parameter {:?} {:?}", pattern, param_index);
         let decl = match pattern {
             Pattern::Optional(pat) => {
                 let OptionalPattern(_, LValueOptional::Variable(var), default) = *pat;
-                self.declare_optional_parameter(&var.name, default, param_index)?
+                self.declare_optional_parameter(var.name, default, param_index)?
             }
             Pattern::Rest(pat) => unimplemented!("Rest parameter is not supported yet"),
-            Pattern::Variable(var) => self.declare_variable_parameter(&var.name, param_index)?,
+            Pattern::Variable(var) => self.declare_variable_parameter(var.name, param_index)?,
             Pattern::ArrayPattern(_) => self.declare_pattern_parameter(&pattern, param_index)?,
             Pattern::RecordPattern(_) => self.declare_pattern_parameter(&pattern, param_index)?,
         };
@@ -184,9 +189,9 @@ impl LexicalScope {
         Some(())
     }
 
-    pub fn declare_variable_parameter(&mut self, name: &SharedString, index: u32) -> Option<ParameterDeclaration> {
+    pub fn declare_variable_parameter(&mut self, name: SharedString, index: u32) -> Option<ParameterDeclaration> {
         let decl = ParameterDeclaration::Variable { name: name.clone() };
-        self.declare(name, DeclarationIndex::Parameter(index as u32), PropertyAccessChain::empty(), false)?;
+        self.declare(name, DeclarationIndex::Parameter(index as u32), &vec![], false)?;
 
         Some(decl)
     }
@@ -196,14 +201,17 @@ impl LexicalScope {
             pattern: pattern.clone(),
         };
 
-        self.visit_pattern(&pattern, DeclarationIndex::Parameter(param_index), false)?;
+        pattern.visit(DeclarationIndex::Parameter(param_index), &mut DeclarationVisitor {
+            scope: self,
+            is_hoisting_allowed: false,
+        })?;
 
         Some(decl)
     }
 
-    pub fn declare_optional_parameter(&mut self, name: &SharedString, default: Expr, index: u32) -> Option<ParameterDeclaration> {
+    pub fn declare_optional_parameter(&mut self, name: SharedString, default: Expr, index: u32) -> Option<ParameterDeclaration> {
         let decl = ParameterDeclaration::Optional { name: name.clone(), default };
-        self.declare(name, DeclarationIndex::Parameter(index), PropertyAccessChain::empty(), false)?;
+        self.declare(name, DeclarationIndex::Parameter(index), &vec![], false)?;
 
         Some(decl)
     }
@@ -211,7 +219,10 @@ impl LexicalScope {
     pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<u32> {
         let index = self.next_declaration_index();
 
-        self.visit_pattern(&pattern, DeclarationIndex::Local(index as u32), true)?;
+        pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
+            scope: self,
+            is_hoisting_allowed: true,
+        })?;
 
         let decl = LocalDeclaration::Let {
             pattern: pattern.clone(),
@@ -225,7 +236,10 @@ impl LexicalScope {
     pub fn declare_const(&mut self, pattern: Pattern, value: Option<Expr>) -> Option<u32> {
         let index = self.next_declaration_index();
 
-        self.visit_pattern(&pattern, DeclarationIndex::Local(index as u32), true)?;
+        pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
+            scope: self,
+            is_hoisting_allowed: true,
+        })?;
 
         let decl = LocalDeclaration::Const {
             pattern,
@@ -249,28 +263,28 @@ impl LexicalScope {
         };
         self.declarations.push(decl);
 
-        self.declare(function_name.get_name().unwrap(), DeclarationIndex::Local(index as u32), vec![], true)?;
+        self.declare(function_name.get_name().unwrap().clone(), DeclarationIndex::Local(index as u32), &vec![], true)?;
 
         Some(index)
     }
 
     pub fn use_variable(&mut self, name: &SharedString) -> VariableCell {
-        if let Some(ptr) = self.variables.get(name) {
+        if let Some(ptr) = self.variables.get(name.clone()) {
             println!("exists {:?} {:?}", name, ptr);
             ptr.clone().new_cell(name.clone())
         } else {
             println!("not exists {:?}", name);
             let ptr = VariablePointer::new();
-            self.variables.insert(name, ptr.clone());
+            self.variables.insert(name.clone(), ptr.clone());
             ptr.new_cell(name.clone())
         }
     }
 
-    pub fn assert_equivalence(&mut self, name: &SharedString, mut var: VariablePointer) {
-        if let Some(ptr) = self.variables.get(name) {
+    pub fn assert_equivalence(&mut self, name: SharedString, mut var: VariablePointer) {
+        if let Some(ptr) = self.variables.get(name.clone()) {
             var.overwrite(ptr);
         } else {
-            self.variables.insert(name, var);
+            self.variables.insert(name.clone(), var);
         }
     }
 }

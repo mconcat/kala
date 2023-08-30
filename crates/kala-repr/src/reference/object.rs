@@ -7,23 +7,25 @@ use crate::{slot::{Slot, UNDEFINED}};
 // https://doc.rust-lang.org/beta/nomicon/exotic-sizes.html
 pub struct Object {
     // prototype: Slot,
-    properties: VectorMap<Slot>,
-    elements: Vec<Slot>,
-    inlines: Vec<Slot>,
+    pub(crate) properties: VectorMap<Slot>,
+    pub(crate) elements: Vec<Slot>,
+    pub(crate) inlines: Box<[Slot]>,
 }
 
 impl Object {
-    pub fn new(inlines: Vec<Slot>) -> Self {
+    pub fn new() -> Self {
         Self {
             properties: VectorMap::new(),
             elements: Vec::new(),
-            inlines,
+            inlines: Box::new([]),
         }
     }
 
+    /* 
     pub fn inline_property(&mut self, index: usize) -> Option<&mut Slot> {
         self.inlines.get_mut(index)
     }
+    */
 
     pub fn property(&mut self, name: SharedString) -> Option<&mut Slot> {
         self.properties.get(&name)

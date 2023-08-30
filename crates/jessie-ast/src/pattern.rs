@@ -14,42 +14,45 @@ pub enum Pattern {
 }
 
 impl Pattern {
-    pub fn visit(&self, index: DeclarationIndex, f: &mut impl FnMut(SharedString, Vec<PropertyAccess>)) {
+    pub fn visit(&self, index: DeclarationIndex, f: &mut impl PatternVisitor) -> Option<()> {
         let mut access = vec![];
-        self.visit_internal(index, &mut access, f);
+        self.visit_internal(index, &mut access, f)
     }
 
-    pub(crate) fn visit_internal(&self, index: DeclarationIndex, property_access: &mut Vec<PropertyAccess>, f: &mut impl FnMut(SharedString, Vec<PropertyAccess>)) {
+    pub(crate) fn visit_internal(&self, index: DeclarationIndex, property_access: &mut Vec<PropertyAccess>, f: &mut impl PatternVisitor) -> Option<()> {
         match self {
             Self::Rest(pat) => unimplemented!("rest pattern"),
             Self::Optional(pat) => unimplemented!("optional"),
             Self::ArrayPattern(pat) => {
                 for (i, elem) in (&pat.0).iter().enumerate() {
                     property_access.push(PropertyAccess::Element(i as u32));
-                    elem.visit_internal(index, property_access, f);
+                    elem.visit_internal(index, property_access, f)?;
                     property_access.pop();
                 }
+                Some(())
             }
-            Self::RecordPattern(pat) => 
-            for prop in &pat.0 {
-                match prop {
-                    PropParam::KeyValue(k, v) => {
-                        property_access.push(PropertyAccess::Property(k.clone()));
-                        v.visit_internal(index, property_access, f);
-                        property_access.pop();
-                    },
-                    PropParam::Rest(v) => {
-                        unimplemented!("rest")
-                    },
-                    PropParam::Shorthand(k, v) => {
-                        property_access.push(PropertyAccess::Property(k.clone()));
-                        f(v.name.clone(), property_access.clone());
-                        property_access.pop();
-                    }, 
+            Self::RecordPattern(pat) => {
+                for prop in &pat.0 {
+                    match prop {
+                        PropParam::KeyValue(k, v) => {
+                            property_access.push(PropertyAccess::Property(k.clone()));
+                            v.visit_internal(index, property_access, f)?;
+                            property_access.pop();
+                        },
+                        PropParam::Rest(v) => {
+                            unimplemented!("rest")
+                        },
+                        PropParam::Shorthand(k, v) => {
+                            property_access.push(PropertyAccess::Property(k.clone()));
+                            f.visit(index, v.name.clone(), property_access.clone())?;
+                            property_access.pop();
+                        }, 
+                    }
                 }
+                Some(())
             },
             Self::Variable(x) => {
-                f(x.name.clone(), property_access.clone())
+                f.visit(index, x.name.clone(), property_access.clone())
             }
         }
     }
@@ -59,6 +62,10 @@ impl Pattern {
     pub fn optional(lvalue: VariableCell, expr: Expr) -> Self {
         Pattern::Optional(Box::new(OptionalPattern(OptionalOp::Optional, LValueOptional::Variable(Box::new(lvalue)), expr)))
     }
+}
+
+pub trait PatternVisitor {
+    fn visit(&mut self, index: DeclarationIndex, name: SharedString, property_access: Vec<PropertyAccess>) -> Option<()>;
 }
 
 #[repr(C)]

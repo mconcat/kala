@@ -1,11 +1,28 @@
-use std::{ops::Deref, slice::from_raw_parts};
+use std::{ops::Deref, slice::from_raw_parts, cell::Cell, str::from_utf8};
 
-use crate::slot::{Slot, SlotTag};
+use utils::SharedString;
+
+use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
 
 #[repr(C)]
 pub struct StringSlot {
 	len: i32,
-	pointer: u32,
+	pointer: Cell<Ref<u8>>,
+}
+
+impl StringSlot {
+	pub fn new(s: SharedString) -> Self {
+		let mut pointer: Cell<Ref<u8>> = Cell::new(Ref::with_capacity(s.len()));
+
+		let len = s.len();
+
+		(unsafe{&mut*pointer.get().as_slice(len)}).clone_from_slice(s.as_bytes());
+
+		Self {
+			len: len as i32,
+			pointer,
+		}
+	}
 }
 
 impl Into<Slot> for StringSlot {
@@ -18,6 +35,8 @@ impl Deref for StringSlot {
 	type Target = str;
 
 	fn deref(&self) -> &Self::Target {
-		unsafe{std::str::from_utf8_unchecked(from_raw_parts(self.pointer as *const u8, self.len as usize))}
+		let bytes = unsafe{(&*self.pointer.get().as_slice(self.len as usize))};
+		let s = from_utf8(bytes).unwrap();
+		s
 	}
 }

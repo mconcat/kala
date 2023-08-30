@@ -15,8 +15,8 @@ pub trait Map<V>: Sized {
 
     fn new() -> Self;
     fn with_capacity(capacity: usize) -> Self;
-    fn get(&mut self, key: &SharedString) -> Option<&mut V>;
-    fn insert(&mut self, key: &SharedString, value: V) -> Option<V>;
+    fn get(&mut self, key: SharedString) -> Option<&mut V>;
+    fn insert(&mut self, key: SharedString, value: V) -> Option<V>;
     fn iter(&self) -> Self::MapIterator;
     fn drain(&mut self) -> Self::MapIterator;
     fn clear(&mut self);
@@ -42,11 +42,11 @@ impl<V: Clone> Map<V> for FxMap<V> {
         Self(FxHashMap::with_capacity_and_hasher(capacity, Default::default()))
     }
 
-    fn get(&mut self, key: &SharedString) -> Option<&mut V> {
-        self.0.get_mut(key)
+    fn get(&mut self, key: SharedString) -> Option<&mut V> {
+        self.0.get_mut(&key)
     }
 
-    fn insert(&mut self, key: &SharedString, value: V) -> Option<V> {
+    fn insert(&mut self, key: SharedString, value: V) -> Option<V> {
         self.0.insert(key.clone(), value)
     }
 
@@ -111,15 +111,15 @@ impl<V, const limit: usize> VectorMap<V, limit> {
         self.pairs.len() > limit
     }
 
-    fn get_sorted(&mut self, key: &SharedString) -> Option<&mut V> {
-        match self.pairs.binary_search_by_key(key, |(key, _)| key.clone()) {
+    fn get_sorted(&mut self, key: SharedString) -> Option<&mut V> {
+        match self.pairs.binary_search_by_key(&key, |(key, _)| key.clone()) {
             Ok(i) => Some(&mut self.pairs[i].1),
             Err(_) => None,
         }
     }
 
-    fn insert_sorted(&mut self, key: &SharedString, value: V) -> Option<V> {
-        match self.pairs.binary_search_by_key(key, |(key, _)| key.clone()) {
+    fn insert_sorted(&mut self, key: SharedString, value: V) -> Option<V> {
+        match self.pairs.binary_search_by_key(&key, |(key, _)| key.clone()) {
             Ok(i) => {
                 Some(std::mem::replace(&mut self.pairs[i].1, value))
             },
@@ -139,7 +139,7 @@ impl<V, const limit: usize> VectorMap<V, limit> {
         }
     }
 
-    fn get_unsorted(&mut self, key: &SharedString) -> Option<&mut V> {
+    fn get_unsorted(&mut self, key: SharedString) -> Option<&mut V> {
         for (i, (key, value)) in self.pairs.iter_mut().enumerate() {
             if key == key {
                 return Some(value);
@@ -148,7 +148,7 @@ impl<V, const limit: usize> VectorMap<V, limit> {
         None
     }
 
-    fn insert_unsorted(&mut self, key: &SharedString, new_value: V) -> Option<V> {
+    fn insert_unsorted(&mut self, key: SharedString, new_value: V) -> Option<V> {
         for (i, (key, value)) in self.pairs.iter_mut().enumerate() {
             if key == key {
                 return Some(std::mem::replace(value, new_value));
@@ -191,7 +191,7 @@ impl<V: Clone, const limit: usize> Map<V> for VectorMap<V, limit> {
         }
     }
 
-    fn get(&mut self, key: &SharedString) -> Option<&mut V> {
+    fn get(&mut self, key: SharedString) -> Option<&mut V> {
         if self.to_be_sorted() {
             self.get_sorted(key)
         } else {
@@ -199,7 +199,7 @@ impl<V: Clone, const limit: usize> Map<V> for VectorMap<V, limit> {
         } 
     }
 
-    fn insert(&mut self, key: &SharedString, value: V) -> Option<V> {
+    fn insert(&mut self, key: SharedString, value: V) -> Option<V> {
         if self.to_be_sorted() {
             self.insert_sorted(key, value)
         } else {

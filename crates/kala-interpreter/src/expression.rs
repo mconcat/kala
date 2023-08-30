@@ -1,6 +1,6 @@
 use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, Variable, PropertyAccess, LValue, LValueCallPostOp, UnaryExpr, Assignment};
 use kala_repr::slot::Slot;
-use utils::{VectorMapPool, VectorMap, Map};
+use utils::{VectorMapPool, VectorMap, Map, SharedString};
 
 use crate::{interpreter::{Evaluation, Interpreter, Frame}, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}, statement::eval_block};
 
@@ -27,10 +27,10 @@ fn eval_literal(interpreter: &mut Interpreter, lit: &DataLiteral) -> Evaluation 
         DataLiteral::Null => Evaluation::Value(Slot::new_null()),
         DataLiteral::False => Evaluation::Value(Slot::new_false()),
         DataLiteral::True => Evaluation::Value(Slot::new_true()),
-        DataLiteral::Integer(s) => Evaluation::Value(Slot::new_integer(s.parse::<i64>().unwrap())),
-        DataLiteral::Decimal(sign, abs) => unimplemented!("decimal literal"),
-        DataLiteral::Undefined => Ok(Slot::new_undefined()),
-        DataLiteral::String(s) => Evaluation::Value(Slot::new_string_leak(s)),
+        DataLiteral::Integer(s) => Evaluation::Value(Slot::new_number_from_parts(*s, 0)),
+        DataLiteral::Decimal(i, f) => Evaluation::Value(Slot::new_number_from_parts(i, f)),
+        DataLiteral::Undefined => Evaluation::Value(Slot::new_undefined()),
+        DataLiteral::String(s) => Evaluation::Value(Slot::new_string(*s)),
         DataLiteral::Bigint(sign, abs) => unimplemented!("bigint literal"),
     }
 }
@@ -45,8 +45,8 @@ fn eval_array(interpreter: &mut Interpreter, array: &Array) -> Evaluation {
             _ => slots.push(eval_expr(interpreter, expr)?),
         }
     }
-    Ok(Slot::new_array(slots))
-}
+    Evaluation::Value(Slot::new_array(slots))
+} 
 
 fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Evaluation {
     let mut slots = VectorMap::with_capacity(obj.0.len());
@@ -56,12 +56,12 @@ fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Evaluation {
                 slots.insert(&key.dynamic_property, eval_expr(interpreter, &value)?)?;
             }
             PropDef::Shorthand(key, var) => {
-                slots.insert(&key.dynamic_property, eval_variable(interpreter, var)?)?;
+                slots.insert(&key.dynamic_property, eval_variable(interpreter, &var.get())?).into()?;
             }
             PropDef::Spread(spread) => unimplemented!("spread in record literal")
         }
     }
-    Ok(Slot::new_record(slots))
+    Ok(Slot::new_object(slots))
 }
 
 fn eval_function(interpreter: &mut Interpreter, func: &Function) -> Evaluation {
@@ -93,10 +93,10 @@ fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Evaluation 
             for op in var.post_ops {
                 match op {
                     LValueCallPostOp::Index(index) => {
-                        lvalue = lvalue.get_element(index);
+                        lvalue = lvalue.get_element(eval_expr(interpreter, index)?.as_number())?;
                     },
                     LValueCallPostOp::Member(field) => {
-                        lvalue = lvalue.get_property(field);
+                        lvalue = lvalue.get_property(field)?;
                     },
                 }
             }
@@ -177,27 +177,33 @@ fn eval_binary(interpreter: &mut Interpreter, expr: &BinaryExpr) -> Evaluation {
 }
 
 fn eval_unary(interpreter: &mut Interpreter, expr: &UnaryExpr) -> Evaluation {
-    match expr.0 {
-        UnaryOp::Not => {
-            let operand = eval_expr(interpreter, expr.1)?;
-            Evaluation::Value(Slot::new_boolean(!operand.is_truthy()))
-        }
-        UnaryOp::BitNot => {
-            unimplemented!("bitwise not")
-        }
-        UnaryOp::Neg => {
-            let operand = eval_expr(interpreter, &expr.expr)?;
-            Evaluation::Value(Slot::new_number_inline(-operand.to_integer()))
-        }
-        UnaryOp::Pos => {
-            let operand = eval_expr(interpreter, &expr.expr)?;
-            Evaluation::Value(Slot::new_integer(operand.to_integer()))
-        }
-        UnaryOp::TypeOf => {
-            let operand = eval_expr(interpreter, &expr.expr)?;
-            Evaluation::Value(Slot::new_string(operand.type_of()))
-        }
+    let mut res = Evaluation::Value(Slot::new_uninitalized());
+    for op in expr.op {
+        res = match op {
+            UnaryOp::Not => {
+                let operand = eval_expr(interpreter, &expr.expr)?;
+                Evaluation::Value(Slot::new_boolean(!operand.is_truthy()))
+            }
+            UnaryOp::BitNot => {
+                unimplemented!("bitwise not")
+            }
+            UnaryOp::Neg => {
+                let operand = eval_expr(interpreter, &expr.expr)?;
+                Evaluation::Value(-operand)
+            }
+            UnaryOp::Pos => {
+                let operand = eval_expr(interpreter, &expr.expr)?;
+                unimplemented!("pos")
+            }
+            UnaryOp::TypeOf => {
+                let operand = eval_expr(interpreter, &expr.expr)?;
+                Evaluation::Value(operand.type_of().into())
+            }
+        };
+
+        res?;
     }
+    res
 }
 
 fn eval_call(interpreter: &mut Interpreter, expr: &CallExpr) -> Evaluation {
@@ -205,10 +211,10 @@ fn eval_call(interpreter: &mut Interpreter, expr: &CallExpr) -> Evaluation {
     for op in expr.post_ops {
         match op {
             CallPostOp::Index(index) => {
-                callee = callee.get_index(eval_expr(interpreter, &index)?);
+                callee = callee.get_element(eval_expr(interpreter, &index)?).into()?;
             }
             CallPostOp::Member(member) => {
-                callee = callee.get_property(member);
+                callee = callee.get_property(member).into()?;
             }
             CallPostOp::Call(args) => {
                 callee = call(interpreter, callee, args)?;
@@ -237,9 +243,10 @@ fn call(interpreter: &mut Interpreter, callee: Slot, args: Vec<Expr>) -> Evaluat
 
 fn eval_variable(interpreter: &mut Interpreter, variable: &Variable) -> Evaluation {
     let index = variable.declaration_index;
-    if index < interpreter.frame.locals.len() {
-        Evaluation::Value(interpreter.frame.locals[index])
+    let frame = interpreter.get_frame();
+    if index < frame.locals.len() {
+        Evaluation::Value(frame.locals[index])
     } else {
-        Evaluation::Throw(format!("Variable {} not found", variable.name))
+        Evaluation::Throw(Slot::new_string(SharedString::from_string(format!("Variable {} not found", variable.name))))
     }
 }

@@ -13,15 +13,18 @@ pub struct Frame {
 
 impl Frame {
     pub fn get_capture(&mut self, index: u32) -> (&mut Variable, &mut Slot) {
-        self.captures.get_mut(index).unwrap()
+        let (decl, slot) = self.captures.get_mut(index as usize).unwrap();
+        (decl, slot)
     }
 
     pub fn get_argument(&mut self, index: u32) -> (&mut ParameterDeclaration, &mut Slot) {
-        self.arguments.get_mut(index).unwrap()
+        let (decl, slot) = self.arguments.get_mut(index as usize).unwrap();
+        (decl, slot)
     }
 
     pub fn get_local(&mut self, index: u32) -> (&mut LocalDeclaration, &mut Slot) {
-        self.locals.get_mut(index).unwrap()
+        let (decl, slot) = self.locals.get_mut(index as usize).unwrap();
+        (decl, slot)
     }
 
     pub fn get_variable(&mut self, variable: Variable) -> &mut Slot {
@@ -41,6 +44,8 @@ impl Frame {
                 }
             }
         }
+
+        var
     }
 }
 
@@ -192,7 +197,7 @@ pub struct Interpreter {
 
 impl Interpreter {
     fn get_frame(&mut self) -> &mut Frame {
-        self.frame.get_mut(self.frame.len()-1)
+        self.frame.get_mut(self.frame.len()-1).unwrap()
     }
     
     pub fn initialize_local(&mut self, index: u32) -> Completion{

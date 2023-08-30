@@ -1,4 +1,4 @@
-use std::{ops::{Deref, Add, Sub, Mul, Div, Neg}};
+use std::{ops::{Deref, Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr}};
 
 use super::NumberSlot;
 
@@ -151,4 +151,50 @@ impl Neg for NumberSlot {
         let value: i128 = self.into();
         NumberSlot::new(-value)
     }
+}
+
+impl BitAnd for NumberSlot {
+	type Output = Self;
+
+	fn bitand(self, rhs: Self) -> Self::Output {
+		unimplemented!("number bitand")
+	}
+}
+
+impl BitOr for NumberSlot {
+	type Output = Self;
+
+	fn bitor(self, rhs: Self) -> Self::Output {
+		unimplemented!("number bitor")
+	}
+}
+
+impl BitXor for NumberSlot {
+	type Output = Self;
+
+	fn bitxor(self, rhs: Self) -> Self::Output {
+		unimplemented!("number bitxor")
+	}
+}
+
+impl Shl for NumberSlot {
+	type Output = Self;
+
+	fn shl(self, rhs: Self) -> Self::Output {
+		unimplemented!("number shl")
+	}
+}
+
+impl Shr for NumberSlot {
+	type Output = Self;
+
+	fn shr(self, rhs: Self) -> Self::Output {
+		unimplemented!("number shr")
+	}
+}
+
+impl NumberSlot {
+	pub fn less_than(self, other: Self) -> Self {
+		unimplemented!("lt number")
+	}
 }

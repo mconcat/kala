@@ -1,28 +1,63 @@
 use core::slice;
-use std::{marker::PhantomData, ops::Deref, cell::Ref};
+use std::{marker::PhantomData, ops::Deref, mem::{size_of, transmute}};
 
-use crate::slot::{Slot, SlotTag};
+use utils::{VectorMap, Map, SharedString};
 
-use super::Object;
+use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
+
+use super::{Object};
 
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct ReferenceSlot {
-    len: i16,
-    _reserved: u16,
-    pointer: u32,
+    _reserved: i32,
+    pointer: Ref<Object>,
 }
 
 impl ReferenceSlot {
-    pub fn new(inlines: Vec<Slot>) -> Self {
-        let len = inlines.len().try_into().unwrap();
+    pub fn new_array(elements: Vec<Slot>) -> Self {
+        let mut pointer: Ref<Object> = Ref::new(
+            Object {
+                properties: VectorMap::new(),
+                elements,
+                inlines: Box::new([]), 
+            }
+        );
 
-        let obj = Box::leak(Box::new(Object::new(inlines)));
-
-        let ptr: u32 = (obj as *mut Object as usize).try_into().unwrap();
-
-        Self{ len, _reserved: 0, pointer: ptr }
+        Self {
+            _reserved: 0,
+            pointer,
+        }
     }
+
+    pub fn new(inlines: Vec<Slot>) -> Self {
+        let mut pointer: Ref<Object> = Ref::new(
+            Object {
+                properties: VectorMap::new(),
+                elements: Vec::new(),
+                inlines: inlines.into_boxed_slice(),
+            }
+        );
+
+        Self {
+            _reserved: 0,
+            pointer,
+        }
+    }
+
+    pub fn get_property(&mut self, name: SharedString) -> Option<Slot> {
+        self.pointer.properties.get(&name).copied()
+    }
+
+    pub fn get_inline_property(&self, index: i32) -> Slot {
+        unimplemented!("inline property")
+    }
+
+    pub fn get_element(&self, index: i32) -> Option<Slot> {
+        self.pointer.elements.get(index as usize).copied()
+    }
+
 }
 
 impl Into<Slot> for ReferenceSlot {
