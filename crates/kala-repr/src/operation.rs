@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr};
+use std::{ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr}, mem::transmute};
 
 use crate::slot::{Slot, TypedSlot, TRUE, FALSE};
 
@@ -123,19 +123,33 @@ impl Shr for Slot {
 }
 
 impl Slot {
-    pub fn strict_equal(self, other: Self) -> Self {
-        if self.0 == other.0 {
+    pub fn strict_equal_internal(&self, other: &Self) -> bool {
+        if self.value == other.value && self.pointer.0 == other.pointer.0 {
+            return true
+        }
+
+        match (self.into_typed(), other.into_typed()) {
+            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => lhs == rhs,
+            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => lhs == rhs,
+            (TypedSlot::String(lhs), TypedSlot::String(rhs)) => lhs == rhs,
+            (TypedSlot::Reference(lhs), TypedSlot::Reference(rhs)) => lhs.pointer.0 == rhs.pointer.0,
+            (_, _) => false,
+        }
+    } 
+
+    pub fn strict_equal(&self, other: &Self) -> Self {
+        if self.strict_equal_internal(other) {
             TRUE
         } else {
             FALSE
         }
     }
 
-    pub fn strict_not_equal(self, other: Self) -> Self {
-        if self.0 != other.0 {
-            TRUE
-        } else {
+    pub fn strict_not_equal(&self, other: &Self) -> Self {
+        if self.strict_equal_internal(other) {
             FALSE
+        } else {
+            TRUE
         }
     }
 
@@ -148,15 +162,53 @@ impl Slot {
         }
     }
 
-    pub fn less_than_equal(self, other: Self) -> Self {
+    pub fn less_than_or_equal(self, other: Self) -> Self {
         unimplemented!("lte")
     }
 
-    pub fn greater_than_equal(self, other: Self) -> Self {
+    pub fn greater_than_or_equal(self, other: Self) -> Self {
         unimplemented!("gte")
     }
 
     pub fn greater_than(self, other: Self) -> Self {
         unimplemented!("gt")
     }    
+}
+
+impl ToString for Slot {
+    fn to_string(&self) -> String {
+        match self.into_typed() {
+            TypedSlot::Number(slot) => {
+                if slot.is_inline() {
+                    println!("inline number");
+                    slot.value.to_string()
+                } else {
+                    println!("non-inline number");
+                    slot.pointer.to_string() // TODO
+                }
+            },
+            TypedSlot::Bigint(slot) => {
+                unimplemented!("bigint to string")
+            },
+            TypedSlot::String(slot) => {
+                slot.to_string()
+            },
+            TypedSlot::Reference(_) => {
+                if self.is_undefined() {
+                    "undefined".to_string()
+                } else if self.is_null() {
+                    "null".to_string()
+                } else if self.is_true() {
+                    "true".to_string()
+                } else if self.is_false() {
+                    "false".to_string()
+                } else {
+                    unimplemented!("reference to string")
+                }
+            },
+            TypedSlot::Uninitialized => {
+                unimplemented!("uninitialized to string")
+            },
+        }
+    }
 }

@@ -1,7 +1,7 @@
-use utils::{SharedString, FxMap, Map};
+use utils::{SharedString};
 
-use crate::{Statement, Expr, Pattern, DataLiteral, Field, OptionalPattern, Block};
-use std::{rc::Rc, cell::OnceCell, cell::RefCell, borrow::BorrowMut, option};
+use crate::{Expr, Pattern, Field, OptionalPattern, Block};
+use std::{rc::Rc, cell::OnceCell, cell::RefCell};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum FunctionName {

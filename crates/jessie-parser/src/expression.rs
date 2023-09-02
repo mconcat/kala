@@ -243,7 +243,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::LeftBrace) => record(state).map(|x| Expr::Record(Box::new(x))),
         Some(Token::String(s)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::String(s.into())))),
         Some(Token::Integer(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Integer(n.into())))),
-        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(false, n)))),
+        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(n)))),
         Some(Token::Null) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Null))),
         Some(Token::True) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::True))),
         Some(Token::False) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::False))),

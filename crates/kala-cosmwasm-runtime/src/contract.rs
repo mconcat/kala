@@ -1,6 +1,11 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary};
+use jessie_parser::VecToken;
+use jessie_parser::lexer::lex_jessie;
+use jessie_parser::parser::ParserState;
+use kala_interpreter::interpreter::Evaluation;
+use kala_repr::slot::Slot;
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
@@ -32,12 +37,31 @@ pub fn execute(
     return Ok(Response::default())
 }
 
+pub(crate) fn run_expression(code: String) -> Evaluation {
+    let tokenstream = lex_jessie(code).unwrap();
+
+    let mut state = ParserState::new(VecToken(tokenstream), vec![]);
+    let expr = jessie_parser::expression(&mut state).unwrap();
+
+    let mut interpreter = kala_interpreter::interpreter::Interpreter::new();
+
+    println!("expr: {:?}", expr);
+    let result = kala_interpreter::expression::eval_expr(&mut interpreter, &expr);
+    result
+
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(_deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     let response = match msg {
         QueryMsg::RunJessie(code) => {
-            RunJessieResponse {
-                result: "test".to_string(),
+            match run_expression(code) {
+                Evaluation::Value(slot) => {
+                    RunJessieResponse {
+                        result: slot.to_string(), 
+                    }
+                },
+                Evaluation::Throw(_) => unimplemented!("Throwing not implemented yet"),
             }
         }
     };

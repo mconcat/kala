@@ -1,13 +1,9 @@
-impl From<Slot> for Array {
-    fn from(slot: Slot) -> Self {
-        let arr = unsafe {std::slice::from_raw_parts_mut(slot.get_slot_pointer(), slot.value.try_into().unwrap())};
-        Self {
-            arr: Pointer::new(arr),
-        }
-    }
+use crate::slot::Slot;
+
+#[derive(Clone)]
+pub struct ArrayPrototype {
+    pub elements: Vec<Slot>,
 }
-
-
 
 /* 
 pub enum Array {

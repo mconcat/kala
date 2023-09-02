@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use std::mem::transmute;
+
     use crate::number::NumberSlot;
 
     #[test]
@@ -16,9 +18,9 @@ mod tests {
 
         for test_case in test_cases {  
             let slot = NumberSlot::new(*test_case);
-            let slot: i128 = slot.into();
+            let slot_value: i128 = slot.into();
 
-            assert_eq!(slot, *test_case);
+            assert_eq!(slot_value, *test_case, "converting slot to i128 and back should be identity, but got {} instead of {}. ", slot_value, *test_case);
         }
     }
 }

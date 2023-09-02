@@ -11,13 +11,13 @@ pub fn bit_and(interpreter: &mut Interpreter, x: Expr, y: Expr) -> Evaluation {
 pub fn strict_equal(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
     let x = eval_expr(interpreter, x)?;
     let y = eval_expr(interpreter, y)?;
-    Evaluation::Value(x.strict_equal(y))
+    Evaluation::Value(x.strict_equal(&y))
 }
 
 pub fn strict_not_equal(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
     let x = eval_expr(interpreter, x)?;
     let y = eval_expr(interpreter, y)?;
-    Evaluation::Value(x.strict_not_equal(y))
+    Evaluation::Value(x.strict_not_equal(&y))
 }
 
 pub fn less_than(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
@@ -47,7 +47,8 @@ pub fn greater_than_or_equal(interpreter: &mut Interpreter, x: &Expr, y: &Expr) 
 pub fn add(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
     let x = eval_expr(interpreter, x)?;
     let y = eval_expr(interpreter, y)?;
-    Evaluation::Value((x+y).into())
+    let res = Evaluation::Value(x+y);
+    res
 }
 
 pub fn sub(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
@@ -65,27 +66,29 @@ pub fn mul(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
 pub fn div(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
     let x = eval_expr(interpreter, x)?;
     let y = eval_expr(interpreter, y)?;
+    unimplemented!("div")
+    /* 
     if y.is_zero() {
-        Evaluation::Value(Expr::undefined().into())
+        Evaluation::Value(Slot::new_undefined())
     } else {
         Evaluation::Value((x/y).into())
-    }
+    }*/
 }
 
 pub fn modulo(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
     let x = eval_expr(interpreter, x)?;
     let y = eval_expr(interpreter, y)?;
-    if y.is_zero() {
-        Evaluation::Value(Expr::undefined().into())
-    } else {
-        Evaluation::Value((x%y).into())
-    }
+   
+    unimplemented!("mod")
+   // Evaluation::Value((x).into())
 }
 
 pub fn pow(interpreter: &mut Interpreter, x: &Expr, y: &Expr) -> Evaluation {
     let x = eval_expr(interpreter, x)?;
     let y = eval_expr(interpreter, y)?;
 
-    Evaluation::Value(x.pow(y).into())
+    unimplemented!("pow")
+
+    //Evaluation::Value(x.pow(y).into())
 }
 

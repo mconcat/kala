@@ -51,6 +51,7 @@ thiserror = { version = "1.0.31" }
 
 kala-interpreter = { version = "0.1.0", path = "../kala-interpreter" }
 kala-repr = { version = "0.1.0", path = "../kala-repr" }
+jessie-ast = { version = "0.1.0", path = "../jessie-ast" }
 jessie-parser = { version = "0.1.0", path = "../jessie-parser" }
 
 [dev-dependencies]

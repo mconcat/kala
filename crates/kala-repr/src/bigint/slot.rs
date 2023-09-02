@@ -1,29 +1,29 @@
-use std::{ops::Deref, ptr::slice_from_raw_parts};
+use std::{ops::Deref, ptr::slice_from_raw_parts, mem::transmute};
 
 use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
 
 
 #[repr(C)]
 pub struct BigintSlot {
-	pub(crate) sign_len: i32,
-	pub(crate) pointer: Ref<u64>, // start of the slice
+	pub(crate) sign_len: isize,
+	pub(crate) pointer: Ref<u64>, // first element
 }
 
 impl BigintSlot {
-	pub fn new_inline(value: i32) -> Self {
+	pub fn new_inline(value: isize) -> Self {
 		Self {
 			sign_len: value,
-			pointer: Ref::null(),
+			pointer: Ref::null(SlotTag::Bigint),
 		}
 	}
-
+/* 
 	pub fn with_capacity(capacity: usize) -> Self {
 		Self {
 			sign_len: 0,
 			pointer: Ref::with_capacity(capacity)
 		}
 	}
-
+*/
 	pub fn is_inline(&self) -> bool {
 		self.pointer.is_null()	
 	}
@@ -35,7 +35,7 @@ impl BigintSlot {
 
 impl Into<Slot> for BigintSlot {
 	fn into(self) -> Slot {
-		Slot(unsafe{std::mem::transmute::<Self, u64>(self)} | SlotTag::Bigint as u64)
+		unsafe{transmute(self)}
 	}
 }
 /* 

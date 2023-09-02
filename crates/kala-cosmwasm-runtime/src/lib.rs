@@ -3,9 +3,11 @@ mod error;
 pub mod helpers;
 pub mod msg;
 pub mod state;
+mod contract_test;
 
-use kala_interpreter;
-use kala_parser;
-use kala_lexer;
+extern crate kala_repr;
+extern crate kala_interpreter;
+extern crate jessie_parser;
+extern crate jessie_ast;
 
 pub use crate::error::ContractError;

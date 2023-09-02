@@ -124,3 +124,34 @@ impl Add for BigintSlot {
     }
 }
 */
+
+impl PartialEq for BigintSlot {
+    fn eq(&self, other: &Self) -> bool {
+        if self.is_inline() && other.is_inline() {
+            return self.sign_len == other.sign_len;
+        }
+
+        unimplemented!("asdf")
+
+        /* 
+        let (self_sign, self_value) = self.into();
+        let (other_sign, other_value) = other.into();
+
+        if self_sign != other_sign {
+            return false
+        }
+
+        if self_value.len() != other_value.len() {
+            return false
+        }
+
+        for (i, digit) in self_value.into_iter().enumerate() {
+            if digit != other_value[i] {
+                return false
+            }
+        }
+
+        true
+        */
+    }
+}

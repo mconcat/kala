@@ -1,4 +1,4 @@
-use std::{ops::Deref, slice::from_raw_parts, cell::Cell, str::from_utf8};
+use std::{ops::Deref, str::from_utf8, mem::transmute, cell::Cell};
 
 use utils::SharedString;
 
@@ -6,28 +6,28 @@ use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
 
 #[repr(C)]
 pub struct StringSlot {
-	len: i32,
+	len: isize,
 	pointer: Cell<Ref<u8>>,
 }
 
 impl StringSlot {
 	pub fn new(s: SharedString) -> Self {
-		let mut pointer: Cell<Ref<u8>> = Cell::new(Ref::with_capacity(s.len()));
+		let mut pointer: Ref<u8> = Ref::new_vec(s.len(), SlotTag::String);
 
 		let len = s.len();
 
-		(unsafe{&mut*pointer.get().as_slice(len)}).clone_from_slice(s.as_bytes());
-
+		pointer.as_slice(len).copy_from_slice(s.as_bytes());
+		
 		Self {
-			len: len as i32,
-			pointer,
+			len: len as isize,
+			pointer: Cell::new(pointer),
 		}
 	}
 }
 
 impl Into<Slot> for StringSlot {
 	fn into(self) -> Slot {
-		Slot(unsafe{std::mem::transmute::<Self, u64>(self)} | SlotTag::String as u64)
+		unsafe{transmute(self)}
 	}	
 }
 
@@ -35,8 +35,15 @@ impl Deref for StringSlot {
 	type Target = str;
 
 	fn deref(&self) -> &Self::Target {
-		let bytes = unsafe{(&*self.pointer.get().as_slice(self.len as usize))};
-		let s = from_utf8(bytes).unwrap();
+		let slice = unsafe{&mut*self.pointer.as_ptr()}.as_slice(self.len as usize);
+
+		let s = from_utf8(slice).unwrap();
 		s
+	}
+}
+
+impl PartialEq for StringSlot {
+	fn eq(&self, other: &Self) -> bool {
+		self.deref() == other.deref()
 	}
 }

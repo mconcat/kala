@@ -255,7 +255,7 @@ pub enum Token {
     Undefined,
     Identifier(SharedString),
     String(SharedString),
-    Integer(i64),
+    Integer(u64),
     Decimal([u64;2]),
     Bigint(bool, Box<[u64]>),
 
@@ -948,7 +948,7 @@ pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
         return Ok(Token::Bigint(false, vec![number].into_boxed_slice()))
     }
 
-    Ok(Token::Integer(number as i64))
+    Ok(Token::Integer(number))
 }
 
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {

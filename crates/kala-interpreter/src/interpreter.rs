@@ -1,53 +1,9 @@
-use std::ops::{self, FromResidual};
+use std::{ops::{self, FromResidual}, convert::Infallible, fmt::{LowerHex, self}};
 
-use jessie_ast::{DeclarationIndex, CaptureDeclaration, LocalDeclaration, Variable, ParameterDeclaration, PropertyAccess, Expr};
-use kala_repr::slot::Slot;
+use kala_repr::{slot::Slot, function::Frame};
 
 use crate::expression::eval_expr;
 
-pub struct Frame {
-    pub captures: Vec<(Variable, Slot)>,
-    pub arguments: Vec<(ParameterDeclaration, Slot)>,
-    pub locals: Vec<(LocalDeclaration, Slot)>,
-}
-
-impl Frame {
-    pub fn get_capture(&mut self, index: u32) -> (&mut Variable, &mut Slot) {
-        let (decl, slot) = self.captures.get_mut(index as usize).unwrap();
-        (decl, slot)
-    }
-
-    pub fn get_argument(&mut self, index: u32) -> (&mut ParameterDeclaration, &mut Slot) {
-        let (decl, slot) = self.arguments.get_mut(index as usize).unwrap();
-        (decl, slot)
-    }
-
-    pub fn get_local(&mut self, index: u32) -> (&mut LocalDeclaration, &mut Slot) {
-        let (decl, slot) = self.locals.get_mut(index as usize).unwrap();
-        (decl, slot)
-    }
-
-    pub fn get_variable(&mut self, variable: Variable) -> &mut Slot {
-        let mut var = match variable.declaration_index {
-            DeclarationIndex::Capture(index) => self.get_capture(index),
-            DeclarationIndex::Parameter(index) => self.get_argument(index),
-            DeclarationIndex::Local(index) => self.get_local(index),
-        };
-
-        for access in variable.property_access {
-            match access {
-                PropertyAccess::Property(field) => {
-                    var = var.get_property(field);
-                }, 
-                PropertyAccess::Element(index) => {
-                    var = var.get_element(index);
-                }
-            }
-        }
-
-        var
-    }
-}
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
@@ -64,6 +20,21 @@ pub enum Completion {
 impl FromResidual for Completion {
     fn from_residual(residual: Self) -> Self {
         residual
+    }
+}
+
+impl FromResidual<Option<Infallible>> for Completion {
+    fn from_residual(residual: Option<Infallible>) -> Self {
+        match residual {
+            None => Self::Normal,
+            Some(_) => unreachable!("Infallible")
+        }
+    }
+}
+
+impl FromResidual<Evaluation> for Completion {
+    fn from_residual(residual: Evaluation) -> Self {
+        residual.into()
     }
 }
 
@@ -96,9 +67,45 @@ pub enum Evaluation {
     Throw(Slot) = 2,
 }
 
+impl LowerHex for Evaluation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Value(v) => write!(f, "Value({:x})", v),
+            Self::Throw(v) => write!(f, "Throw({:x})", v),
+        }
+    }
+}
+
+impl ToString for Evaluation {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Value(v) => format!("Value({})", v.to_string()),
+            Self::Throw(v) => format!("Throw({})", v.to_string()),
+        }
+    }
+}
+
+impl ToString for &Evaluation {
+    fn to_string(&self) -> String {
+        match self {
+            Evaluation::Value(v) => format!("Value({})", v.to_string()),
+            Evaluation::Throw(v) => format!("Throw({})", v.to_string()),
+        }
+    }
+}
+
 impl FromResidual for Evaluation {
     fn from_residual(residual: Self) -> Self {
         residual
+    }
+}
+
+impl FromResidual<Option<Infallible>> for Evaluation {
+    fn from_residual(residual: Option<Infallible>) -> Self {
+        match residual {
+            None => Self::Throw(Slot::new_undefined()),
+            Some(_) => unreachable!("Infallible")
+        }
     }
 }
 
@@ -196,14 +203,29 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    fn get_frame(&mut self) -> &mut Frame {
-        self.frame.get_mut(self.frame.len()-1).unwrap()
+    pub fn new() -> Self {
+        Interpreter {
+            frame: vec![Frame::new()]
+        }
+    }
+
+    pub fn get_frame(&mut self) -> &mut Frame {
+        self.frame.last_mut().unwrap()
+    }
+
+
+    fn get_local_initial_value(&mut self, index: u32) -> Evaluation {
+        let decl = self.get_frame().locals.get(index as usize)?.0.clone();
+        let initial_value_expr = decl.get_initial_value();
+        match initial_value_expr {
+            None => Evaluation::Value(Slot::new_undefined()),
+            Some(initial_value_expr) => eval_expr(self, initial_value_expr)
+        }
     }
     
-    pub fn initialize_local(&mut self, index: u32) -> Completion{
-        let (decl, slot) = self.get_frame().get_local(i);
-        let initial_value_expr = decl.get_initial_value().unwrap_or(Expr::undefined());
-        let initial_value = eval_expr(self, &initial_value_expr)?;
+    pub fn initialize_local(&mut self, index: u32) -> Completion {
+        let initial_value = self.get_local_initial_value(index)?;
+        let slot = &mut self.get_frame().locals.get_mut(index as usize)?.1;
         *slot = initial_value;
         Completion::Normal
     }

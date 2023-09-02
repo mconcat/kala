@@ -47,8 +47,6 @@ pub fn function_internal(state: &mut ParserState, name: FunctionName) -> Result<
     
     let parameter_patterns = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
 
-    println!("parameter patterns {:?}", parameter_patterns[0]);
-
     let mut parameters = Vec::with_capacity(parameter_patterns.len());
     state.scope.declare_parameters(parameter_patterns, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
 

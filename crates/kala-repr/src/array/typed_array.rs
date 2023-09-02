@@ -1,4 +1,5 @@
 
+/* 
 pub enum TypedArray {
     TypedUint8Array(Box<Array<u64>>),
     TypedInt8Array(Box<Array<u64>>),
@@ -10,3 +11,4 @@ pub enum TypedArray {
     TypedBigInt64Array(Box<Array<u64>>),
     TypedBigUint64Array(Box<Array<u64>>),
 }
+*/

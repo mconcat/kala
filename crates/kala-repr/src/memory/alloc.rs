@@ -1,45 +1,58 @@
-use std::{alloc::{self, Layout}, cell::Cell, mem::{MaybeUninit, size_of, transmute}, sync::Once, marker::PhantomData, ops::{Deref, DerefMut, Index, IndexMut}, slice::{from_raw_parts, from_raw_parts_mut}};
+use std::{alloc::{self, Layout, Allocator, GlobalAlloc, System}, cell::Cell, mem::{MaybeUninit, size_of, transmute}, sync::Once, marker::PhantomData, ops::{Deref, DerefMut, Index, IndexMut}, slice::{from_raw_parts, from_raw_parts_mut}, ptr::NonNull, rc::Rc};
 
-use crate::slot::SlotTag;
+use crate::slot::{SlotTag, Slot};
+// This allocator wraps the default global allocator (Rust's allocator)
+// and adds support for tagged pointers
+// - checking layout is at least 8 bytes aligned
+struct TaggedPointerAllocator;
 
-const CHUNK_SIZE: u32 = 4096;
-
-const CHUNK_INDEX_MASK: u32 = CHUNK_SIZE - 1;
-
-const CHUNK_SIZE_LOG: u32 = 12; // 2 << 12 = 4096
-
-// u32 pointer of 0b00000000_11111111_00000000_11111111
-// chunk:         0b00000000_11111111_0000
-// pointer:       0b                      0000_11111111
-
-// Raw pointer to a memory location
-pub struct Ref<T: ?Sized> {
-    pub(crate) ptr: u32,
-    phantom: PhantomData<T>,
-}
-
-impl<T: ?Sized> Clone for Ref<T> {
-    fn clone(&self) -> Self {
-        Self {
-            ptr: self.ptr,
-            phantom: PhantomData,
+unsafe impl GlobalAlloc for TaggedPointerAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if layout.align() < 8 {
+            return System.alloc(Layout::from_size_align_unchecked(layout.size(), 8))
         }
+
+        System.alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        System.dealloc((ptr as usize & !0b0111) as *mut u8, layout)
     }
 }
 
-impl<T: ?Sized> Copy for Ref<T> {
+#[global_allocator]
+static GLOBAL: TaggedPointerAllocator = TaggedPointerAllocator;
+
+// Raw pointer to a memory location
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct Ref<T>(pub *mut T);
+// needs to become
+// pub struct Ref<'a, T>(pub &'a Cell<T>);
+
+impl<T: Copy> Ref<T> {
+    pub fn new_vec(len: usize, tag: SlotTag) -> Self {
+        let vec = vec![unsafe{MaybeUninit::<T>::uninit().assume_init()}; len];
+
+        let mut ptr = Vec::leak(vec) as *mut [T] as *mut T as usize;
+
+        ptr |= tag as usize;
+
+        Self(ptr as *mut T)        
+    }
 }
 
-impl<T: Sized> Ref<T> {
-    pub const fn null() -> Self {
-        Self { ptr: 0, phantom: PhantomData }
+impl<T> Ref<T> {
+    pub const fn null(tag: SlotTag) -> Self {
+        Self(0 as *mut T)
     }
 
     pub fn is_null(&self) -> bool {
-        self.ptr == 0
+        self.0 as usize == 0
     }
 
-    pub fn new(value: T) -> Self {
+    pub fn new(value: T, tag: SlotTag) -> Self {
+        /* 
         let mem = memory();
         let layout = unsafe{Layout::from_size_align_unchecked(size_of::<T>(), 8)};
         let ptr = mem.allocate(layout).unwrap();
@@ -47,15 +60,11 @@ impl<T: Sized> Ref<T> {
         let mut r = Self { ptr, phantom: PhantomData };
         *r = value; // TODO: optimize
         r
+        */
+        let mut ptr = Box::leak(Box::new(value)) as *mut T as usize;
+        ptr |= tag as usize;
+        Self(ptr as *mut T)
     }
-
-    pub fn offset(&self, offset: usize) -> Self {
-        Self {
-            ptr: self.ptr + (offset as u32),
-            phantom: PhantomData,
-        }
-    }
-
     /* 
     pub fn new_length(value: Vec<T>) -> Self {
         let mem = memory();
@@ -70,52 +79,41 @@ impl<T: Sized> Ref<T> {
     }
     */
 
-    pub fn as_slice(&mut self, len: usize) -> *mut [T] {
-        unsafe{from_raw_parts_mut((&mut**self) as *mut T, len) as *mut [T]}
-    }
+    pub fn as_slice(&mut self, len: usize) -> &mut [T] {
+        let ptr = unsafe{&mut*(((self.0 as usize) & !0b0111) as *mut T)};
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        let mem = memory();
-        let layout = unsafe {
-            Layout::from_size_align_unchecked(size_of::<T>()*capacity, 8)
-        };
-        let ptr = mem.allocate(layout).unwrap();
-        Self {
-            ptr,
-            phantom: PhantomData,
-        }
+        unsafe{from_raw_parts_mut(ptr, len)}
     }
-
+/* 
     pub fn new_tagged(value: T, tag: SlotTag) -> Self {
         let mut res  = Self::new(value);
-        res.ptr |= (tag as u32); // assumes 8bytes alignment, tag space initialized to be 0
+        println!("ptr: {}, tag: {}", res.ptr, tag.clone() as u32);
+        res.ptr |= tag as u32; // assumes 8bytes alignment, tag space initialized to be 0
+        println!("tagged ptr: {}", res.ptr);
         res
     }
-    
-    fn chunk(&self) -> usize {
-        (self.ptr >> CHUNK_SIZE_LOG) as usize
-    }
-
-    fn index(&self) -> usize {
-        (self.ptr & CHUNK_INDEX_MASK) as usize
-    }
+*/    
 }
 
-impl<T: Sized> Deref for Ref<T> {
+impl<T> Deref for Ref<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        let mem = memory();
-        let chunk = &mem.chunks.get_mut()[self.chunk()];
-        unsafe{transmute(&chunk.data[self.index()])}
+        if self.is_null() {
+            panic!("null pointer dereference");
+        }
+
+        unsafe{&*(((self.0 as usize) & !0b0111) as *const T)}
     }
 }
 
-impl<T: Sized> DerefMut for Ref<T> {
+impl<T> DerefMut for Ref<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let mem = memory();
-        let chunk = &mut mem.chunks.get_mut()[self.chunk()];
-        unsafe{transmute(&mut chunk.data[self.index()])} 
+        if self.is_null() {
+            panic!("null pointer dereference");
+        }
+
+        unsafe{&mut*(((self.0 as usize) & !0b0111) as *mut T)}        
     }
 }
 /*
@@ -141,84 +139,3 @@ impl<T: Sized> IndexMut<u32> for Ref<T> {
     }
 }
 */
-
-fn memory() -> &'static mut Memory {
-    // Create an uninitialized static
-    static mut SINGLETON: MaybeUninit<Memory> = MaybeUninit::uninit();
-    static ONCE: Once = Once::new();
-
-    unsafe {
-        ONCE.call_once(|| {
-            // Make it
-            let singleton = Memory::new();
-            // Store it to the static var, i.e. initialize it
-            SINGLETON.write(singleton);
-        });
-
-        // Now we give out a shared reference to the data, which is safe to use
-        // concurrently.
-        SINGLETON.assume_init_mut()
-    }
-}
-
-pub struct Memory {
-    chunks: Cell<Vec<Box<Chunk>>>,
-}
-
-impl Memory {
-    pub fn new() -> Self {
-        Self {
-            chunks: Cell::new(vec![Box::new(Chunk::new())]),
-        }
-    }
-}
-
-impl Memory {
-    fn allocate(&mut self, layout: Layout) -> Result<u32, ()> {
-        if layout.size() > CHUNK_SIZE as usize {
-            // TODO: large object alloc
-            return Err(());
-        }
-
-        let chunks = self.chunks.get_mut();
-        let chunk = chunks.last_mut().unwrap();
-
-        if let Ok(index) = chunk.allocate(layout) {
-            return Ok(((chunks.len() as u32)-1 << CHUNK_SIZE_LOG) + index);
-        }
-
-        let mut new_chunk = Box::new(Chunk::new());
-        let index = new_chunk.allocate(layout).unwrap();
-        chunks.push(new_chunk);
-        return Ok(((chunks.len() as u32)-1 << CHUNK_SIZE_LOG) + index)
-    }
-}
-
-struct Chunk {
-    len: u32,
-    data: [u8; CHUNK_SIZE as usize],
-}
-
-impl Chunk {
-    fn new() -> Self {
-        Self {
-            len: 0,
-            data: unsafe{std::mem::MaybeUninit::uninit().assume_init()},
-        }
-    }
-
-    fn allocate(&mut self, layout: Layout) -> Result<u32, ()> {
-        if self.len + (layout.size() as u32) > CHUNK_SIZE {
-            return Err(());
-        }
-
-        let ptr = self.len;
-
-        self.len += layout.size() as u32;
-
-        Ok(ptr)
-    }
-}
-
-
-

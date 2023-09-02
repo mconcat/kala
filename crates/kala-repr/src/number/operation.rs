@@ -14,6 +14,7 @@ impl Add for NumberSlot {
 			return NumberSlot::new_inline(res) 
 		}
 
+
 		let self_value: i128 = self.into();
 		let rhs_value: i128 = rhs.into();
 
@@ -29,7 +30,7 @@ impl Add for NumberSlot {
 		NumberSlot::new(res)
 	}
 }
-
+/* 
 impl Add for &NumberSlot {
 	type Output = NumberSlot;
 
@@ -37,6 +38,7 @@ impl Add for &NumberSlot {
 		*self + *rhs
 	}
 }
+*/
 
 impl Sub for NumberSlot {
 	type Output = Self; 
@@ -81,6 +83,15 @@ impl Mul for NumberSlot {
 
 		let self_value: i128 = self.into();
 		let rhs_value: i128 = rhs.into();
+
+		// shortcut for non-fractinal multiplication
+		if self_value << 64 == 0 && rhs_value << 64 == 0 {
+			return NumberSlot::new(self_value >> 64 * rhs_value >> 64)
+		}
+
+
+		unimplemented!("long multiplication");
+
 
 		let self_lo = self_value & 0xFFFF_FFFF_FFFF_FFFF;
 		let self_hi = self_value >> 64;
@@ -196,5 +207,18 @@ impl Shr for NumberSlot {
 impl NumberSlot {
 	pub fn less_than(self, other: Self) -> Self {
 		unimplemented!("lt number")
+	}
+}
+
+impl PartialEq for NumberSlot {
+	fn eq(&self, other: &Self) -> bool {
+		if self.is_inline() && other.is_inline() {
+			return self.value == other.value
+		}
+
+		let self_value: i128 = *self.pointer;
+		let other_value: i128 = *other.pointer;
+
+		self_value == other_value
 	}
 }
