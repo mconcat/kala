@@ -1,6 +1,7 @@
-use std::{ops::{self, FromResidual}, convert::Infallible, fmt::{LowerHex, self}};
+use std::{ops::{self, FromResidual}, convert::Infallible, fmt::{LowerHex, self}, mem::ManuallyDrop};
 
-use kala_repr::{slot::Slot, function::Frame};
+use jessie_ast::{VariableIndex, DeclarationIndex, PropertyAccess};
+use kala_repr::{slot::Slot, function::{Frame, Variable}};
 
 use crate::expression::eval_expr;
 
@@ -199,13 +200,18 @@ impl BlockFlag {
 }
 */
 pub struct Interpreter {
+    stack: Vec<Slot>,
     pub frame: Vec<Frame>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut stack = Vec::new();
         Interpreter {
-            frame: vec![Frame::new()]
+            stack,
+
+            // global frame
+            frame: vec![Frame::new(0, 0, &mut stack as *mut Vec<Slot>)]
         }
     }
 
@@ -213,9 +219,27 @@ impl Interpreter {
         self.frame.last_mut().unwrap()
     }
 
+    pub fn fetch_variable(&mut self, index: VariableIndex) -> Option<Variable> {
+        let mut var = match index.declaration_index {
+            DeclarationIndex::Capture(index) => self.get_frame().get_capture(index as usize),
+            DeclarationIndex::Local(index) => self.get_frame().get_local(index as usize),
+            DeclarationIndex::Parameter(index) => self.get_frame().get_argument(index as usize),
+        };
+
+        for property in index.property_access {
+            var = match property {
+                PropertyAccess::Element(elem) => var.0.borrow_mut().get_element(elem),
+                PropertyAccess::Property(prop) => var.0.borrow_mut().get_property(prop.dynamic_property),
+            }
+        };
+
+        var 
+    }
 
     fn get_local_initial_value(&mut self, index: u32) -> Evaluation {
-        let decl = self.get_frame().locals.get(index as usize)?.0.clone();
+        let decl = self.get_frame().get_local(index as usize);
+
+        let decl = self.get_frame().get_local(index as usize).0.clone();
         let initial_value_expr = decl.get_initial_value();
         match initial_value_expr {
             None => Evaluation::Value(Slot::new_undefined()),
@@ -225,7 +249,7 @@ impl Interpreter {
     
     pub fn initialize_local(&mut self, index: u32) -> Completion {
         let initial_value = self.get_local_initial_value(index)?;
-        let slot = &mut self.get_frame().locals.get_mut(index as usize)?.1;
+        let slot = &mut*self.get_frame().get_local(index as usize).0.borrow_mut();
         *slot = initial_value;
         Completion::Normal
     }

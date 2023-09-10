@@ -1,6 +1,8 @@
 use utils::SharedString;
 
-use super::{Frame, Variable};
+use crate::slot::Slot;
+
+use super::{Frame};
 
 pub trait Executable {
     type State;
@@ -11,13 +13,13 @@ pub trait Executable {
 
 #[derive(Clone)]
 pub struct FunctionPrototype<Code> {
-    pub name: SharedString,
+    pub name: Option<SharedString>,
     pub code: Code,
-    pub captures: Vec<Variable>,
+    pub captures: Vec<Slot>,
 }
 
 impl<Code> FunctionPrototype<Code> {
-    pub fn new(name: SharedString, code: Code, captures: Vec<Variable>) -> Self {
+    pub fn new(name: Option<SharedString>, code: Code, captures: Vec<Slot>) -> Self {
         Self {
             name,
             code,
@@ -27,13 +29,13 @@ impl<Code> FunctionPrototype<Code> {
 }
 
 impl<Code: Executable> FunctionPrototype<Code> {
-    pub fn call(&self, state: &mut Code::State, stack_ptr: *mut Vec<Variable>) {
+    pub fn call(&self, state: &mut Code::State, stack_ptr: *mut Vec<Slot>) {
         let stack = unsafe{&mut *stack_ptr};
 
         // assuming parametes are already pushed to the stack
         stack.append(&mut self.captures.clone());
         let fp = stack.len();
-        stack.append(&mut vec![Variable::uninitialized(); self.code.local_size()]);
+        stack.append(&mut vec![Slot::new_uninitalized(); self.code.local_size()]);
         let mut frame = Frame::new(fp, self.captures.len(), stack);
         self.code.execute(state, &mut frame);
     }

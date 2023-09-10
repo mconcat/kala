@@ -1,4 +1,4 @@
-use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, LValue, UnaryExpr, Assignment, VariableCell, ParameterDeclaration, DeclarationIndex, LValueCallPostOp};
+use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, LValue, UnaryExpr, Assignment, VariableCell, ParameterDeclaration, DeclarationIndex, LValueCallPostOp, VariableIndex};
 use kala_repr::{slot::Slot, function::Variable};
 
 use crate::{interpreter::{Evaluation, Interpreter}, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}};
@@ -17,7 +17,7 @@ pub fn eval_expr(interpreter: &mut Interpreter, expr: &Expr) -> Evaluation {
         Expr::UnaryExpr(unary) => eval_unary(interpreter, unary),
         Expr::CallExpr(call) => eval_call(interpreter, call),
         Expr::ParenedExpr(parened) => eval_expr(interpreter, &*parened),
-        Expr::Variable(variable) => eval_variable(interpreter, *variable.clone()),
+        Expr::Variable(index) => eval_variable(interpreter, index.get()),
         Expr::Spread(spread) => unreachable!("Spread should be handled by eval_array"),
     }
 }
@@ -63,9 +63,9 @@ fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Evaluation {
                 names.push(key.dynamic_property.clone());
                 slots.push(eval_expr(interpreter, &value)?);
             }
-            PropDef::Shorthand(key, var) => {
+            PropDef::Shorthand(key, index) => {
                 names.push(key.dynamic_property.clone());
-                slots.push(eval_variable(interpreter, *var.clone())?);
+                slots.push(eval_variable(interpreter, index.get())?);
             }
             PropDef::Spread(spread) => unimplemented!("spread in record literal")
         }
@@ -112,9 +112,9 @@ fn eval_function(interpreter: &mut Interpreter, func: &Function) -> Evaluation {
 
 fn lvalue(interpreter: &mut Interpreter, lvalue: &LValue) -> Result<Variable, Slot> {
     match lvalue {
-        LValue::Variable(var) => Ok(var.get()),
+        LValue::Variable(index) => interpreter.fetch_variable(index.get()).ok_or(Slot::new_undefined()/* TODO: error instead of undefined*/),
         LValue::CallLValue(expr) => {
-            let mut res = eval_expr(interpreter, &expr.expr).into()?;
+            let mut res: Variable = eval_expr(interpreter, &expr.expr).into()?;
             for op in expr.post_ops {
                 res = match op {
                     LValueCallPostOp::Index(index) => res.get_element(eval_expr(interpreter, &index).into()?.as_number())?,
@@ -300,9 +300,15 @@ fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Evalua
     unimplemented!("call")
 }
 
-fn eval_variable(interpreter: &mut Interpreter, variable: VariableCell) -> Evaluation {
+fn eval_variable(interpreter: &mut Interpreter, index: VariableIndex) -> Evaluation {
     let frame = interpreter.get_frame();
-    
+
+    let variable = match index.get().declaration_index {
+        DeclarationIndex::Local(index) => frame.get_local(index as usize),
+        DeclarationIndex::Capture(index) => frame.get_capture(index as usize),
+        DeclarationIndex::Parameter(index) => frame.get_argument(index as usize),
+    };
+
     let slot = frame.get_variable(variable.get());
 
     match slot {

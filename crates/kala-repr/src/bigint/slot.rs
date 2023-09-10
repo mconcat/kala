@@ -1,21 +1,25 @@
 use std::{ops::Deref, ptr::slice_from_raw_parts, mem::transmute};
 
-use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
+use crate::{slot::{Slot, SlotTag}, memory::alloc::{Ref, Slice}};
 
+const BIGINT_INLINE_MAX: isize = isize::MAX >> 4;
+const BIGINT_INLINE_MIN: isize = isize::MIN >> 4;
 
 #[repr(C)]
-pub struct BigintSlot {
-	pub(crate) sign_len: isize,
-	pub(crate) pointer: Ref<u64>, // first element
-}
+pub struct BigintSlot(pub Slice<usize>);
 
 impl BigintSlot {
-	pub fn new_inline(value: isize) -> Self {
-		Self {
-			sign_len: value,
-			pointer: Ref::null(SlotTag::Bigint),
-		}
+	pub fn new(sign: bool, abs: Vec<usize>) -> Self {
+		let sign_len: isize = if sign {abs.len() as isize} else {-(abs.len() as isize)};
+
+		let mut pointer: Slice<usize> = Slice::new(abs.len()+1);
 	}
+
+	/* 
+	pub fn new_inline(value: isize) -> Self {
+		Self()
+	}
+	*/
 /* 
 	pub fn with_capacity(capacity: usize) -> Self {
 		Self {
@@ -24,12 +28,8 @@ impl BigintSlot {
 		}
 	}
 */
-	pub fn is_inline(&self) -> bool {
-		self.pointer.is_null()	
-	}
-
 	pub fn len(&self) -> usize {
-		self.sign_len.abs() as usize
+		self.0.len()
 	}
 }
 

@@ -1,14 +1,11 @@
-use std::{ops::Deref, str::from_utf8, mem::transmute, cell::Cell};
+use std::{ops::Deref, str::from_utf8, mem::transmute, cell::Cell, fmt::format};
 
 use utils::SharedString;
 
-use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
+use crate::{slot::{Slot, SlotTag}, memory::alloc::{Ref, Slice}};
 
 #[repr(C)]
-pub struct StringSlot {
-	len: isize,
-	pointer: Cell<Ref<u8>>,
-}
+pub struct StringSlot(pub(crate) Slice<u8>); // UTF-8, not ECMAScript string
 
 impl StringSlot {
 	pub fn new(s: SharedString) -> Self {
@@ -18,10 +15,6 @@ impl StringSlot {
 
 		pointer.as_slice(len).copy_from_slice(s.as_bytes());
 		
-		Self {
-			len: len as isize,
-			pointer: Cell::new(pointer),
-		}
 	}
 }
 
@@ -45,5 +38,11 @@ impl Deref for StringSlot {
 impl PartialEq for StringSlot {
 	fn eq(&self, other: &Self) -> bool {
 		self.deref() == other.deref()
+	}
+}
+
+impl ToString for StringSlot {
+	fn to_string(&self) -> String {
+		format!("\"{}\"", self.deref())
 	}
 }

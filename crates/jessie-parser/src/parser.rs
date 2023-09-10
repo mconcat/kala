@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 
-use jessie_ast::{VariableCell, VariablePointer, Variable, DeclarationIndex, LocalDeclaration, CaptureDeclaration};
+use jessie_ast::{VariableCell, VariablePointer, VariableIndex, DeclarationIndex, LocalDeclaration, CaptureDeclaration};
 
 use crate::{scope::LexicalScope, map::VariablePointerMap, map::VariablePointerMapPool};
 

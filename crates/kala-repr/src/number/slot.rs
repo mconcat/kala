@@ -1,6 +1,7 @@
 
 use crate::{slot::{Slot, SlotTag}, memory::alloc::Ref};
 
+use core::panic;
 use std::{sync::LazyLock, ops::{Deref}, mem::transmute};
 
 pub const POSITIVE_INFINITY_VALUE: i128 = 0x7FFF_FFFF_FFFF_FFFF;
@@ -13,22 +14,16 @@ pub const NEGATIVE_INFINITY_VALUE: i128 = 0x8000_0000_0000_0000;
 
 // pub const NAN_SLOT: u64 = SlotTag::Number.attach(0xFFFF_FFFF_FFFF_FFFF);
 
+
 #[derive(Clone)]
 #[repr(C)]
-pub struct NumberSlot {
-	pub value: isize,
-	pub pointer: Ref<i128>, // *mut i128 
-}
+pub struct NumberSlot(pub(crate) Ref<i128>);
 
 impl NumberSlot {
 	pub fn new(value: i128) -> Self {
 		let pointer = Ref::new(value, SlotTag::Number);
 
-		Self{ value: 0, pointer }
-	}
-
-	pub fn new_inline(value: isize) -> Self {
-		Self{ value, pointer: Ref::null(SlotTag::Number) }
+		Self(pointer)
 	}
 
 	pub fn new_positive_infinity() -> Self {
@@ -41,25 +36,43 @@ impl NumberSlot {
 		//*NEGATIVE_INFINITY
 	}
 
-	pub fn is_inline(&self) -> bool {
-		self.pointer.is_null() 
+	pub fn unwrap(self) -> i128 {
+		*self.0
+	}
+}
+
+impl Deref for NumberSlot {
+	type Target = i128;
+
+	fn deref(&self) -> &Self::Target {
+		&*self.0
 	}
 }
 
 impl Into<Slot> for NumberSlot {
 	fn into(self) -> Slot {
-		unsafe{transmute(self)}	
-	}	
+		unsafe{transmute(self)}
+	}
 }
 
-impl Into<i128> for NumberSlot {
-	fn into(self) -> i128{
-		if self.pointer.is_null() {
-			println!("null pointer");
-			self.value.try_into().unwrap()
-		} else {
-			println!("non-null pointer");
-			*self.pointer	
+impl ToString for NumberSlot {
+	fn to_string(&self) -> String {
+		let value = *self.0;
+
+		if value == POSITIVE_INFINITY_VALUE {
+			return "Infinity".to_string()
 		}
+
+		if value == NEGATIVE_INFINITY_VALUE {
+			return "-Infinity".to_string()
+		}
+
+		// check if low 64 bits are 0
+		// if so, integer
+		if value << 64 == 0 {
+			return (value >> 64 as i64).to_string()
+		}
+
+		unimplemented!("asdf")
 	}
 }

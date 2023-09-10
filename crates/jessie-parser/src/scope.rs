@@ -1,7 +1,7 @@
 use std::cell::{RefCell, OnceCell};
 
 use fxhash::FxHashMap;
-use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, Variable, Function, DeclarationIndex, VariablePointer, OptionalPattern, LocalDeclaration, ParameterDeclaration, LValueOptional, PatternVisitor};
+use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, VariableIndex, Function, DeclarationIndex, VariablePointer, OptionalPattern, LocalDeclaration, ParameterDeclaration, LValueOptional, PatternVisitor};
 use utils::{SharedString, Map};
 use crate::{map::VariablePointerMap, param};
 

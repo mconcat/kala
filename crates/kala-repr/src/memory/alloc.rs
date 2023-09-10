@@ -1,5 +1,7 @@
 use std::{alloc::{self, Layout, Allocator, GlobalAlloc, System}, cell::Cell, mem::{MaybeUninit, size_of, transmute}, sync::Once, marker::PhantomData, ops::{Deref, DerefMut, Index, IndexMut}, slice::{from_raw_parts, from_raw_parts_mut}, ptr::NonNull, rc::Rc};
 
+use utils::SharedString;
+
 use crate::slot::{SlotTag, Slot};
 // This allocator wraps the default global allocator (Rust's allocator)
 // and adds support for tagged pointers
@@ -7,25 +9,97 @@ use crate::slot::{SlotTag, Slot};
 struct TaggedPointerAllocator;
 
 unsafe impl GlobalAlloc for TaggedPointerAllocator {
+    // we assume allocation will be aligned in 16 bits,
+    // due to 128bit number being the most smallest heap allocated object
+
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.align() < 8 {
-            return System.alloc(Layout::from_size_align_unchecked(layout.size(), 8))
+        if layout.align() < 16 {
+            return System.alloc(Layout::from_size_align_unchecked(layout.size(), 16))
         }
 
         System.alloc(layout)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc((ptr as usize & !0b0111) as *mut u8, layout)
+        System.dealloc((ptr as usize & !0b1111) as *mut u8, layout)
     }
 }
 
 #[global_allocator]
 static GLOBAL: TaggedPointerAllocator = TaggedPointerAllocator;
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Slice<T>{
+    words: Ref<u8>, // [len: size_of<usize>(), ...]
+    phantom: PhantomData<[T]>,
+}
+
+impl Slice<u8> {
+    pub fn from_shared_string(str: SharedString) -> Self { 
+        let slice: Self = Slice::new(str.len());
+        let data_start = unsafe{slice.words.0.add(size_of::<usize>())};
+
+        unsafe{data_start.copy_from(str.as_bytes().as_ptr(), str.len())};
+
+        slice
+    }
+}
+
+impl<T> Slice<T> {
+
+
+    pub fn new(len: usize) -> Self {
+        // TODO: bound check len is 31/63bits
+
+        let vec_len = size_of::<usize>()+size_of::<T>()*len;
+
+        let mut vec: Vec<u8> = Vec::with_capacity(vec_len);
+
+        unsafe{vec.set_len(vec_len)};
+
+        let vec_ptr = vec.leak() as *mut [u8];
+
+        let mut size_ptr = vec_ptr as *mut usize;
+
+        unsafe{*size_ptr = len};
+
+        Self {
+            words: Ref(vec_ptr as *mut u8),
+            phantom: PhantomData,
+        }
+    }
+/* 
+    pub fn new_inline(value: usize) -> Self {
+        // TODO: bound check value is 31/63bits
+        let mut vec: Vec<isize> = vec![-(value as isize)];
+
+
+    }
+    */
+
+    pub fn len(&self) -> usize {
+        unsafe{*transmute::<Ref<u8>, Ref<usize>>(self.words)}
+    }
+}
+
+impl<T> Index<usize> for Slice<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        unsafe{&*(self.words.as_slice(self.len()).as_ptr().add(size_of::<usize>()+index*size_of::<T>()) as *const T)}
+    }
+}
+
+impl<T> IndexMut<usize> for Slice<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        unsafe{&mut*(self.words.as_slice(self.len()).as_mut_ptr().add(size_of::<usize>()+index*size_of::<T>()) as *mut T)}
+    }
+}
+
 // Raw pointer to a memory location
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Ref<T>(pub *mut T);
 // needs to become
 // pub struct Ref<'a, T>(pub &'a Cell<T>);
@@ -80,7 +154,7 @@ impl<T> Ref<T> {
     */
 
     pub fn as_slice(&mut self, len: usize) -> &mut [T] {
-        let ptr = unsafe{&mut*(((self.0 as usize) & !0b0111) as *mut T)};
+        let ptr = unsafe{&mut*(((self.0 as usize) & !0b1111) as *mut T)};
 
         unsafe{from_raw_parts_mut(ptr, len)}
     }
@@ -103,7 +177,7 @@ impl<T> Deref for Ref<T> {
             panic!("null pointer dereference");
         }
 
-        unsafe{&*(((self.0 as usize) & !0b0111) as *const T)}
+        unsafe{&*(((self.0 as usize) & !0b1111) as *const T)}
     }
 }
 
@@ -113,7 +187,7 @@ impl<T> DerefMut for Ref<T> {
             panic!("null pointer dereference");
         }
 
-        unsafe{&mut*(((self.0 as usize) & !0b0111) as *mut T)}        
+        unsafe{&mut*(((self.0 as usize) & !01111) as *mut T)}        
     }
 }
 /*

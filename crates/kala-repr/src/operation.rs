@@ -1,6 +1,6 @@
 use std::{ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr}, mem::transmute};
 
-use crate::slot::{Slot, TypedSlot, TRUE, FALSE};
+use crate::{slot::{Slot, TypedSlot}, number::NumberSlot, bigint::BigintSlot};
 
 impl Add for Slot {
     type Output = Self;
@@ -8,7 +8,15 @@ impl Add for Slot {
     fn add(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
             (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs + rhs).into(),
+            (TypedSlot::Number(lhs), TypedSlot::InlineNumber(rhs)) => (lhs + rhs.promote()).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::Number(rhs)) => ((lhs.promote()) + rhs).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::InlineNumber(rhs)) => (lhs + rhs).into(),
+
             (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs + rhs).into(),
+            (TypedSlot::Bigint(lhs), TypedSlot::InlineBigint(rhs)) => (lhs + (rhs.promote())).into(),
+            (TypedSlot::InlineBigint(lhs), TypedSlot::Bigint(rhs)) => ((lhs.promote()) + rhs).into(),
+            (TypedSlot::InlineBigint(lhs), TypedSlot::InlineBigint(rhs)) => (lhs + rhs).into(),
+
             _ => unimplemented!("throw error"),
         }
     }
@@ -20,7 +28,15 @@ impl Sub for Slot {
     fn sub(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
             (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs - rhs).into(),
+            (TypedSlot::Number(lhs), TypedSlot::InlineNumber(rhs)) => (lhs - rhs.promote()).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::Number(rhs)) => ((lhs.promote()) - rhs).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::InlineNumber(rhs)) => (lhs - rhs).into(),
+
             (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs - rhs).into(),
+            (TypedSlot::Bigint(lhs), TypedSlot::InlineBigint(rhs)) => (lhs - (rhs.promote())).into(),
+            (TypedSlot::InlineBigint(lhs), TypedSlot::Bigint(rhs)) => ((lhs.promote()) - rhs).into(),
+            (TypedSlot::InlineBigint(lhs), TypedSlot::InlineBigint(rhs)) => (lhs - rhs).into(),
+
             _ => unimplemented!("throw error"),
         }
     }
@@ -32,7 +48,15 @@ impl Mul for Slot {
     fn mul(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
             (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs * rhs).into(),
+            (TypedSlot::Number(lhs), TypedSlot::InlineNumber(rhs)) => (lhs * rhs.promote()).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::Number(rhs)) => ((lhs.promote()) * rhs).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::InlineNumber(rhs)) => (lhs * rhs).into(),
+
             (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs * rhs).into(),
+            (TypedSlot::Bigint(lhs), TypedSlot::InlineBigint(rhs)) => (lhs * (rhs.promote())).into(),
+            (TypedSlot::InlineBigint(lhs), TypedSlot::Bigint(rhs)) => ((lhs.promote()) * rhs).into(),
+            (TypedSlot::InlineBigint(lhs), TypedSlot::InlineBigint(rhs)) => (lhs * rhs).into(),
+
             _ => unimplemented!("throw error"),
         }
     }
@@ -43,8 +67,11 @@ impl Div for Slot {
 
     fn div(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
-            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs / rhs).into(),
-            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs / rhs).into(),
+            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs / rhs).into(), 
+            (TypedSlot::Number(lhs), TypedSlot::InlineNumber(rhs)) => (lhs / rhs.promote()).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::Number(rhs)) => ((lhs.promote()) / rhs).into(),
+            (TypedSlot::InlineNumber(lhs), TypedSlot::InlineNumber(rhs)) => (lhs / rhs).into(),
+
             _ => unimplemented!("throw error"),
         }
     }
@@ -55,8 +82,11 @@ impl Neg for Slot {
 
     fn neg(self) -> Self::Output {
         match self.into_typed() {
-            TypedSlot::Number(lhs) => (-lhs).into(),
-            TypedSlot::Bigint(lhs) => (-lhs).into(),
+            TypedSlot::Number(num) => (-num).into(),
+            TypedSlot::InlineNumber(num) => (-num).into(),
+            TypedSlot::Bigint(num) => (-num).into(),
+            TypedSlot::InlineBigint(num) => (-num).into(),
+
             _ => unimplemented!("throw error"),
         }
     }
@@ -67,8 +97,8 @@ impl BitAnd for Slot {
 
     fn bitand(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
-            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs & rhs).into(),
-            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs & rhs).into(),
+            
+
             _ => unimplemented!("throw error"),
         }
     }
@@ -79,8 +109,7 @@ impl BitOr for Slot {
 
     fn bitor(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
-            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs | rhs).into(),
-            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs | rhs).into(),
+            
             _ => unimplemented!("throw error"),
         }
     }
@@ -91,8 +120,7 @@ impl BitXor for Slot {
 
     fn bitxor(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
-            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs ^ rhs).into(),
-            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs ^ rhs).into(),
+           
             _ => unimplemented!("throw error"),
         }
     }
@@ -103,8 +131,8 @@ impl Shl for Slot {
 
     fn shl(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
-            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs << rhs).into(),
-            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs << rhs).into(),
+            
+
             _ => unimplemented!("throw error"),
         }
     }
@@ -115,8 +143,7 @@ impl Shr for Slot {
 
     fn shr(self, rhs: Self) -> Self::Output {
         match (self.into_typed(), rhs.into_typed()) {
-            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => (lhs >> rhs).into(),
-            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => (lhs >> rhs).into(),
+           
             _ => unimplemented!("throw error"),
         }
     }
@@ -124,40 +151,59 @@ impl Shr for Slot {
 
 impl Slot {
     pub fn strict_equal_internal(&self, other: &Self) -> bool {
-        if self.value == other.value && self.pointer.0 == other.pointer.0 {
-            return true
-        }
-
         match (self.into_typed(), other.into_typed()) {
-            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => lhs == rhs,
-            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => lhs == rhs,
-            (TypedSlot::String(lhs), TypedSlot::String(rhs)) => lhs == rhs,
-            (TypedSlot::Reference(lhs), TypedSlot::Reference(rhs)) => lhs.pointer.0 == rhs.pointer.0,
+            (TypedSlot::Number(lhs), TypedSlot::Number(rhs)) => {
+                lhs == rhs
+            },
+
+            (TypedSlot::InlineNumber(lhs), TypedSlot::InlineNumber(rhs)) => {
+                lhs == rhs
+            },
+
+            (TypedSlot::Bigint(lhs), TypedSlot::Bigint(rhs)) => {
+                lhs == rhs
+            },
+
+            (TypedSlot::InlineBigint(lhs), TypedSlot::InlineBigint(rhs)) => {
+                lhs == rhs
+            },
+
+            (TypedSlot::String(lhs), TypedSlot::String(rhs)) => {
+                lhs == rhs
+            },
+
+            (TypedSlot::Reference(lhs), TypedSlot::Reference(rhs)) => {
+                lhs == rhs
+            },
+
+            (TypedSlot::InlineReference(lhs), TypedSlot::InlineReference(rhs)) => {
+                lhs == rhs
+            },
+
             (_, _) => false,
         }
     } 
 
     pub fn strict_equal(&self, other: &Self) -> Self {
         if self.strict_equal_internal(other) {
-            TRUE
+            Slot::new_true()
         } else {
-            FALSE
+            Slot::new_false()
         }
     }
 
     pub fn strict_not_equal(&self, other: &Self) -> Self {
         if self.strict_equal_internal(other) {
-            FALSE
+            Slot::new_false()
         } else {
-            TRUE
+            Slot::new_true()
         }
     }
 
     pub fn less_than(self, other: Self) -> Self {
         match (self.into_typed(), other.into_typed()) {
-            (TypedSlot::Number(x), TypedSlot::Number(y)) => x.less_than(y).into(),
-            (TypedSlot::Bigint(x), TypedSlot::Bigint(y)) => x.less_than(y).into(),
-            (TypedSlot::String(x), TypedSlot::String(y)) => unimplemented!("string comp lt"),
+            
+            
             (_, _) => panic!("TODO: type error")
         }
     }
@@ -178,36 +224,26 @@ impl Slot {
 impl ToString for Slot {
     fn to_string(&self) -> String {
         match self.into_typed() {
-            TypedSlot::Number(slot) => {
-                if slot.is_inline() {
-                    println!("inline number");
-                    slot.value.to_string()
-                } else {
-                    println!("non-inline number");
-                    slot.pointer.to_string() // TODO
-                }
+            TypedSlot::Number(num) => {
+                num.to_string()
             },
-            TypedSlot::Bigint(slot) => {
+            TypedSlot::InlineNumber(num) => {
+                num.to_string()
+            },
+            TypedSlot::Bigint(num) => {
                 unimplemented!("bigint to string")
             },
-            TypedSlot::String(slot) => {
-                slot.to_string()
+            TypedSlot::InlineBigint(num) => {
+                num.to_string()
             },
-            TypedSlot::Reference(_) => {
-                if self.is_undefined() {
-                    "undefined".to_string()
-                } else if self.is_null() {
-                    "null".to_string()
-                } else if self.is_true() {
-                    "true".to_string()
-                } else if self.is_false() {
-                    "false".to_string()
-                } else {
-                    unimplemented!("reference to string")
-                }
+            TypedSlot::String(string) => {
+                string.to_string()
             },
-            TypedSlot::Uninitialized => {
-                unimplemented!("uninitialized to string")
+            TypedSlot::Reference(reference) => {
+                unimplemented!("reference to string")
+            },
+            TypedSlot::InlineReference(reference) => {
+                reference.to_string()
             },
         }
     }

@@ -18,7 +18,7 @@ mod tests {
 
         for test_case in test_cases {  
             let slot = NumberSlot::new(*test_case);
-            let slot_value: i128 = slot.into();
+            let slot_value: i128 = *slot;
 
             assert_eq!(slot_value, *test_case, "converting slot to i128 and back should be identity, but got {} instead of {}. ", slot_value, *test_case);
         }

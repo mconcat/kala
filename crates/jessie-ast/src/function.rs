@@ -176,15 +176,16 @@ pub enum DeclarationIndex {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Variable {
+pub struct VariableIndex {
     // index of the variable declaration in the innermost function 
     pub declaration_index: DeclarationIndex,
 
     pub property_access: Vec<PropertyAccess>,
 }
 
+// TODO: we don't need Rc<Rc>> here
 #[derive(Debug, PartialEq, Clone)]
-pub struct VariablePointer(Rc<RefCell<Rc<OnceCell<Variable>>>>);
+pub struct VariablePointer(Rc<RefCell<Rc<OnceCell<VariableIndex>>>>);
 
 impl VariablePointer {
     pub fn new() -> Self {
@@ -193,17 +194,17 @@ impl VariablePointer {
 
     pub fn initialized(declaration_index: DeclarationIndex, property_access: &Vec<PropertyAccess>) -> Self {
         let cell = OnceCell::new();
-        cell.set(Variable {
+        cell.set(VariableIndex {
             declaration_index,
             property_access: property_access.clone(),
         }).unwrap();
         VariablePointer(Rc::new(RefCell::new(Rc::new(cell))))
     }
 
-    pub fn set(&mut self, declaration_index: DeclarationIndex, property_access: Vec<PropertyAccess>) -> Result<(), Variable> {
+    pub fn set(&mut self, declaration_index: DeclarationIndex, property_access: Vec<PropertyAccess>) -> Result<(), VariableIndex> {
         let inner = (*self.0).borrow_mut();
 
-        inner.set(Variable {
+        inner.set(VariableIndex {
             declaration_index,
             property_access,
         })
@@ -232,7 +233,7 @@ impl VariablePointer {
 #[derive(Debug, Clone)]
 pub struct VariableCell {
     pub name: SharedString,
-    pub cell: OnceCell<Variable>,
+    pub cell: OnceCell<VariableIndex>,
     pub ptr: VariablePointer,
 }
 
@@ -260,7 +261,7 @@ impl VariableCell {
 
     pub fn initialized(name: SharedString, declaration_index: DeclarationIndex, property_access: Vec<PropertyAccess>) -> Self {
         let mut cell = OnceCell::new();
-        cell.set(Variable {
+        cell.set(VariableIndex {
             declaration_index,
             property_access,
         }).unwrap();
@@ -269,7 +270,7 @@ impl VariableCell {
     }
 
     // Must not be called before all the scoping is done
-    pub fn get(&self) -> Variable {
+    pub fn get(&self) -> VariableIndex {
         println!("Getting variable {:?}", self);
 
         if let Some(var) = self.cell.get() {
@@ -282,7 +283,7 @@ impl VariableCell {
         ptr_var.clone()
     }
 
-    pub fn get_checked(&self) -> Option<Variable> {
+    pub fn get_checked(&self) -> Option<VariableIndex> {
         if let Some(var) = self.cell.get() {
             return Some(var.clone())
         }

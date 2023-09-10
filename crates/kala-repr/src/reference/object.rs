@@ -2,18 +2,30 @@ use utils::{FxMap, VectorMap, SharedString, Map};
 
 use crate::slot::Slot;
 
-use super::Prototype;
+use super::{Prototype, ReferenceSlot};
 
+#[derive(Clone)]
 pub struct Shape {
     pub inlines: VectorMap<usize>,
 }
 
 // https://doc.rust-lang.org/beta/nomicon/exotic-sizes.html
+
+#[derive(Clone)]
 pub struct Object {
     pub(crate) prototype: Prototype,
     pub(crate) shape: Shape,
     pub(crate) properties: VectorMap<Slot>, 
     pub(crate) inlines: Box<[Slot]>, // TODO: Slice<Slot>
+}
+
+#[repr(usize)]
+#[derive(Copy, Clone)]
+pub enum ConstantObject {
+    Undefined,
+    Null,
+    False,
+    True,
 }
 
 impl Object {
@@ -43,16 +55,17 @@ impl Object {
         self.properties.get(name.clone())
     }
 
-    pub fn get_index(&self, index: i32) -> Option<Slot> {
+    pub fn get_index(&mut self, index: i32) -> Option<&mut Slot> {
         if index < 0 {
             panic!("negative index")
         }
 
-        if let Prototype::Array(array) = &self.prototype {
-            return array.elements.get(index as usize).cloned()
+        if let Prototype::Array(array) = &mut self.prototype {
+            return array.elements.get_mut(index as usize)
         }  
 
         None
         // TODO: prorotype chain
     }
 }
+

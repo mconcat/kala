@@ -2,57 +2,18 @@ use std::{mem::transmute, fmt::LowerHex, sync::Once};
 
 use utils::SharedString;
 
-use crate::{reference::ReferenceSlot, number::NumberSlot, bigint::BigintSlot, string::slot::StringSlot, memory::alloc::Ref, function::Variable};
-
+use crate::{reference::{ReferenceSlot, InlineReferenceSlot, InlineObject}, number::{NumberSlot, InlineNumberSlot}, bigint::{BigintSlot, InlineBigintSlot}, string::slot::StringSlot, memory::alloc::Ref};
+use std::marker::ConstParamTy;
 use std::sync::LazyLock;
 
 // unwrapping any Slot with this value will throw an error
 // must be manually checked in all cases of unwrapping
-pub const UNINITIALIZED: Slot = Slot {
-	value: isize::MIN, // all bits set to 1
-	pointer: Ref::null(SlotTag::Reference),
-};
+pub const UNINITIALIZED: Slot = Slot { raw: 0 };
+
+
 
 // has type tag of Reference, so typeof NULL == typeof Reference
 // pub static NULL_LOCK: LazyLock<Slot> = LazyLock::new(|| Slot::new_reference(Object::new(Vec::new())));
-
-fn NULL() -> Slot {
-    use std::mem::MaybeUninit;
-    
-    static mut NULL: MaybeUninit<Slot> = MaybeUninit::uninit();
-    static mut ONCE: Once = Once::new();
-    
-    unsafe {
-        ONCE.call_once(|| NULL = MaybeUninit::new(Slot::new_object(Vec::new(), Vec::new())));
-        
-        NULL.as_ptr().read()
-    }
-}
-
-pub const UNDEFINED: Slot = Slot {
-	value: 0x0000_0000,
-	pointer: Ref::null(SlotTag::Reference),
-};
-
-pub const FALSE: Slot = Slot {
-	value: 0x0000_0000,
-	pointer: Ref::null(SlotTag::String),
-};
-
-pub const TRUE: Slot = Slot {
-	value: 0x0000_0001,
-	pointer: Ref::null(SlotTag::String),
-};
-
-pub const ZERO_NUMBER: Slot = Slot {
-	value: 0x0000_0000,
-	pointer: Ref::null(SlotTag::Number),
-};
-
-pub const ZERO_BIGINT: Slot = Slot {
-	value: 0x0000_0000,
-	pointer: Ref::null(SlotTag::Bigint),
-};
 
 // pub const EMPTY_STRING: LazyLock<Slot> = LazyLock::new(|| Slot::new_string(&[]));
 
@@ -61,22 +22,21 @@ pub const ZERO_BIGINT: Slot = Slot {
 // pub const ZERO_BIGINT: Slot = Slot(0x0000_0000_0000_0003);
 
 
+// We want to put let/const information on the slot itself in order to express mutability/immutability not only for the variables but also for the object properties
+// Javascript right now does not have a way to express this, but there is a proposal afaik to make immutable objects(tuples/records), and it would be beneficial to make this happen with help of type checker
+// TODO: maybe name them Mutable*/Immutable* instead?
 #[repr(usize)]
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, ConstParamTy, Eq)]
 pub enum SlotTag {
-	Reference = 0b_0000_0000,
-	Number = 0b_0000_0001,
-	String = 0b_0000_0010,
-	Bigint = 0b_0000_0011,
+	Reference = 0b_0000, // uninitialized(0x0), objects, 
+	Number = 0b_0001, // number
+	String = 0b_0010, // string
+	Bigint = 0b_0011, // bigint
 
-	/*
-	ConstReference = 0b0000_0100,
-	ConstNumber = 0b0000_0101,
-	ConstString = 0b0000_0110,
-	ConstBigint = 0b0000_0111,
-	*/
-
-	Uninitialized = 0b_0000_1000,
+	InlineReference = 0b_0100, // undefined, null, boolean; still heap allocated
+	InlineNumber = 0b_0101, // number within 28bit/60bit 
+	// InlineString = 0b_1010, // reserved
+	InlineBigint = 0b_0111, // bigint within 28bit/60bit
 }
 
 impl SlotTag {
@@ -87,19 +47,15 @@ impl SlotTag {
 	pub fn is_mutable(self) -> bool {
 		(self as u64 & 0b_0000_0100) == 0
 	}
-	
-	pub fn is_uninitialized(self) -> bool {
-		self == SlotTag::Uninitialized
-	}
 }
 
 #[repr(usize)]
 #[derive(PartialEq)]
 pub enum SlotType {
-	Object = 0b_0000_0000,
-	Number = 0b_0000_0001,
-	String = 0b_0000_0010,
-	Bigint = 0b_0000_0011,
+	Object,
+	Number,
+	String,
+	Bigint,
 
 	Boolean,
 	Undefined,
@@ -121,12 +77,15 @@ impl Into<Slot> for SlotType {
 
 #[repr(usize)]
 pub enum TypedSlot {
-	Reference(ReferenceSlot) = 0b_0000_0000,
-	Number(NumberSlot) = 0b_0000_0001,
-	String(StringSlot) = 0b_0000_0010,
-	Bigint(BigintSlot) = 0b_0000_0011,
+	Reference(ReferenceSlot) = 0b_0000,
+	Number(NumberSlot) = 0b_0001,
+	String(StringSlot) = 0b_0010,
+	Bigint(BigintSlot) = 0b_0011,
 
-	Uninitialized = 0b_0000_1000,
+	InlineReference(InlineReferenceSlot) = 0b_0100,
+	InlineNumber(InlineNumberSlot) = 0b_0101,
+	//InlineString(InlineStringSlot) = 0b_0110,
+	InlineBigint(InlineBigintSlot) = 0b_0111,
 }
 
 // only used for transmuting into TypedSlot
@@ -146,25 +105,49 @@ impl SlotTag {
 	}
 }
 
-const SLOT_TAG_MASK: usize = 0b_0000_0000_0000_0000_0000_0000_0000_0011;
+const SLOT_TAG_MASK: usize = 0b_0000_0000_0000_0000_0000_0000_0000_1111;
 
 #[repr(C)]
-#[derive(Clone, Debug)]
-pub struct Slot {
-	pub(crate) value: isize,
-	pub(crate) pointer: Ref<()>,
-}
+#[derive(Clone, Copy)]
+pub union Slot {
+	pub raw: usize,
+	pub pointer: Ref<()>,
+} 
 
 impl Slot {
+	// capture basically does:
+	// 1. Heap allocate all the inline slots
+	// 2. Modify the existing slot to point the heap
+	// 3. Make a new slot that points the same heap address
+	// 4. Make 
+	// This works because we don't have deallocation right now, once we have it the capturing should involve reference counting(or make the heap allocated object reference count by default)
+	pub fn capture(&mut self) -> Self {
+		match self.into_typed() {
+			TypedSlot::Number(num) => {
+				self.clone()
+			},
+			TypedSlot::Bigint(num) => {
+				self.clone()
+			},
+			TypedSlot::String(string) => {
+				self.clone()
+			},
+			TypedSlot::Reference(reference) => {
+				self.clone()
+			},
+			TypedSlot::InlineReference(reference) => {
+				self.clone()
+			}
+			// TODO: inlines should be promoted to non-inlines and then captured
+			_ => panic!("cannot capture inline slot")
+		}
+	}
+
 	pub fn raw_equal(&self, other: &Self) -> bool {
-		self.value == other.value && self.pointer.0 == other.pointer.0
+		self.raw == other.raw	
 	}
 
 	pub fn tag(&self) -> SlotTag {
-		if self.is_uninitialized() {
-			return SlotTag::Uninitialized
-		}
-
 		unsafe{transmute(self.pointer.0 as usize & SLOT_TAG_MASK)}
 	}
 
@@ -179,9 +162,9 @@ impl Slot {
 */
 	pub fn new_boolean(value: bool) -> Self {
 		if value {
-			TRUE
+			Self::new_true()
 		} else {
-			FALSE
+			Self::new_false()
 		}
 	}
 
@@ -194,15 +177,15 @@ unimplemented!("asdf")
 	}
 
 	pub fn new_undefined() -> Self {
-		UNDEFINED
+		InlineReferenceSlot::new(InlineObject::Undefined).into()
 	}
 
 	pub fn new_false() -> Self {
-		FALSE
+		InlineReferenceSlot::new(InlineObject::False).into()
 	}
 
 	pub fn new_true() -> Self {
-		TRUE
+		InlineReferenceSlot::new(InlineObject::True).into()
 	}
 /* 
 	pub fn new_number_inline(value: i32) -> Self {
@@ -255,10 +238,6 @@ unimplemented!("asdf")
 	}
 */
 	pub fn into_typed(&self) -> TypedSlot {
-		if self.is_uninitialized() {
-			return TypedSlot::Uninitialized
-		}
-
 		unsafe{transmute(TaggedTypedSlot {
 			tag: self.tag(),
 			slot: self.clone(),
@@ -271,39 +250,19 @@ unimplemented!("asdf")
 
 	// returns false slot if undefined, null, false, 0, 0n, empty string
 	pub fn is_falsy(&self) -> bool {
-		match self.tag() {
-			SlotTag::Reference => {
-				if self.raw_equal(&NULL()) || self.raw_equal(&UNDEFINED) {
-					false
-				} else {
-					true
-				}
-			}
-			SlotTag::Number => {
-				if self.raw_equal(&ZERO_NUMBER) {
-					// zero
-					false
-				} else {
-					true
-				}
-			},
-			SlotTag::String => {
-				if self.value == 0 {
-					// false or empty string
-					false
-				} else {
-					true
-				}
-			},
-			SlotTag::Bigint => {
-				if self.raw_equal(&ZERO_BIGINT) {
-					// zero
-					false
-				} else {
-					true
-				}
-			},
-			SlotTag::Uninitialized => panic!("is_falsy on uninitialized slot"),
+		match self.into_typed() {
+			TypedSlot::Number(num) => false,
+			TypedSlot::InlineNumber(num) => num.0.is_zero(),
+			TypedSlot::String(string) => string.is_empty(),
+			TypedSlot::Bigint(bigint) => false,
+			TypedSlot::InlineBigint(bigint) => bigint.0.is_zero(),
+			TypedSlot::Reference (reference) => reference.is_empty(),
+			TypedSlot::InlineReference (reference) => match *reference {
+				InlineObject::Undefined => true,
+				InlineObject::Null => true,
+				InlineObject::False => true,
+				InlineObject::True => false,
+			} 
 		}
 	}
 
@@ -311,59 +270,41 @@ unimplemented!("asdf")
 		!self.is_falsy()
 	}
 
-	pub fn is_undefined(&self) -> bool {
-		self.raw_equal(&UNDEFINED)	
-	}
-
-	pub fn is_null(&self) -> bool {
-		false // TODO
-	}
-
-	pub fn is_true(&self) -> bool {
-		self.raw_equal(&TRUE)	
-	}
-
-	pub fn is_false(&self) -> bool {
-		self.raw_equal(&FALSE)
-	}
-
 	pub fn type_of(&self) -> SlotType {
-		if self.is_uninitialized() {
-			panic!("uninitialized slot")
-		}
-
-		let ty: SlotType = unsafe{transmute(self.tag())};
-
-		if ty == SlotType::String {
-			if self.pointer.is_null() {
-				return SlotType::Boolean
-			} else {
-				return SlotType::String
+		match self.into_typed() {
+			TypedSlot::Bigint(_) => SlotType::Bigint,
+			TypedSlot::InlineBigint(_) => SlotType::Bigint,
+			TypedSlot::Number(_) => SlotType::Number,
+			TypedSlot::InlineNumber(_) => SlotType::Number,
+			TypedSlot::String(_) => SlotType::String,
+			TypedSlot::Reference(_) => SlotType::Object,
+			TypedSlot::InlineReference(reference) => match *reference {
+				InlineObject::Undefined => SlotType::Undefined,
+				InlineObject::Null => SlotType::Object,
+				InlineObject::False => SlotType::Boolean,
+				InlineObject::True => SlotType::Boolean,
 			}
 		}
-
-		if ty == SlotType::Object {
-			if self.is_undefined() {
-				return SlotType::Undefined
-			} else {
-				return SlotType::Object
-			}
-		}
-
-		ty
 	}
 
 	pub fn is_nullish(self) -> bool {
-		return self == UNDEFINED || self == NULL()
+		match self.into_typed() {
+			TypedSlot::InlineReference(reference) => match *reference {
+				InlineObject::Undefined => true,
+				InlineObject::Null => true,
+				_ => false,
+			}
+			_ => false,
+		}	
 	}
 
 	pub fn new_array(elements: Vec<Slot>) -> Self {
 		ReferenceSlot::new_array(elements).into()
 	}
 
-	pub fn new_integer(i: usize) -> Self {
-		if i <= isize::MAX as usize {
-			NumberSlot::new_inline(i as isize).into()
+	pub fn new_integer(i: isize) -> Self {
+		if i < isize::MAX>>4 && i > isize::MIN>>4 {
+			InlineNumberSlot::new(i as isize).into()
 		} else {
 			NumberSlot::new(i as i128).into()
 		}
@@ -381,7 +322,7 @@ unimplemented!("asdf")
 		ReferenceSlot::new_object(names, inlines).into()
 	}
 
-	pub fn new_function<Code>(name: SharedString, code: Code, captures: Vec<Variable>) -> Self {
+	pub fn new_function<Code>(name: Option<SharedString>, code: Code, captures: Vec<Slot>) -> Self {
 		ReferenceSlot::new_function(name, code, captures).into()
 	}
 /* 
@@ -415,21 +356,32 @@ unimplemented!("asdf")
 
 	pub fn as_smi(&self) -> Option<i32> {
 		match self.into_typed() {
-			TypedSlot::Number(num) => Into::<i128>::into(num).try_into().ok(),
+			TypedSlot::InlineNumber(num) => {
+				i32::try_from(*num).ok()
+			},
 			_ => None,
 		}	
 	}
 
-	pub fn get_element(&mut self, index: i32) -> Option<Slot> {
-		let mut obj = self.as_reference()?;
+	pub fn get_element(&mut self, index: i32) -> Option<&mut Slot> {
+		if self.type_of() != SlotType::Object {
+			return None
+		}
+
+		let obj = unsafe{transmute::<&mut Slot, &mut ReferenceSlot>(self)};
+
 		obj.get_element(index)
 	}
 
-	pub fn get_property(&self, name: SharedString) -> Option<Slot> {
-		let mut obj = self.as_reference()?;
+	pub fn get_property(&mut self, name: SharedString) -> Option<&mut Slot> {
+		if self.type_of() != SlotType::Object {
+			return None
+		}
+
+		let obj = unsafe{transmute::<&mut Slot, &mut ReferenceSlot>(self)};
+
 		obj.get_property(name)
 	}
-
 }
 
 impl PartialEq for Slot {
@@ -440,6 +392,6 @@ impl PartialEq for Slot {
 
 impl LowerHex for Slot {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{:#x}:{:#x}", self.value, self.pointer.0 as usize)
+		write!(f, "{:#x}", self.pointer.0 as usize)
 	}
 }
