@@ -2,7 +2,7 @@ use std::thread::scope;
 
 use utils::{FxMap, Map, VectorMap};
 
-use crate::{Statement, CaptureDeclaration, ParameterDeclaration, Expr, LocalDeclaration, CallPostOp, VariableCell, PropDef, Function, DeclarationIndex};
+use crate::{Statement, CaptureDeclaration, ParameterDeclaration, Expr, LocalDeclaration, CallPostOp, VariableCell, PropDef, Function, DeclarationIndex, Pattern, PatternVisitor};
 
 // - The function first iterates over the body of the function, and collects all the local declarations
 // - Then, it iterates over the body again, and all the variables occuring inside the function body are bound to either one of local / capture / parameter
@@ -53,6 +53,7 @@ macro_rules! pattern {
     */
 }
 
+#[macro_export]
 macro_rules! patterns {
     // entry point
     ($first:tt) => {
@@ -74,6 +75,7 @@ macro_rules! patterns {
 }
 
 // function_body: tt;* -> (Vec<LocalDeclaration>, Vec<Statement>)
+#[macro_export]
 macro_rules! function_body {
     // base case
     (internal, $locallen:expr, [$($local:expr),*,], [$($statement:expr),*,],) => {
@@ -123,8 +125,8 @@ macro_rules! function_body {
 #[macro_export]
 macro_rules! function {    
     ($name:ident ($($param:tt),*) {
-        $($stmt:tt;)*
-    }) => {
+        $($stmt:expr;)*
+    }) => {{
         let parameters = patterns!($($param),*);
         let (locals, statements) = function_body!($($stmt;)*);
 
@@ -141,11 +143,11 @@ macro_rules! function {
         // at this point, function.captures is filled with all the capture declarations(without initialization)
 
         Expr::Function(Box::new(function))
-    };
+    }};
 
     (($($param:tt),*) {
         $($stmt:expr;)*
-    }) => {
+    }) => {{
         let parameters = patterns!($($param),*);
         let (locals, statements) = function_body!($($stmt;)*);
 
@@ -162,9 +164,9 @@ macro_rules! function {
         // at this point, function.captures is filled with all the capture declarations(without initialization)
 
         Expr::Function(Box::new(function)) 
-    };
+    }};
 
-    (($($param:tt),*) => $ret:expr) => {
+    (($($param:tt),*) => $ret:expr) => {{
         let parameters = patterns!($($param),*);
 
         let function = Function {
@@ -180,7 +182,7 @@ macro_rules! function {
         // at this point, function.captures is filled with all the capture declarations(without initialization)
 
         Expr::Function(Box::new(function))  
-    }
+    }}
 }
 /* 
 #[macro_export]
@@ -248,84 +250,92 @@ macro_rules! ret {
     };
 }
 
+pub struct ScopingVisitor {
+    pub map: FxMap<VariableCell>,
+}
+
+impl PatternVisitor for ScopingVisitor {
+    fn visit(&mut self, index: DeclarationIndex, name: utils::SharedString, property_access: Vec<crate::PropertyAccess>) -> Option<()> {
+        self.map.insert(name.clone(), VariableCell::initialized(name.clone(), index, property_access));
+        Some(())
+    }
+}
+
 pub fn scope_function(function: &mut Function) {
-    let mut map = FxMap::new();
+    let mut visitor = ScopingVisitor {
+        map: FxMap::new(),
+    };
+    
     let mut captures = VectorMap::new();
 
-    for parameter in function.parameters {
+    for (i, parameter) in function.parameters.clone().into_iter().enumerate() {
         match parameter {
             ParameterDeclaration::Variable { name } => {
-                map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Parameter(0), vec![]));
+                visitor.map.insert(name.clone(), VariableCell::initialized(name.clone(), DeclarationIndex::Parameter(i.try_into().unwrap()), vec![]));
             },
             ParameterDeclaration::Pattern { pattern } => {
-                pattern.visit(DeclarationIndex::Parameter(0), |name, property_access| {
-                    map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Parameter(0), property_access));
-                });
+                pattern.visit(DeclarationIndex::Parameter(i.try_into().unwrap()), &mut visitor);
             },
             ParameterDeclaration::Optional { name, default } => {
-                map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Parameter(0), vec![]));
+                visitor.map.insert(name.clone(), VariableCell::initialized(name.clone(), DeclarationIndex::Parameter(i.try_into().unwrap()), vec![]));
             },
         }
     }
 
-    for local in function.locals {
+    for (i, local) in function.locals.clone().into_iter().enumerate() {
         match local {
             LocalDeclaration::Const { pattern, value } => {
-                pattern.visit(DeclarationIndex::Local(0), |name, property_access| {
-                    map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Local(0), property_access));
-                });
+                pattern.visit(DeclarationIndex::Local(i.try_into().unwrap()), &mut visitor);
             },
             LocalDeclaration::Function { function } => {
                 if let Some(name) = function.name.get_name() {
-                    map.insert(&name, VariableCell::initialized(name.clone(), DeclarationIndex::Local(0), vec![]));
+                    visitor.map.insert(name.clone(), VariableCell::initialized(name.clone(), DeclarationIndex::Local(i.try_into().unwrap()), vec![]));
                 }
             },
             LocalDeclaration::Let { pattern, value } => {
-                pattern.visit(DeclarationIndex::Local(0), |name, property_access| {
-                    map.insert(&name, VariableCell::initialized(name, DeclarationIndex::Local(0), property_access));
-                });
+                pattern.visit(DeclarationIndex::Local(i.try_into().unwrap()), &mut visitor);
             },
         }
     }
 
     for stmt in &mut function.statements.statements {
-        scope_statement(stmt, &map, &mut captures);
+        scope_statement(stmt, &mut visitor.map, &mut captures);
     }
 
     function.captures = captures.drain().map(|(name, _)| {
         CaptureDeclaration::Local {
-            name,
-            variable: map.get(&name).unwrap().clone(),
+            name: name.clone(),
+            variable: visitor.map.get(name).unwrap().clone(),
         }
     }).collect();
 
 }
 
-pub fn scope_statement(stmt: &mut Statement, decls: &FxMap<VariableCell>, captures: &mut VectorMap<()>) {
+pub fn scope_statement(stmt: &mut Statement, decls: &mut FxMap<VariableCell>, captures: &mut VectorMap<()>) {
     match stmt {
-        Statement::Block(s) => s.statements.into_iter().for_each(|mut x| scope_statement(&mut x, map)),
-        Statement::ExprStatement(s) => scope_expr(&mut *s, map),
+        Statement::Block(s) => s.statements.clone().into_iter().for_each(|mut x| scope_statement(&mut x, decls, captures)),
+        Statement::ExprStatement(s) => scope_expr(&mut *s, decls),
         Statement::IfStatement(s) => {
-            scope_expr(&mut s.condition, map);
-            scope_expr(&mut s.condition, map);
+            scope_expr(&mut s.condition, decls);
+            scope_expr(&mut s.condition, decls);
 
         },
-        Statement::Return(s) => scope_expr(&mut *s, map),
-        Statement::Throw(s) => scope_expr(&mut *s, map),
+        Statement::Return(s) => scope_expr(&mut *s, decls),
+        Statement::Throw(s) => scope_expr(&mut *s, decls),
         Statement::WhileStatement(s) => {
-            scope_expr(&mut s.condition, map);
-            s.body.statements.into_iter().for_each(|mut x| scope_statement(&mut x, map));
+            scope_expr(&mut s.condition, decls);
+            s.body.statements.clone().into_iter().for_each(|mut x| scope_statement(&mut x, decls, captures));
         }
         _ => {},
     }
 }
 
-
-pub fn scope_expr(expr: &mut Expr, map: &FxMap<VariableCell>) {
+pub fn scope_expr(expr: &mut Expr, map: &mut FxMap<VariableCell>) {
     match expr {
-        Expr::Array(e) => e.0.into_iter().for_each(|x| scope_expr(&mut x, map)),
+        Expr::Array(e) => e.0.clone().into_iter().for_each(|mut x| scope_expr(&mut x, map)),
         Expr::Assignment(e) => {
-            scope_lvalue(&mut e.1, map);
+            unimplemented!("assignment");
+            //scope_lvalue(&mut e.1, map);
             scope_expr(&mut e.2, map);
         },
         Expr::BinaryExpr(e) => {
@@ -334,10 +344,10 @@ pub fn scope_expr(expr: &mut Expr, map: &FxMap<VariableCell>) {
         },
         Expr::CallExpr(e) => {
             scope_expr(&mut e.expr, map);
-            for op in e.post_ops {
+            for op in &mut e.post_ops {
                 match op {
-                    CallPostOp::Index(e) => scope_expr(&mut e, map),
-                    CallPostOp::Call(es) => es.into_iter().for_each(|e| scope_expr(&mut e, map)),
+                    CallPostOp::Index(e) => scope_expr(e, map),
+                    CallPostOp::Call(es) => es.into_iter().for_each(|e| scope_expr(e, map)),
                     CallPostOp::Member(_) => {}
                 }
             }
@@ -354,8 +364,8 @@ pub fn scope_expr(expr: &mut Expr, map: &FxMap<VariableCell>) {
             for capture in &mut f.captures {
                 match capture {
                     CaptureDeclaration::Local { name, variable } => {
-                        let upper = map.get(&name).unwrap();
-                        *variable = *upper;
+                        let upper = map.get(name.clone()).unwrap();
+                        *variable = upper.clone();
                     },
                     CaptureDeclaration::Global { name } => unimplemented!("global")
                 }
@@ -363,19 +373,13 @@ pub fn scope_expr(expr: &mut Expr, map: &FxMap<VariableCell>) {
         },
         Expr::ParenedExpr(e) => scope_expr(&mut *e, map),
         Expr::Record(e) => {
-            for prop in e.0 {
-                match prop {
-                    PropDef::KeyValue(k, v) => {
-                        
-                    }
-                }
-            }
+            unimplemented!("record");
         },
         Expr::Spread(e) => scope_expr(&mut *e, map),
         Expr::UnaryExpr(e) => scope_expr(&mut e.expr, map),
         Expr::Variable(v) => {
-            let upper = map.get(&v.name).unwrap();
-            **v = *upper;
+            let upper = map.get(v.name.clone()).unwrap();
+            **v = upper.clone();
         }
     }
 }

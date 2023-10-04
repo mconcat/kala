@@ -14,13 +14,23 @@ mod tests {
         ("3", number(3)),
         ("5+6", number(5)+number(6)),
         ("function f(x) { return x; }", {
-            function!(f(x){ ret!(var!(x)); })
+            Expr::Function(Box::new(Function { name: FunctionName::Named(SharedString::from_str("f")), captures: vec![], parameters: vec![ParameterDeclaration::Variable { name: SharedString::from_str("x") }], locals: vec![], statements: Block { statements: vec![Statement::Return(Box::new(Expr::Variable(Box::new(VariableCell::initialized(SharedString::from_str("x"), DeclarationIndex::Parameter(0), vec![])))))] } }))
         }),
+        ("(function f(x) { return x; })(1)", {
+            Expr::ParenedExpr(Box::new((Expr::Function(Box::new(Function { name: FunctionName::Named(SharedString::from_str("f")), captures: vec![], parameters: vec![ParameterDeclaration::Variable { name: SharedString::from_str("x") }], locals: vec![], statements: Block { statements: vec![Statement::Return(Box::new(Expr::Variable(Box::new(VariableCell::initialized(SharedString::from_str("x"), DeclarationIndex::Parameter(0), vec![])))))] } }))))).call(&[Expr::DataLiteral(Box::new(DataLiteral::Integer(1)))])
+        }),
+        /* 
         ("function f(x, y) {
             return x+y;   
         }", {
             function!(f(x, y){ ret!(var!(x) + var!(y)); })
         }),
+        ("(function f(x, y) {
+            return x+y;
+        })()", {
+            function!(f(x, y){ ret!(var!(x) + var!(y)).call(); })
+        }
+        */
           /*   // Excluded due to destructing parameter
         ("function f(x, [y, z]) {
             let t = x+y;

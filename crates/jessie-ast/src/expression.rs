@@ -57,7 +57,7 @@ pub enum DataLiteral {
     Null,
     False,
     True,
-    Integer(isize),
+    Integer(i64),
     Decimal(i64, u64),
     String(SharedString),
     Undefined,

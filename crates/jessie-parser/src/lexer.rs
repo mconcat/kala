@@ -255,8 +255,8 @@ pub enum Token {
     Undefined,
     Identifier(SharedString),
     String(SharedString),
-    Integer(u64),
-    Decimal([u64;2]),
+    Integer(i64),
+    Decimal(i64, u64),
     Bigint(bool, Box<[u64]>),
 
     // ????
@@ -529,7 +529,7 @@ fn tokenize(lexer: &mut Lexer, result: &mut Vec<Token>) -> Result<Token, String>
     let res = match lexer.lookahead_1() {
         Some('a'..='z') => keyword_or_ident(lexer)?,
         Some('A'..='Z'|'_') => ident(lexer)?,
-        Some('0'..='9') => parse_number_or_bigint(lexer)?,
+        Some('0'..='9') => parse_number_or_bigint(lexer, false)?,
         Some('"'|'\'') => parse_string(lexer)?,
         // Punctuation
         Some('(') => lexer.proceed_with(Token::LeftParen),
@@ -582,14 +582,17 @@ fn tokenize(lexer: &mut Lexer, result: &mut Vec<Token>) -> Result<Token, String>
             }
         },            
         Some('-') => {
-            if lexer.lookahead_2() == Some('-') {
-                return Err("Decrement operator not supported yet".to_string());
-            } else if lexer.lookahead_2() == Some('=') {
-                lexer.proceed();
-                lexer.proceed();
-                Token::MinusEqual
-            } else {
-                lexer.proceed_with(Token::Minus)
+            match lexer.lookahead_2() {
+                Some('-') => {
+                    return Err("Decrement operator not supported yet".to_string());
+                },
+                Some('=') => {
+                    lexer.proceed();
+                    lexer.proceed();
+                    Token::MinusEqual
+                },
+                Some('0'..='9') => parse_number_or_bigint(lexer, true)?,
+                _ => lexer.proceed_with(Token::Minus)
             }
         },
         Some('*') => {
@@ -915,40 +918,57 @@ pub fn parse_number(state: &mut Lexer) -> Result<DataLiteral, String> {
     Ok(DataLiteral::Number(number)) 
 }
  */
-pub fn parse_number_or_bigint(state: &mut Lexer) -> Result<Token, String> {
-    // [1-9][0-9]*(\.[0-9]*|n)?
-    let mut number: u64 = 0;
-    if state.lookahead_1().map(|x| x.is_ascii_digit()) != Some(true) {
-        return Err("not a number".to_string())
-    }
+pub fn parse_number_or_bigint(state: &mut Lexer, sign: bool) -> Result<Token, String> {
+    // integer: -?[1-9][0-9]* within i64 range
+    // decimal: -?[1-9][0-9]*\.[0-9]* within i128 range
+    // bigint: -?[1-9][0-9]*n without limit
+
+    // the sign is pre-parsed by the caller and passed via sign parameter
+
+    // the immediate following symbol is guaranteed to be a digit 1..=9 by the caller
+
+    // integer part, [1-9][0-9]*
+    let mut slice = String::new();
     while let Some(c) = state.lookahead_1() {
         if let Some(digit) = c.to_digit(10) {
-            number = number * 10 + digit as u64;
+            slice.push(c);
             state.proceed();
         } else {
             break;
         }
     }
 
-    if state.lookahead_1() == Some('.') {
-        state.proceed();
-        let mut decimal: u64 = 0;
-        let mut precision = 0;
-        while let Some(c) = state.lookahead_1() {
-            if let Some(digit) = c.to_digit(10) {
-                number += (digit / 10u32.pow(precision)) as u64;
-                state.proceed();
-            } else {
-                break;
+    match state.lookahead_1() {
+        Some('n') => {
+            // bigint
+            state.proceed();
+            if slice.len() >= 20 {
+                unimplemented!("bigint too large")
             }
+            Ok(Token::Bigint(sign, Box::new([slice.parse::<u64>().unwrap()])))
+        },
+        Some('.') => {
+            // decimal
+            state.proceed();
+            let mut decimal = String::new();
+            while let Some(c) = state.lookahead_1() {
+                if let Some(digit) = c.to_digit(10) {
+                    decimal.push(c);
+                    state.proceed();
+                } else {
+                    break;
+                }
+            }
+            for _ in 0..(20 - decimal.len()) {
+                decimal.push('0');
+            }
+            Ok(Token::Decimal(slice.parse::<i64>().unwrap() * if sign { -1 } else { 1 }, decimal.parse::<u64>().unwrap()))
+        },
+        _ => {
+            // integer
+            Ok(Token::Integer(slice.parse::<i64>().unwrap() * if sign { -1 } else { 1 }))
         }
-        return Ok(Token::Decimal([number, decimal]))
-    } else if state.lookahead_1() == Some('n') {
-        state.proceed();
-        return Ok(Token::Bigint(false, vec![number].into_boxed_slice()))
     }
-
-    Ok(Token::Integer(number))
 }
 
 pub fn parse_string(state: &mut Lexer) -> Result<Token, String> {

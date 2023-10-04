@@ -96,6 +96,7 @@ impl<V: Clone> Iterator for HashMapIterator<V> {
     }
 }
 
+#[derive(Clone)]
 pub struct VectorMap<V, const limit: usize = 16>{
     pairs: Vec<(SharedString, V)>,
 }

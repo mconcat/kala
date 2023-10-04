@@ -54,8 +54,9 @@ pub fn expression(state: &mut ParserState) -> Result<Expr, ParserError> {
             state.consume_1(Token::RightParen)?;
             // if the expression is parenthesized expression(a primary expression), 
             // it can be a leftmost expression for a CondExpr.
-            cond_expr_with_leftmost(state, expr)
-        }
+            let (post_op_expr, _) = call_and_unary_op_internal(state, Expr::ParenedExpr(Box::new(expr)), vec![])?;
+            cond_expr_with_leftmost(state, post_op_expr)
+        },
 
         _ => assign_or_cond_or_primary_expression(state),
     }
@@ -77,6 +78,11 @@ pub fn call_and_unary_op(state: &mut ParserState) -> Result<(Expr, bool), Parser
 
     // 2. Leftmost PrimaryExpression
     let expr = primary_expr(state)?;
+
+    call_and_unary_op_internal(state, expr, preops)
+}
+
+fn call_and_unary_op_internal(state: &mut ParserState, expr: Expr, preops: Vec<UnaryOp>) -> Result<(Expr, bool), ParserError> {
 
     // 2-1. MemberPostOp fast path
     // If the leftmost node has CallPostOps(but without Call), it could be either an AssignExpr or a CondExpr(CallExpr).
@@ -242,8 +248,8 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::LeftBracket) => array(state).map(|x| Expr::Array(Box::new(x))),
         Some(Token::LeftBrace) => record(state).map(|x| Expr::Record(Box::new(x))),
         Some(Token::String(s)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::String(s.into())))),
-        Some(Token::Integer(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Integer(n.into())))),
-        Some(Token::Decimal(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(n)))),
+        Some(Token::Integer(n)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Integer(n)))),
+        Some(Token::Decimal(i, f)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Decimal(i, f)))),
         Some(Token::Null) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Null))),
         Some(Token::True) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::True))),
         Some(Token::False) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::False))),

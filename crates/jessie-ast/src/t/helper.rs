@@ -37,8 +37,8 @@ pub fn rest<T: UnsafeInto<Pattern>>(pattern: T) -> Pattern {
 */
 
 // Functions
-
-fn set_variable_pointers_for_pattern(pattern: &mut Pattern, decl_index: DeclarationIndex, property_access_chain: &mut Vec<PropertyAccess>) {
+/* 
+fn set_variable_pointers_for_pattern(pattern: &mut Pattern, decl_index: DeclarationIndex, property_access_chain: Vec<PropertyAccess>) {
     match pattern {
         Pattern::Variable(cell) => {
             cell.ptr.set(decl_index.clone(), property_access_chain);
@@ -81,7 +81,7 @@ pub fn function_expr(name: FunctionName, captures: Vec<(SharedString, Declaratio
         statements: Block { statements },
     }))
 }
-
+*/
 // BinaryExpr
 
 

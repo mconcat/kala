@@ -5,3 +5,4 @@ kala-context/target/*
 kala-runtime/target/*
 kala-parser/target/*
 kala-interpreter/target/*
+crates/*/target
