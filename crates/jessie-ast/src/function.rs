@@ -34,7 +34,7 @@ pub struct Function {
 
     pub parameters: Vec<ParameterDeclaration>, 
 
-    pub locals: Vec<LocalDeclaration>, 
+    pub locals: Vec<Rc<LocalDeclaration>>, 
 
     // block body
     pub statements: Block, 
@@ -162,9 +162,10 @@ impl LocalDeclaration {
         match self {
             LocalDeclaration::Const { pattern, value } => value,
             LocalDeclaration::Let { pattern, value } => value,
-            LocalDeclaration::Function { function } => unreachable!("function declaration should not be called get_initial_value")
+            LocalDeclaration::Function { function } => &None, 
         }
     }
+
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

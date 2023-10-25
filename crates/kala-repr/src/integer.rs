@@ -1,13 +1,34 @@
-use std::mem::ManuallyDrop;
+use std::{mem::ManuallyDrop, fmt::Debug};
 
 use crate::slot::{SlotInteger, Slot};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Integer(pub isize); // tagged with 0b0001
 
 const INTEGER_MASK: isize = !0b1111;
 
 impl Integer {
+    #[cfg(target_pointer_width="64")]
+    pub fn new(x: i64) -> Option<Self> {
+        if x>>60 == 0 || x>>60 == -1 {
+            let mut res = Integer((x << 4) as isize);
+            res.tag();
+            Some(res)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(target_pointer_width="32")]
+    pub fn new(x: i64) -> Option<Self> {
+        if x>>28 == 0 || x>>28 == -1 {
+            let mut res = Integer((x << 4) as isize);
+            res.tag();
+            res
+        } else {
+            None
+        }
+    }
     fn tag(&mut self) {
         self.0 &= INTEGER_MASK;
         self.0 |= 0b0001;
@@ -65,12 +86,27 @@ impl Integer {
             Some(res)
         }
     }
+
+    pub(crate) fn op_neg(&self) -> Self {
+        let mut res = Integer(-self.0);
+        res.tag();
+        res
+    }
 }
 
 impl ToString for Integer {
     fn to_string(&self) -> String {
-        self.0.to_string()
+        self.unwrap().to_string()
     }
+}
+
+impl Debug for Integer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Integer")
+            .field(&self.unwrap())
+            .finish()
+    }
+
 }
 
 impl Into<Slot> for Integer {

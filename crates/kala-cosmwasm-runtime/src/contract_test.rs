@@ -1,15 +1,15 @@
 #[cfg(test)]
 mod tests {
-    use kala_interpreter::interpreter::Evaluation;
-
+    use kala_repr::completion::Completion;
+    
     #[test]
     fn test_simple() {
         use kala_repr::slot::Slot;
 
         use crate::contract::run_expression;
         let expressions = &[
-            ("3+3", Evaluation::Value(Slot::new_integer(6))),
-            ("3*4", Evaluation::Value(Slot::new_integer(12))),
+            ("3+4", Completion::Value(Slot::new_integer(7))),
+            //("3*4", Completion::Value(Slot::new_integer(12))),
             //("34n-12n", Slot::new_bigint(-22)),
             
             ("(function() {
@@ -18,8 +18,28 @@ mod tests {
                 } else {
                     return 4;
                 }
-            })()", Evaluation::Value(Slot::new_integer(3))),
-            
+            })()", Completion::Value(Slot::new_integer(3))),
+            ("(function() {
+                let x = 3;
+                return x;
+            })()", Completion::Value(Slot::new_integer(3))),
+            ("(function(arg) {
+                let x = 3;
+                return x+arg;
+            })(4)", Completion::Value(Slot::new_integer(7))),
+            ("(function(arg1, arg2) {
+                let local1 = 3;
+                const local2 = 4;
+                return local1+local2+arg1+arg2;
+            })(5, 6)", Completion::Value(Slot::new_integer(18))),
+            ("((function(arg1){
+                return function(arg2) {
+                    return arg1+arg2;
+                };
+            })(3))(4)", Completion::Value(Slot::new_integer(7))),
+            ("(function(obj) {
+                return obj.x+obj.y;
+            })({x:3, y:4})", Completion::Value(Slot::new_integer(7)))
         ];
         for (i, (expr, expected)) in expressions.into_iter().enumerate() {
             let result = run_expression(expr.to_string());

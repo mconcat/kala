@@ -1,4 +1,4 @@
-use std::cell::{RefCell, OnceCell};
+use std::{cell::{RefCell, OnceCell}, rc::Rc};
 
 use fxhash::FxHashMap;
 use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, VariableIndex, Function, DeclarationIndex, VariablePointer, OptionalPattern, LocalDeclaration, ParameterDeclaration, LValueOptional, PatternVisitor};
@@ -12,20 +12,18 @@ pub struct DeclarationVisitor<'a> {
 
 impl<'a> PatternVisitor for DeclarationVisitor<'a> {
     fn visit(&mut self, index: DeclarationIndex, name: SharedString, property_access: Vec<PropertyAccess>) -> Option<()> {
-        self.scope.declare(name.clone(), index.clone(), &property_access, self.is_hoisting_allowed)?;
-
         self.scope.declare(name.clone(), index, &property_access, self.is_hoisting_allowed)
     }
 }
 
 #[derive(Debug)]
 pub struct LexicalScope {
-    pub declarations: Vec<LocalDeclaration>,
+    pub declarations: Vec<Rc<LocalDeclaration>>,
     pub variables: VariablePointerMap,
 }
 
 impl LexicalScope {
-    pub fn new(declarations: Vec<LocalDeclaration>, variables: VariablePointerMap) -> Self {
+    pub fn new(declarations: Vec<Rc<LocalDeclaration>>, variables: VariablePointerMap) -> Self {
         Self {
             declarations,
             variables,
@@ -69,9 +67,17 @@ impl LexicalScope {
     }
 
     fn declare(&mut self, name: SharedString, declaration_index: DeclarationIndex, property_access: &Vec<PropertyAccess>, is_hoisting_allowed: bool) -> Option<()> {
+        println!("declare environment variables: {:?}", self.variables);
         if let Some(cell) = self.variables.get(name.clone()) {
+            if cell.is_uninitialized() {
+                println!("declare uninitialized {:?} {:?}", name, cell);
+                // variable is in its first occurance
+                return cell.set(declaration_index, property_access.clone()).ok()
+            }
+
             println!("declare exists {:?} {:?}", name, cell);
             // Variable has been occured in this scope
+            // hoisting
 
             if is_hoisting_allowed {
                 if cell.set(declaration_index, property_access.clone()).is_err() {
@@ -96,12 +102,15 @@ impl LexicalScope {
 
             Some(())
         } else {
+            unreachable!("variable should have been occured in the left side of the declaration, logic error")
+            /* 
             println!("declare not exists {:?}", name);
             // Variable has not been occured in this scope
             let cell = VariablePointer::initialized(declaration_index, &property_access);
             self.variables.insert(name, cell.clone());
 
             Some(())
+            */
         }
     }
 /* 
@@ -216,24 +225,25 @@ impl LexicalScope {
         Some(decl)
     }
 
-    pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<u32> {
+    pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<(u32, Rc<LocalDeclaration>)> {
         let index = self.next_declaration_index();
 
+        println!("declare_let {:?} {:?}", pattern, index);
         pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
             scope: self,
             is_hoisting_allowed: true,
         })?;
 
-        let decl = LocalDeclaration::Let {
+        let decl = Rc::new(LocalDeclaration::Let {
             pattern: pattern.clone(),
             value,
-        };
-        self.declarations.push(decl);
+        });
+        self.declarations.push(decl.clone());
 
-        Some(index)
+        Some((index, decl))
     }
 
-    pub fn declare_const(&mut self, pattern: Pattern, value: Option<Expr>) -> Option<u32> {
+    pub fn declare_const(&mut self, pattern: Pattern, value: Option<Expr>) -> Option<(u32, Rc<LocalDeclaration>)> {
         let index = self.next_declaration_index();
 
         pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
@@ -241,31 +251,31 @@ impl LexicalScope {
             is_hoisting_allowed: true,
         })?;
 
-        let decl = LocalDeclaration::Const {
+        let decl = Rc::new(LocalDeclaration::Const {
             pattern,
             value,
-        };
-        self.declarations.push(decl);
+        });
+        self.declarations.push(decl.clone());
 
 
-        Some(index)
+        Some((index, decl))
     }
 
-    pub fn declare_function(&mut self, function: Function) -> Option<u32> {
+    pub fn declare_function(&mut self, function: Function) -> Option<(u32, Rc<LocalDeclaration>)> {
         if !function.name.is_named() {
             return None
         }
 
         let index = self.next_declaration_index();
         let function_name = function.name.clone();
-        let decl = LocalDeclaration::Function {
+        let decl = Rc::new(LocalDeclaration::Function {
             function: Box::new(function),
-        };
-        self.declarations.push(decl);
+        });
+        self.declarations.push(decl.clone());
 
         self.declare(function_name.get_name().unwrap().clone(), DeclarationIndex::Local(index as u32), &vec![], true)?;
 
-        Some(index)
+        Some((index, decl))
     }
 
     pub fn use_variable(&mut self, name: &SharedString) -> VariableCell {

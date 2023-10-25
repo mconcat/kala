@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use utils::{SharedString};
 
 use crate::{*};
@@ -171,8 +173,8 @@ pub fn const_declaration(name: &str, expr: Expr) -> LocalDeclaration {
     }
 }
 
-pub fn const_statement(name: &str, decl: u32) -> Statement {
-    Statement::LocalDeclaration(Box::new(vec![decl]))
+pub fn const_statement(name: &str, index: u32, decl: Rc<LocalDeclaration>) -> Statement {
+    Statement::LocalDeclaration(Box::new(vec![(index, decl)]))
 }
 
 pub fn let_declaration(name: &str, expr: Expr) -> LocalDeclaration {
@@ -182,8 +184,8 @@ pub fn let_declaration(name: &str, expr: Expr) -> LocalDeclaration {
     }
 }
 
-pub fn let_statement(name: &str, decl: u32) -> Statement {
-    Statement::LocalDeclaration(Box::new(vec![decl]))
+pub fn let_statement(name: &str, index: u32, decl: Rc<LocalDeclaration>) -> Statement {
+    Statement::LocalDeclaration(Box::new(vec![(index, decl)]))
 }
 /* 
 pub fn capture(name: &str, declaration_index: DeclarationIndex) -> CaptureDeclaration {

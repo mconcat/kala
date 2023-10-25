@@ -283,7 +283,7 @@ pub fn scope_function(function: &mut Function) {
     }
 
     for (i, local) in function.locals.clone().into_iter().enumerate() {
-        match local {
+        match local.as_ref() {
             LocalDeclaration::Const { pattern, value } => {
                 pattern.visit(DeclarationIndex::Local(i.try_into().unwrap()), &mut visitor);
             },

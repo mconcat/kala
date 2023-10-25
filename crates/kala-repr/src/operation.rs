@@ -1,8 +1,53 @@
 use std::{mem::ManuallyDrop, str::FromStr};
 
-use crate::{slot::{Slot, MASK, SlotTag::{self}, SlotTag::Integer, SlotTag::Constant, SlotConstant, SlotInteger, SlotReference}, reference::Reference};
+use utils::SharedString;
+
+use crate::{slot::{Slot, MASK, SlotTag::{self}, SlotConstant, SlotInteger, SlotReference}, reference::Reference, constant::Constant, integer::Integer};
 
 impl Slot {
+    pub fn op_add(&self, other: &Self) -> Slot {
+        match self.op_add_internal(other) {
+            Some(slot) => slot,
+            None => Slot::UNDEFINED, // TODO: error
+        }
+    }
+
+    pub fn op_sub(&self, other: &Self) -> Slot {
+        unimplemented!("subtraction")
+    }
+
+    pub fn op_mul(&self, other: &Self) -> Slot {
+        unimplemented!("multiplication")
+    }
+
+    pub fn op_div(&self, other: &Self) -> Slot {
+        unimplemented!("division")
+    }
+
+    pub fn op_modulo(&self, other: &Self) -> Slot {
+        unimplemented!("modulo")
+    }
+
+    pub fn op_pow(&self, other: &Self) -> Slot {
+        unimplemented!("power")
+    }
+
+    pub fn op_neg(&self) -> Slot {
+        match self.get_tag() {
+            SlotTag::Integer => {
+                let result = self.unwrap_integer().op_neg();
+                Slot{ integer: ManuallyDrop::new(SlotInteger(result)) }
+            },
+            SlotTag::Reference => {
+                match self.unwrap_reference() {
+                    Reference::Number(number) => Slot{reference: ManuallyDrop::new(SlotReference::new(number.op_neg().into()))},
+                    _ => unimplemented!("wrapped object"),
+                }
+            }
+            _ => Slot::UNDEFINED, // TODO: error
+        }
+    }
+
     fn op_strict_equal_internal(&self, other: &Self) -> bool {
         // Fast path
         if unsafe{self.raw == other.raw} {
@@ -296,6 +341,82 @@ impl Slot {
             (SlotTag::Constant, SlotTag::Integer) => {
                 None
             }
+        }
+    }
+
+    pub fn op_not(&self) -> Slot {
+        match self.get_tag() {
+            SlotTag::Constant => {
+                match self.unwrap_constant() {
+                    Constant::Undefined => Slot::TRUE,
+                    Constant::Null => Slot::TRUE,
+                    Constant::False => Slot::TRUE,
+                    Constant::True => Slot::FALSE,
+                }
+            },
+            SlotTag::Integer => {
+                let result = self.unwrap_integer().op_neg();
+                Slot{ integer: ManuallyDrop::new(SlotInteger(result)) }
+            },
+            SlotTag::Reference => {
+                match self.unwrap_reference() {
+                    Reference::Number(number) => Slot{reference: ManuallyDrop::new(SlotReference::new(number.op_neg().into()))},
+                    _ => unimplemented!("wrapped object"),
+                }
+            }
+
+        }
+    }
+}
+
+impl PartialEq for Slot {
+    fn eq(&self, other: &Self) -> bool {
+        self.op_strict_equal_internal(other)
+    }
+}
+
+impl Slot {
+    // [] operator
+    // Retrieves the element at the given index.
+    pub fn get_element(&mut self, index: usize) -> Option<&mut Slot> {
+        match self.get_tag() {
+            SlotTag::Reference => {
+                match self.unwrap_mut_reference() {
+                    Reference::Object(object) => {
+                        unimplemented!("object indexing")
+                    }
+                    Reference::Array(array) => {
+                        array.get_element(index)
+                    }
+                    Reference::String(string) => {
+                        unimplemented!("string indexing")
+                    }
+                    _ => None,
+                }
+            }
+            _ => None, // TODO: wrapped objects
+        }
+    }
+
+    // . operator
+    // Retrieves the property with the given name.
+    pub fn get_property(&mut self, name: &SharedString) -> Option<&mut Slot> {
+        match self.get_tag() {
+            SlotTag::Reference => {
+                match self.unwrap_mut_reference() {
+                    Reference::Object(object) => {
+                        object.index_mut_property_by_string(name.clone())
+                    }
+                    Reference::Array(array) => {
+                        unimplemented!("array indexing")
+                    }
+                    Reference::String(string) => {
+                        unimplemented!("string indexing")
+                    }
+                    _ => None,
+                }
+            }
+            _ => None, // TODO: wrapped objects
         }
     }
 }

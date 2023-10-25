@@ -1,18 +1,19 @@
-use std::result;
+use core::panic;
+use std::mem::replace;
 
-use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, LValue, UnaryExpr, Assignment, DeclarationIndex, LValueCallPostOp, VariableIndex};
-use kala_repr::slot::{Slot};
+use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, LValue, UnaryExpr, Assignment, DeclarationIndex, LValueCallPostOp, VariableIndex, LocalDeclaration};
+use kala_repr::{slot::Slot, object::Property, completion::Completion, function::Frame};
 
-use crate::{interpreter::{Evaluation, Interpreter}, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}, statement::eval_block};
+use crate::{interpreter::Interpreter, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}, statement::eval_block};
 
 
-pub fn eval_expr(interpreter: &mut Interpreter, expr: &Expr) -> Evaluation {
+pub fn eval_expr(interpreter: &mut Interpreter, expr: &Expr) -> Completion {
     println!("eval_expr: {:?}", expr);
     match expr {
         Expr::DataLiteral(lit) => eval_literal(lit),
         Expr::Array(array) => eval_array(interpreter, array),
         Expr::Record(obj) => eval_record(interpreter, obj),
-        Expr::Function(func) => eval_function(interpreter, func),
+        Expr::Function(func) => eval_function(interpreter, (**func).clone()),
         Expr::Assignment(assignment) => eval_assignment(interpreter, assignment),
         Expr::CondExpr(cond) => eval_cond(interpreter, cond),
         Expr::BinaryExpr(binary) => eval_binary(interpreter, binary),
@@ -24,20 +25,20 @@ pub fn eval_expr(interpreter: &mut Interpreter, expr: &Expr) -> Evaluation {
     }
 }
 
-fn eval_literal(lit: &DataLiteral) -> Evaluation {
+fn eval_literal(lit: &DataLiteral) -> Completion {
     match lit {
-        DataLiteral::Null => Evaluation::Value(Slot::new_null()),
-        DataLiteral::False => Evaluation::Value(Slot::new_false()),
-        DataLiteral::True => Evaluation::Value(Slot::new_true()),
-        DataLiteral::Integer(s) => Evaluation::Value(Slot::new_integer(*s)),
-        DataLiteral::Decimal(i, f) => Evaluation::Value(Slot::new_number_from_parts(*i, *f)),
-        DataLiteral::Undefined => Evaluation::Value(Slot::new_undefined()),
-        DataLiteral::String(s) => Evaluation::Value(Slot::new_string(s.clone())),
+        DataLiteral::Null => Completion::Value(Slot::new_null()),
+        DataLiteral::False => Completion::Value(Slot::new_false()),
+        DataLiteral::True => Completion::Value(Slot::new_true()),
+        DataLiteral::Integer(s) => Completion::Value(Slot::new_integer(*s)),
+        DataLiteral::Decimal(i, f) => Completion::Value(Slot::new_number(*i, *f)),
+        DataLiteral::Undefined => Completion::Value(Slot::new_undefined()),
+        DataLiteral::String(s) => Completion::Value(Slot::new_string(s.clone())),
         DataLiteral::Bigint(sign, abs) => unimplemented!("bigint literal"),
     }
 }
 
-fn eval_array(interpreter: &mut Interpreter, array: &Array) -> Evaluation {
+fn eval_array(interpreter: &mut Interpreter, array: &Array) -> Completion {
     let mut slots = Vec::with_capacity(array.0.len());
     for expr in &array.0 {
         match expr {
@@ -47,10 +48,10 @@ fn eval_array(interpreter: &mut Interpreter, array: &Array) -> Evaluation {
             _ => slots.push(eval_expr(interpreter, expr)?),
         }
     }
-    Evaluation::Value(Slot::new_array(slots))
+    Completion::Value(Slot::new_array(slots))
 } 
 
-fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Evaluation {
+fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Completion {
     let mut props = Vec::with_capacity(obj.0.len());
     for propdef in &obj.0 {
         match propdef {
@@ -69,44 +70,62 @@ fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Evaluation {
             PropDef::Spread(spread) => unimplemented!("spread in record literal")
         }
     }
-    Evaluation::Value(Slot::new_object(props))
+    Completion::Value(Slot::new_object(props))
+}
+/* 
+// invoked from the caller side before entering the function
+fn enter_function(interpreter: &mut Interpreter, arguments: Vec<Slot>, captures: Vec<Slot>) {
+    interpreter.stack.push_slots(arguments);
+    interpreter.stack.push_slots(captures);
+    interpreter.stack.enter_function_frame()
 }
 
-fn eval_function(interpreter: &mut Interpreter, func: &Function) -> Evaluation {
-    let mut captures: Vec<Slot> = Vec::with_capacity(func.captures.len());
-    for capture in &func.captures {
+fn exit_function(interpreter: &mut Interpreter, arguments_len: usize, captures_len: usize) {
+    interpreter.stack.exit_function_frame();
+    interpreter.stack.pop_slots(arguments_len + captures_len);
+}
+*/
+
+
+fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
+    let captures: Vec<Slot> = func.captures.into_iter().map(|capture| {
         match capture {
             CaptureDeclaration::Local { name, variable } => {
-                captures.push(interpreter.fetch_variable(variable.get())?.clone())
+                let variable = interpreter.fetch_variable(variable.get());
+                if variable.is_none() {
+                    panic!("should have variable");
+                }
+                variable.unwrap().clone()
             }
             CaptureDeclaration::Global { name } => todo!("global capture")
         }
-    }
+    }).collect();
 
-    /* 
-    let mut parameters = Vec::with_capacity(func.parameters.len());
-    for parameter in &func.parameters {
-        match parameter {
-            ParameterDeclaration::Optional { name, default } => {
-                parameters.push()
-            }
-            ParameterDeclaration::Pattern { pattern } => {
-                todo!("pattern parameter")
-            }
-            ParameterDeclaration::Variable { name } => {
-                parameters.push(name.clone());
-            }
-        }
-    }
-    */
+    //let mut local_initializers: Vec<Option<Box<dyn FnOnce(&mut Frame) -> Completion>>> = Vec::with_capacity(func.locals.len());
 
-    let slot = Slot::new_function(
-        func.name.get_name().cloned(),
-        func,
-        captures,
-    );
+    let function = Slot::new_function(func.name.get_name().cloned(), Box::new(move |frame, arguments| {
+        println!("function call: {:?}", frame);
+        // push arguments
+        frame.slots.extend(arguments);
 
-    Evaluation::Value(slot)
+        // enter function frame with captures and locals
+        let recovery = frame.enter_function_frame(captures.clone(), func.locals.len());
+        let frame_value = std::mem::take(frame);
+
+        let mut interpreter = Interpreter {
+            current_frame: frame_value, 
+        };
+        let result = eval_block(&mut interpreter, &func.statements);
+
+        let _ = replace(frame, interpreter.current_frame);
+
+        // exit function frame, arguments still remain
+        frame.exit_function_frame(recovery);
+
+        result
+    }));
+
+    Completion::Value(function)
 }
 
 fn lvalue<'a>(interpreter: &'a mut Interpreter, lvalue: &LValue) -> Option<Slot> {
@@ -115,7 +134,7 @@ fn lvalue<'a>(interpreter: &'a mut Interpreter, lvalue: &LValue) -> Option<Slot>
         LValue::CallLValue(expr) => {
             let res_eval = eval_expr(interpreter, &expr.expr);
             let mut res = match res_eval {
-                Evaluation::Value(slot) => slot,
+                Completion::Value(slot) => slot,
                 _ => return None,
             };
             for op in &expr.post_ops {
@@ -123,17 +142,17 @@ fn lvalue<'a>(interpreter: &'a mut Interpreter, lvalue: &LValue) -> Option<Slot>
                     LValueCallPostOp::Index(index_expr) => {
                         let index_eval = eval_expr(interpreter, &index_expr);
                         let index = match index_eval {
-                            Evaluation::Value(slot) => slot,
+                            Completion::Value(slot) => slot,
                             _ => return None,
                         };
-                        let res_eval = res.get_element(index.as_smi().unwrap().try_into().unwrap());
+                        let res_eval = res.get_element(index.unwrap_integer().0.try_into().unwrap());
                         match res_eval {
                             Some(slot) => slot.clone(),
                             _ => return None,
                         }
                     } 
                     LValueCallPostOp::Member(field) => {
-                        let res_eval = res.get_property(field.clone());
+                        let res_eval = res.get_property(field);
                         match res_eval {
                             Some(slot) => slot.clone(),
                             _ => return None,
@@ -146,14 +165,13 @@ fn lvalue<'a>(interpreter: &'a mut Interpreter, lvalue: &LValue) -> Option<Slot>
     }
 }
 
-fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Evaluation {
+fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Completion {
     let mut lvalue = match lhs {
         LValue::Variable(var) => {
-            let mut frame = interpreter.get_frame();
             match var.get().declaration_index {
-                DeclarationIndex::Local(index) => frame.get_local(index as usize),
-                DeclarationIndex::Capture(index) => frame.get_capture(index as usize),
-                DeclarationIndex::Parameter(index) => frame.get_argument(index as usize),
+                DeclarationIndex::Local(index) => interpreter.current_frame.get_local(index as usize),
+                DeclarationIndex::Capture(index) => interpreter.current_frame.get_capture(index as usize),
+                DeclarationIndex::Parameter(index) => interpreter.current_frame.get_argument(index as usize),
             }
         }
 
@@ -174,13 +192,13 @@ fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Evaluation 
             lvalue
             */
         }
-    }?;
+    };
 
     *lvalue = rhs;
-    Evaluation::Value(lvalue.clone())
+    Completion::Value(lvalue.clone())
 }
 
-fn eval_assignment(interpreter: &mut Interpreter, assignment: &Assignment) -> Evaluation {
+fn eval_assignment(interpreter: &mut Interpreter, assignment: &Assignment) -> Completion {
     let rhs = eval_expr(interpreter, &assignment.2)?;
 
     match assignment.0 {
@@ -189,7 +207,7 @@ fn eval_assignment(interpreter: &mut Interpreter, assignment: &Assignment) -> Ev
     }
 }
 
-fn eval_cond(interpreter: &mut Interpreter, expr: &CondExpr) -> Evaluation {
+fn eval_cond(interpreter: &mut Interpreter, expr: &CondExpr) -> Completion {
     let cond = eval_expr(interpreter, &expr.0)?;
     if cond.is_truthy() {
         eval_expr(interpreter, &expr.1)
@@ -198,12 +216,12 @@ fn eval_cond(interpreter: &mut Interpreter, expr: &CondExpr) -> Evaluation {
     }
 }
 
-fn eval_binary(interpreter: &mut Interpreter, expr: &BinaryExpr) -> Evaluation {
+fn eval_binary(interpreter: &mut Interpreter, expr: &BinaryExpr) -> Completion {
     match expr.0 {
         BinaryOp::Or => {
             let lhs = eval_expr(interpreter, &expr.1)?;
             if lhs.is_truthy() {
-                Evaluation::Value(lhs)
+                Completion::Value(lhs)
             } else {
                 eval_expr(interpreter, &expr.2)
             }
@@ -213,7 +231,7 @@ fn eval_binary(interpreter: &mut Interpreter, expr: &BinaryExpr) -> Evaluation {
             if lhs.is_truthy() {
                 eval_expr(interpreter, &expr.2)
             } else {
-                Evaluation::Value(lhs)
+                Completion::Value(lhs)
             }
         },
         BinaryOp::Coalesce => {
@@ -221,7 +239,7 @@ fn eval_binary(interpreter: &mut Interpreter, expr: &BinaryExpr) -> Evaluation {
             if lhs.is_nullish() {
                 eval_expr(interpreter, &expr.2)
             } else {
-                Evaluation::Value(lhs)
+                Completion::Value(lhs)
             }
         },
 
@@ -250,35 +268,38 @@ fn eval_binary(interpreter: &mut Interpreter, expr: &BinaryExpr) -> Evaluation {
     }
 }
 
-fn eval_unary(interpreter: &mut Interpreter, expr: &UnaryExpr) -> Evaluation {
-    let mut res = Slot::new_uninitalized();
+fn eval_unary(interpreter: &mut Interpreter, expr: &UnaryExpr) -> Completion {
+    let mut res = Slot::new_uninitialized();
     for op in &expr.op {
         res = match op {
             UnaryOp::Not => {
                 let operand = eval_expr(interpreter, &expr.expr)?;
-                Evaluation::Value(Slot::new_boolean(!operand.is_truthy()))
+                Completion::Value(Slot::new_boolean(!operand.is_truthy()))
             }
             UnaryOp::BitNot => {
                 unimplemented!("bitwise not")
             }
             UnaryOp::Neg => {
                 let operand = eval_expr(interpreter, &expr.expr)?;
-                Evaluation::Value(-operand)
+                Completion::Value(operand.op_neg())
             }
             UnaryOp::Pos => {
                 let operand = eval_expr(interpreter, &expr.expr)?;
                 unimplemented!("pos")
             }
             UnaryOp::TypeOf => {
+                unimplemented!("typeof")
+                /* 
                 let operand = eval_expr(interpreter, &expr.expr)?;
-                Evaluation::Value(operand.type_of().into())
+                Completion::Value(operand.type_of().into())
+                */
             }
         }?;
     }
-    Evaluation::Value(res)
+    Completion::Value(res)
 }
 
-fn eval_call(interpreter: &mut Interpreter, expr: &CallExpr) -> Evaluation {
+fn eval_call(interpreter: &mut Interpreter, expr: &CallExpr) -> Completion {
     println!("eval_call: {:?}", expr);
 
     let mut callee = eval_expr(interpreter, &expr.expr)?;
@@ -286,11 +307,11 @@ fn eval_call(interpreter: &mut Interpreter, expr: &CallExpr) -> Evaluation {
         match op {
             CallPostOp::Index(index) => {
                 let index_slot = eval_expr(interpreter, &index)?;
-                let index = index_slot.as_smi().unwrap(); // TODO: non-smi array index
+                let index = index_slot.unwrap_integer().unwrap(); // TODO: non-smi array index
                 callee = callee.get_element(index.try_into().unwrap()).cloned()?;
             }
             CallPostOp::Member(member) => { 
-                callee = callee.get_property(member.clone()).cloned()?;
+                callee = callee.get_property(member).cloned()?;
             }
             CallPostOp::Call(args) => {
                 callee = call(interpreter, callee, args)?;
@@ -298,26 +319,29 @@ fn eval_call(interpreter: &mut Interpreter, expr: &CallExpr) -> Evaluation {
         }
     }
 
-    Evaluation::Value(callee)
+    Completion::Value(callee)
 }
 
-fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Evaluation {
-    let args = args.into_iter().map(|arg| eval_expr(interpreter, &arg)).collect::<Result<Vec<_>, _>>()?;
-    let closure = callee.to_closure();
-    let callee_frame = Frame {
-        captures: closure.captures,
-        arguments: args,
-        
-         vec![(LocalDeclaration Slot::new_uninitalized()); closure.locals.len()],
-    };
+fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Completion {
+    let argument_completions = args.into_iter().map(|arg| eval_expr(interpreter, &arg));
 
-    let caller_frame = std::mem::replace(&mut interpreter.frame, callee_frame);
-    let result = eval_block(interpreter, closure.body)?;
-    std::mem::replace(&mut interpreter.frame, caller_frame);
+    let mut arguments = Vec::with_capacity(argument_completions.len());
 
-    Evaluation::Value(result)
+    for arg_completion in argument_completions {
+        arguments.push(arg_completion?)
+    }
+    let closure = callee.as_function()?;
+
+    let result = (*closure.function)(&mut interpreter.current_frame, arguments);
+
+    match result {
+        Completion::Return(slot) => Completion::Value(slot),
+        Completion::ReturnEmpty => Completion::Value(Slot::new_undefined()),
+        Completion::Throw(_) => result,
+        _ => Completion::Value(Slot::new_undefined()),
+    }
 }
 
-fn eval_variable(interpreter: &mut Interpreter, index: VariableIndex) -> Evaluation {
-    Evaluation::Value(interpreter.fetch_variable(index).map(|slot| slot.clone())?)
+fn eval_variable(interpreter: &mut Interpreter, index: VariableIndex) -> Completion {
+    Completion::Value(interpreter.fetch_variable(index).map(|slot| slot.clone())?)
 }

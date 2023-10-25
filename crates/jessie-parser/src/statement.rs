@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use jessie_ast::*;
 use crate::{parser, use_variable};
 use crate::{
@@ -27,7 +29,7 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
         Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(Box::new(x))), // TODO: implement statement level record literal?
         Some(Token::Const) => const_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
         Some(Token::Let) => let_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
-        Some(Token::Function) => function_decl(state).map(|x| Statement::FunctionDeclaration(x)),
+        Some(Token::Function) => function_decl(state).map(|(index, decl)| Statement::FunctionDeclaration(index, decl)),
         Some(Token::If) => if_statement(state).map(|x| Statement::IfStatement(Box::new(x))),
         Some(Token::While) => while_statement(state).map(|x| Statement::WhileStatement(Box::new(x))),
         Some(Token::Try) => {
@@ -70,7 +72,7 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
 }
 
 
-fn const_decl(state: &mut ParserState) -> Result<Vec<u32>, ParserError> {
+fn const_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<LocalDeclaration>)>, ParserError> {
     state.consume_1(Token::Const)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -79,7 +81,7 @@ fn const_decl(state: &mut ParserState) -> Result<Vec<u32>, ParserError> {
     }, false)
 }
 
-fn let_decl(state: &mut ParserState) -> Result<Vec<u32>, ParserError> {
+fn let_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<LocalDeclaration>)>, ParserError> {
     state.consume_1(Token::Let)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -87,7 +89,7 @@ fn let_decl(state: &mut ParserState) -> Result<Vec<u32>, ParserError> {
     }, false)
 }
 
-fn function_decl(state: &mut ParserState) -> Result<u32, ParserError> {
+fn function_decl(state: &mut ParserState) -> Result<(u32, Rc<LocalDeclaration>), ParserError> {
     state.consume_1(Token::Function)?;
     let name = identifier(state)?;
     let parent_scope = state.enter_block_scope();

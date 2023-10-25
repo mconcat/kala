@@ -1,8 +1,9 @@
-use std::{mem::{ManuallyDrop, transmute}, rc::{Rc, Weak}, cell::Cell, any::Any, ops::{Index, IndexMut}, fmt::Debug};
+use core::panic;
+use std::{mem::{ManuallyDrop, transmute}, rc::{Rc, Weak}, cell::Cell, any::Any, ops::{Index, IndexMut}, fmt::{Debug, LowerHex}};
 
 use utils::SharedString;
 
-use crate::{array::Array, object::{Object, Property}};
+use crate::{array::Array, object::{Object, Property}, number::Number, function::{Function, Stack, Frame}, completion::Completion};
 
 use super::{reference::Reference, integer::Integer, constant::Constant};
 
@@ -67,13 +68,25 @@ impl Slot {
         constant: ManuallyDrop::new(SlotConstant(Constant::Undefined)),
     };
 
+    pub const UNINITIALIZED: Self = Self {
+        raw: 0,
+    };
+
     pub(crate) fn get_tag(&self) -> SlotTag {
         unsafe { transmute(self.raw & MASK) }
+    }
+
+    pub fn is_uninitialized(&self) -> bool {
+        unsafe{self.raw == 0}
     }
 }
 
 impl ToString for Slot {
     fn to_string(&self) -> String {
+        if self.is_uninitialized() {
+            return "UNINITIALIZED".to_string()
+        }
+
         match self.get_tag() {
             SlotTag::Reference => unsafe { self.reference.0.as_ptr().as_ref().unwrap().to_string() },
             SlotTag::Integer => unsafe { self.integer.0.to_string() },
@@ -85,6 +98,10 @@ impl ToString for Slot {
 
 impl Debug for Slot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_uninitialized() {
+            return write!(f, "UNINITIALIZED")
+        }
+
         unsafe{
             match self.get_tag() {
                 SlotTag::Reference => self.reference.0.as_ptr().fmt(f),
@@ -98,6 +115,10 @@ impl Debug for Slot {
 
 impl Clone for Slot {
     fn clone(&self) -> Self {
+        if self.is_uninitialized() {
+            return Self::UNINITIALIZED
+        }
+
         match self.get_tag() {
             SlotTag::Reference => Self {
                 reference: unsafe{ManuallyDrop::new(SlotReference(Rc::clone(&self.reference.0)))},
@@ -115,6 +136,10 @@ impl Clone for Slot {
 
 impl Drop for Slot {
     fn drop(&mut self) {
+        if self.is_uninitialized() {
+            return
+        }
+
         match self.get_tag() {
             SlotTag::Reference => unsafe { ManuallyDrop::drop(&mut self.reference) },
             //WEAK_REFERENCE_TAG => unsafe { ManuallyDrop::drop(&mut self.weak_reference) },
@@ -150,10 +175,14 @@ impl Slot {
         }
     }
 
-    pub fn new_integer(integer: Integer) -> Self {
-        Self {
-            integer: ManuallyDrop::new(SlotInteger(integer)),
+    pub fn new_integer(integer: i64) -> Self {
+        if let Some(integer) = Integer::new(integer) {
+            return Self {
+                integer: ManuallyDrop::new(SlotInteger(integer)),
+            }
         }
+
+        Self::new_number(integer, 0)
     }
 
     pub fn new_string(string: SharedString) -> Self {
@@ -171,6 +200,40 @@ impl Slot {
     pub fn new_object(properties: Vec<Property>) -> Self {
         Self {
             reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::Object(Object{properties}))))),
+        }
+    }
+
+    pub fn new_boolean(boolean: bool) -> Self {
+        if boolean {
+            Self::new_true()
+        } else {
+            Self::new_false()
+        }
+    }
+
+    pub fn new_number(i: i64, f: u64) -> Self {
+        Self {
+            reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::Number(Number::new(i, f)))))),
+        }
+    }
+
+    pub const fn new_uninitialized() -> Self {
+        Self::UNINITIALIZED
+    }
+
+    pub fn new_function(
+        name: Option<SharedString>,
+        //parameters_len: usize,
+        //captures: Vec<Slot>,
+        //locals_len: usize,
+        function: Box<dyn Fn(&mut Frame, Vec<Slot>) -> Completion>,
+    ) -> Self {
+        Self {
+            reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::Function(Function {
+                name,
+                //captures,
+                function,
+            }))))),
         }
     }
 
@@ -202,7 +265,25 @@ impl Slot {
         unsafe { &mut self.constant.0 }
     }
 
+    pub fn as_function(&self) -> Option<&Function> {
+        if self.is_uninitialized() {
+            panic!("uninitialized slot")
+        }
+
+        match self.get_tag() {
+            SlotTag::Reference => match self.unwrap_reference() {
+                Reference::Function(function) => Some(function),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn is_nullish(&self) -> bool {
+        if self.is_uninitialized() {
+            panic!("uninitialized slot")
+        }
+
         match self.get_tag() {
             SlotTag::Constant => unsafe { self.constant.0.is_nullish() },
             SlotTag::Reference => unsafe { match self.unwrap_reference() {
@@ -215,6 +296,10 @@ impl Slot {
     }
 
     pub fn is_falsy(&self) -> bool {
+        if self.is_uninitialized() {
+            panic!("uninitialized slot")
+        }
+
         match self.get_tag() {
             SlotTag::Constant => unsafe { self.constant.0.is_falsy() },
             SlotTag::Reference => !self.unwrap_reference().is_falsy(),
@@ -230,6 +315,10 @@ impl Slot {
 
 impl Slot {
     pub fn index_property_by_string(&mut self, index: SharedString) -> Option<&Slot> {
+        if self.is_uninitialized() {
+            panic!("uninitialized slot")
+        }
+
         match self.get_tag() {
             SlotTag::Reference => match self.unwrap_reference() {
                 Reference::Object(object) => object.index_property_by_string(index),
@@ -237,7 +326,7 @@ impl Slot {
                 Reference::Constant(constant) => unimplemented!("wrapped constant object"),
                 Reference::Number(number) => unimplemented!("wrapped number object"),
                 Reference::String(string) => unimplemented!("wrapped string object"),
-                Reference::StaticFunction(function) => unimplemented!("wrapped function object"),
+                Reference::Function(function) => unimplemented!("wrapped function object"),
             }
             SlotTag::Integer => unimplemented!("wrapped number object"),
             SlotTag::Constant => unimplemented!("wrapped constant object"),
@@ -246,6 +335,10 @@ impl Slot {
     }
 
     pub fn index_mut_property_by_string(&mut self, index: SharedString) -> Option<&mut Self> {
+        if self.is_uninitialized() {
+            panic!("uninitialized slot")
+        }
+
         match self.get_tag() {
             SlotTag::Reference => match self.unwrap_mut_reference() {
                 Reference::Object(object) => object.index_mut_property_by_string(index),
@@ -253,7 +346,7 @@ impl Slot {
                 Reference::Constant(constant) => unimplemented!("wrapped constant object"),
                 Reference::Number(number) => unimplemented!("wrapped number object"),
                 Reference::String(string) => unimplemented!("wrapped string object"),
-                Reference::StaticFunction(function) => unimplemented!("wrapped function object"),
+                Reference::Function(function) => unimplemented!("wrapped function object"),
             }
             SlotTag::Integer => unimplemented!("wrapped number object"),
             SlotTag::Constant => unimplemented!("wrapped constant object"),
@@ -267,6 +360,8 @@ impl Slot {
 // borrow semantics safety is not a constraint in ECMAScript, and
 // Cell provides better performance than RefCell.
 #[repr(transparent)]
+
+#[derive(Clone)]
 pub struct SlotReference(pub Rc<Cell<Reference>>);
 
 impl SlotReference {
@@ -286,8 +381,26 @@ impl SlotReference {
 // Integer is for small, inlined signed integer.
 // shifted by 4 bits for tagging, 28-bit in 32-bit system, 60-bit in 64-bit system.
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct SlotInteger(pub Integer); 
 
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct SlotConstant(pub Constant);
 
+impl LowerHex for Slot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_uninitialized() {
+            return write!(f, "UNINITIALIZED")
+        }
+
+        unsafe{
+            match self.get_tag() {
+                SlotTag::Reference => self.reference.0.as_ptr().fmt(f),
+                SlotTag::Integer => self.integer.0.fmt(f),
+                SlotTag::Constant => self.constant.0.fmt(f),
+                _ => unreachable!(),
+            }
+        }
+    }
+}

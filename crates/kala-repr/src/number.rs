@@ -40,6 +40,20 @@ impl Number {
             assert_eq!(transmute::<Number, i128>(Number{x0: u32::MAX-1, x1: u32::MAX, x2: u32::MAX, x3: i32::MIN}), i128::MIN+1);
         }
     }
+
+    #[cfg(target_endian="little")]    
+    pub fn new(i: i64, f: u64) -> Self {
+        let mut result = MaybeUninit::<Number>::uninit();
+        unsafe {
+            result.as_mut_ptr().write(Number {
+                x0: i as u32,
+                x1: (i >> 32) as u32,
+                x2: f as u32,
+                x3: (f >> 32) as i32,
+            });
+            result.assume_init()
+        } 
+    }
 }
 
 
@@ -118,6 +132,10 @@ impl Number {
 
     pub(crate) fn op_add_internal_integer(&self, other: &Integer) -> Option<Self> {
         unimplemented!("op_add_internal_integer")
+    }
+
+    pub(crate) fn op_neg(&self) -> Self {
+        unimplemented!("op_neg")
     }
 }
 

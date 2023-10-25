@@ -1,4 +1,5 @@
 use core::fmt::Debug;
+use std::rc::Rc;
 
 use jessie_ast::{VariableCell, VariablePointer, VariableIndex, DeclarationIndex, LocalDeclaration, CaptureDeclaration};
 
@@ -157,7 +158,7 @@ pub struct ParserState<T: ArrayLike+Clone+Debug+ToString> {
 }
 
 impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
-    pub fn new(input: T, global_declarations: Vec<LocalDeclaration>) -> Self {
+    pub fn new(input: T, global_declarations: Vec<Rc<LocalDeclaration>>) -> Self {
         let mut map_pool = VariablePointerMapPool::new();
         Self {
             input,
@@ -239,7 +240,7 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
         self.scope.enter_function_scope(self.map_pool.get())
     }
 
-    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> (Vec<LocalDeclaration>, Vec<CaptureDeclaration>) {
+    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> (Vec<Rc<LocalDeclaration>>, Vec<CaptureDeclaration>) {
         let LexicalScope{mut declarations, variables} = self.scope.exit_function_scope(parent_scope);
         let mut captures = Vec::with_capacity(variables.len());
         let mut ptrs = self.map_pool.drain(variables);

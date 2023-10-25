@@ -30,8 +30,7 @@ pub fn pattern(state: &mut ParserState) -> Result<Pattern, ParserError> {
         Some(Token::LeftBracket) | Some(Token::LeftBrace) => binding_pattern(state),
         // Some(Token::Comma) | Some(Token::RightBracket) => Ok(Pattern::Hole), // Not sure if its the right way...
         _ => {// data_literal(state).map(|x| Pattern::DataLiteral(x)).or_else(|_| {
-            let name = identifier(state)?;
-            let var = state.scope.use_variable(&name);
+            let var = use_variable(state)?;
             Ok(Pattern::Variable(Box::new(var)))
         }
         //}),

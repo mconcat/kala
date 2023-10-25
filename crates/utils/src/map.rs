@@ -193,43 +193,43 @@ impl<V: Clone, const limit: usize> Map<V> for VectorMap<V, limit> {
     }
 
     fn get(&mut self, key: SharedString) -> Option<&mut V> {
-        if self.to_be_sorted() {
+        //if self.to_be_sorted() {
             self.get_sorted(key)
-        } else {
-            self.get_unsorted(key)
-        } 
+        //} else {
+        //    self.get_unsorted(key)
+        //} 
     }
 
     fn insert(&mut self, key: SharedString, value: V) -> Option<V> {
-        if self.to_be_sorted() {
+        //if self.to_be_sorted() {
             self.insert_sorted(key, value)
-        } else {
-            self.insert_unsorted(key, value)
-        }
+        //} else {
+        //    self.insert_unsorted(key, value)
+        //}
     }
 
     fn iter(&self) -> Self::MapIterator {
-        if self.to_be_sorted() {
+        //if self.to_be_sorted() {
             let mut elements: Vec<(SharedString, V)> = self.pairs.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
             elements.sort_unstable_by_key(|(key, _)| key.clone());
             VectorMapIterator{
                 pairs: elements,
                 cursor: 0,
             }
-        } else {
-            VectorMapIterator{
-                pairs: self.pairs.clone(),
-                cursor: 0,
-            }
-        }
+        //} else {
+        //    VectorMapIterator{
+        //        pairs: self.pairs.clone(),
+        //        cursor: 0,
+        //    }
+        //}
     }
 
     fn drain(&mut self) -> Self::MapIterator {
-        if self.to_be_sorted() {
+        //if self.to_be_sorted() {
             self.drain_sorted()
-        } else {
-            self.drain_unsorted()
-        }
+        //} else {
+        //    self.drain_unsorted()
+        //}
     }
 
     fn clear(&mut self) {

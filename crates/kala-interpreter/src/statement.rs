@@ -1,11 +1,15 @@
-use jessie_ast::{DeclarationIndex, Statement, IfStatement, ElseArm, WhileStatement, Block, LocalDeclaration, Expr};
+use std::{rc::{self, Rc}};
 
-use crate::{expression::{eval_expr}, interpreter::{Completion, Interpreter}};
+use jessie_ast::{Statement, IfStatement, ElseArm, WhileStatement, Block, Expr, DeclarationIndex, VariableIndex, LocalDeclaration};
+
+use crate::{expression::eval_expr, interpreter::Interpreter};
+
+use kala_repr::{completion::Completion, slot::Slot};
 
 pub fn eval_statement(interpreter: &mut Interpreter, statement: &Statement) -> Completion {
     match statement {
         Statement::LocalDeclaration(local) => eval_local_declaration(interpreter, local),
-        Statement::FunctionDeclaration(func) => eval_function_declaration(interpreter, *func),
+        Statement::FunctionDeclaration(index, func) => eval_function_declaration(interpreter, &**func),
         Statement::Block(block) => eval_block(interpreter, &block),
         Statement::IfStatement(if_statement) => eval_if(interpreter, &if_statement),
         Statement::WhileStatement(while_statement) => eval_while(interpreter, &while_statement),
@@ -18,15 +22,24 @@ pub fn eval_statement(interpreter: &mut Interpreter, statement: &Statement) -> C
     }
 }
 
-pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<u32>>) -> Completion {
-    for declaration_index in &**local {
-        interpreter.initialize_local(*declaration_index)?;
+pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<(u32, Rc<LocalDeclaration>)>>) -> Completion {
+    for (index, declaration) in &**local {
+        let initializer = declaration.get_initial_value();
+        if initializer.is_none() {
+            continue;
+        } 
+        let initializer = eval_expr(interpreter, initializer.as_ref().unwrap())?;
+        let variable = interpreter.fetch_variable(VariableIndex {
+            declaration_index: DeclarationIndex::Local(*index),
+            property_access: vec![],
+        }).unwrap();
+        *variable = initializer;
     }
 
     Completion::Normal
 }
 
-pub fn eval_function_declaration(interpreter: &mut Interpreter, func: u32) -> Completion {
+pub fn eval_function_declaration(interpreter: &mut Interpreter, func: &LocalDeclaration) -> Completion {
     // Functions are hoisted, so they are already implicitly initialized.
     // TODO: unreachable?
 
@@ -60,6 +73,7 @@ pub fn eval_while(interpreter: &mut Interpreter, statement: &WhileStatement) -> 
         let condition = eval_expr(interpreter, &statement.condition)?;
         condition.is_truthy()   
     } {
+        // TODO: match completion, right now it breaks on any completion(including continue)
         eval_block(interpreter, &statement.body)?;
     }
 

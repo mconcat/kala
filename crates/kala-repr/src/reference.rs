@@ -2,9 +2,9 @@ use std::{any::Any, ops::{Index, IndexMut}, ptr, cell::Ref, mem::ManuallyDrop};
 
 use utils::SharedString;
 
-use crate::{number::NUMBER_ZERO, object::Property, slot::Slot};
+use crate::{number::NUMBER_ZERO, object::Property, slot::Slot, function::Function};
 
-use super::{number::Number, object::Object, constant::Constant, array::Array, function::{StaticFunction}};
+use super::{number::Number, object::Object, constant::Constant, array::Array};
 
 pub enum Reference {
     Object(Object),
@@ -13,8 +13,8 @@ pub enum Reference {
     String(SharedString),
     Array(Array),
 
-    StaticFunction(StaticFunction<Box<dyn Any>>), // no capture, just function pointer
-    //Closure(Closure), // closure with captured environment variable
+    //StaticFunction(StaticFunction<Box<dyn Any>>), // no capture, just function pointer
+    Function(Function), // closure with captured environment variable
 }
 
 impl Reference {
@@ -53,7 +53,7 @@ impl ToString for Reference {
             Reference::Constant(constant) => constant.to_string(),
             Reference::String(string) => string.to_string(),
             Reference::Array(array) => unimplemented!("array to string"), 
-            Reference::StaticFunction(function) => unimplemented!("static function to string"),
+            Reference::Function(function) => unimplemented!("function to string"),
         }
     }
 }
