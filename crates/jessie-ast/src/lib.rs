@@ -7,7 +7,7 @@ pub mod pattern;
 pub mod function;
 pub mod assignment;
 pub mod object;
-pub mod t;
+//pub mod t;
 //pub mod t;
 
 pub use operation::*;

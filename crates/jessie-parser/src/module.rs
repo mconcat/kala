@@ -12,6 +12,7 @@ type ParserError = parser::ParserError<Option<Token>>;
 ///////////////////////
 // Module
 
+
 pub fn module_body(state: &mut ParserState) -> Result<ModuleBody, ParserError> {
     let mut items = Vec::new();
 

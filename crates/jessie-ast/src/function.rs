@@ -27,20 +27,55 @@ impl FunctionName {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct FunctionDeclarations {
+    pub parameters: Vec<ParameterDeclaration>,
+    pub captures: Vec<CaptureDeclaration>,
+    pub variables: Vec<Rc<VariableDeclaration>>,
+    pub functions: Vec<Rc<FunctionDeclaration>>,
+}
+
+impl FunctionDeclarations {
+    pub fn empty() -> Self {
+        Self {
+            parameters: Vec::new(),
+            captures: Vec::new(),
+            variables: Vec::new(),
+            functions: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     pub name: FunctionName,
 
-    pub captures: Vec<CaptureDeclaration>, 
-
-    pub parameters: Vec<ParameterDeclaration>, 
-
-    pub locals: Vec<Rc<LocalDeclaration>>, 
+    pub declarations: FunctionDeclarations, 
 
     // block body
     pub statements: Block, 
 }
 
 impl Function {
+    pub fn new(
+        name: FunctionName, 
+        parameters: Vec<ParameterDeclaration>, 
+        captures: Vec<CaptureDeclaration>, 
+        variables: Vec<Rc<VariableDeclaration>>,
+        functions: Vec<Rc<FunctionDeclaration>>, 
+        statements: Block,
+    ) -> Self {
+        Self {
+            name,
+            declarations: FunctionDeclarations {
+                parameters,
+                captures,
+                variables,
+                functions,
+            },
+            statements,
+        }
+    }
+
     /* 
     // for testing
     pub fn get_varaible_map(&self) -> FxMap<VariableCell> {
@@ -90,25 +125,30 @@ impl Function {
     }
     */
 }
-
 #[derive(Debug, PartialEq, Clone)]
-pub enum CaptureDeclaration {
-    Local {
-        name: SharedString,
-        variable: VariableCell, // pointing upper function scope
-    },
-    Global {
-        name: SharedString,
-    },
+pub struct GlobalDeclarations {
+    pub builtins: Vec<Rc<BuiltinDeclaration>>,
+    pub imports: Vec<Rc<ImportDeclaration>>,
 }
 
-impl CaptureDeclaration {
-    pub fn uninitialized(name: SharedString) -> Self {
-        CaptureDeclaration::Local {
-            name: name.clone(),
-            variable: VariableCell::uninitialized(name),
+impl GlobalDeclarations {
+    pub fn empty() -> Self {
+        Self {
+            builtins: Vec::new(),
+            imports: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+// Builtin declarations, console, Object, Array, etc
+pub struct BuiltinDeclaration {
+    pub name: SharedString,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ImportDeclaration {
+    pub name: SharedString,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -140,32 +180,45 @@ impl From<Pattern> for ParameterDeclaration {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum LocalDeclaration { 
-    Const {
-        pattern: Pattern,
-        value: Option<Expr>,
-       // index: DeclarationIndex,
-    },
-    Let {
-        pattern: Pattern,
-        value: Option<Expr>,
-        //index: DeclarationIndex,
-    },
-    Function {
-        function: Box<Function>,
-        //index: DeclarationIndex,
-    }
+pub enum DeclarationType {
+    Const,
+    Let,
 }
 
-impl LocalDeclaration {
-    pub fn get_initial_value(&self) -> &Option<Expr> {
-        match self {
-            LocalDeclaration::Const { pattern, value } => value,
-            LocalDeclaration::Let { pattern, value } => value,
-            LocalDeclaration::Function { function } => &None, 
+#[derive(Debug, PartialEq, Clone)]
+pub struct VariableDeclaration {
+    pub declaration_type: DeclarationType,
+    pub pattern: Pattern,
+    pub value: Option<Expr>,
+    // index: DeclarationIndex,
+}
+#[derive(Debug, PartialEq, Clone)]
+pub struct FunctionDeclaration {
+    pub function: Box<Function>,
+    //index: DeclarationIndex,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct CaptureDeclaration {
+    pub name: SharedString,
+    pub variable: VariableCell, // pointing upper function scope
+}   
+
+
+impl VariableDeclaration {
+    pub fn get_initial_value(&self) -> Option<Expr> {
+        self.value.clone()
+    }
+    
+}
+
+impl CaptureDeclaration {
+    pub fn uninitialized(name: SharedString) -> Self {
+        CaptureDeclaration {
+            name: name.clone(),
+            variable: VariableCell::uninitialized(name),
         }
     }
-
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

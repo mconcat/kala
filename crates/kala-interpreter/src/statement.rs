@@ -1,6 +1,6 @@
 use std::{rc::{self, Rc}};
 
-use jessie_ast::{Statement, IfStatement, ElseArm, WhileStatement, Block, Expr, DeclarationIndex, VariableIndex, LocalDeclaration};
+use jessie_ast::{Statement, IfStatement, ElseArm, WhileStatement, Block, Expr, DeclarationIndex, VariableIndex, VariableDeclaration, FunctionDeclaration};
 
 use crate::{expression::eval_expr, interpreter::Interpreter};
 
@@ -8,7 +8,7 @@ use kala_repr::{completion::Completion, slot::Slot};
 
 pub fn eval_statement(interpreter: &mut Interpreter, statement: &Statement) -> Completion {
     match statement {
-        Statement::LocalDeclaration(local) => eval_local_declaration(interpreter, local),
+        Statement::VariableDeclaration(local) => eval_local_declaration(interpreter, local),
         Statement::FunctionDeclaration(index, func) => eval_function_declaration(interpreter, &**func),
         Statement::Block(block) => eval_block(interpreter, &block),
         Statement::IfStatement(if_statement) => eval_if(interpreter, &if_statement),
@@ -22,7 +22,8 @@ pub fn eval_statement(interpreter: &mut Interpreter, statement: &Statement) -> C
     }
 }
 
-pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<(u32, Rc<LocalDeclaration>)>>) -> Completion {
+pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<(u32, Rc<VariableDeclaration
+    >)>>) -> Completion {
     for (index, declaration) in &**local {
         let initializer = declaration.get_initial_value();
         if initializer.is_none() {
@@ -39,7 +40,7 @@ pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<(u3
     Completion::Normal
 }
 
-pub fn eval_function_declaration(interpreter: &mut Interpreter, func: &LocalDeclaration) -> Completion {
+pub fn eval_function_declaration(interpreter: &mut Interpreter, func: &FunctionDeclaration) -> Completion {
     // Functions are hoisted, so they are already implicitly initialized.
     // TODO: unreachable?
 

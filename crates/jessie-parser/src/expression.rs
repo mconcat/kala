@@ -1,21 +1,7 @@
 use jessie_ast::*;
-use crate::{parser, arrow_expr};
-use crate::{
-    VecToken, Token,
+use crate::{jessie_parser::{JessieParserState, repeated_elements}, function::{function_expr, arrow_expr}, Token, operation::{cond_expr_with_leftmost, cond_expr_with_leftmost_no_power, unary_op, call_expr_internal}, common::use_variable, parser};
 
-    repeated_elements,
-        
-    function_expr,
-    cond_expr_with_leftmost,
-    cond_expr_with_leftmost_no_power,
-    call_expr_internal,
-
-    unary_op,
-
-    use_variable,
-};
-
-type ParserState = parser::ParserState<VecToken>;
+type ParserState = JessieParserState; 
 type ParserError = parser::ParserError<Option<Token>>;
 
 ///////////////////////
@@ -298,8 +284,8 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
             let var = state.scope.use_variable(&prop_name.dynamic_property);
             Ok(PropDef::Shorthand(prop_name, Box::new(var)))
         },
-        _ => {
-            state.err_expected(": for property pair", state.lookahead_1())
+        la => {
+            state.err_expected(": for property pair", la)
         }
     }
 }
@@ -388,13 +374,13 @@ pub fn arg(state: &mut ParserState) -> Result<Expr, ParserError> {
                     Some(Token::RightParen) => {
                         // spread is the last argument, ok
                     },
-                    _ => return state.err_expected("right paren", state.lookahead_2()),
+                    la => return state.err_expected("right paren", la),
                 }
             }
             Some(Token::RightParen) => {
                 // spread is the last argument, ok
             }
-            _ => return state.err_expected("comma or right paren", state.lookahead_1()),
+            la => return state.err_expected("comma or right paren", la),
         }
 
         return Ok(Expr::Spread(Box::new(expr)))

@@ -1,8 +1,8 @@
 use core::panic;
 use std::mem::replace;
 
-use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, LValue, UnaryExpr, Assignment, DeclarationIndex, LValueCallPostOp, VariableIndex, LocalDeclaration};
-use kala_repr::{slot::Slot, object::Property, completion::Completion, function::Frame};
+use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, LValue, UnaryExpr, Assignment, DeclarationIndex, LValueCallPostOp, VariableIndex};
+use kala_repr::{slot::Slot, object::Property, completion::Completion};
 
 use crate::{interpreter::Interpreter, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}, statement::eval_block};
 
@@ -88,18 +88,14 @@ fn exit_function(interpreter: &mut Interpreter, arguments_len: usize, captures_l
 
 
 fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
-    let captures: Vec<Slot> = func.captures.into_iter().map(|capture| {
-        match capture {
-            CaptureDeclaration::Local { name, variable } => {
-                let variable = interpreter.fetch_variable(variable.get());
-                if variable.is_none() {
-                    panic!("should have variable");
-                }
-                variable.unwrap().clone()
-            }
-            CaptureDeclaration::Global { name } => todo!("global capture")
+    let captures: Vec<Slot> = func.declarations.captures.into_iter().map(|capture| {
+        let variable = interpreter.fetch_variable(capture.variable.get());
+        if variable.is_none() {
+            panic!("should have variable");
         }
-    }).collect();
+        variable.unwrap().clone()
+    }
+    ).collect();
 
     //let mut local_initializers: Vec<Option<Box<dyn FnOnce(&mut Frame) -> Completion>>> = Vec::with_capacity(func.locals.len());
 
@@ -109,7 +105,7 @@ fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
         frame.slots.extend(arguments);
 
         // enter function frame with captures and locals
-        let recovery = frame.enter_function_frame(captures.clone(), func.locals.len());
+        let recovery = frame.enter_function_frame(captures.clone(), func.declarations.variables.len());
         let frame_value = std::mem::take(frame);
 
         let mut interpreter = Interpreter {

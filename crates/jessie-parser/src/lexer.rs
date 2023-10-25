@@ -2,75 +2,19 @@
 
 use std::fmt::{Debug, Display};
 
-use crate::parser::{ParserState, ArrayLike, ParserError};
+use crate::parser::ParserState;
 
-use utils::{SharedString};
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Str(pub String);
-
-impl ArrayLike for Str {
-    type Element = char;
-
-    fn get(&self, index: usize) -> Option<Self::Element> {
-        self.0.bytes().nth(index).map(|b| b as char)
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    fn slice(&self, start: usize, end: usize) -> Self {
-        self.0.as_str()[start..end].to_string().into()
-    }
-}
-
-impl Display for Str {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl From<String> for Str {
-    fn from(s: String) -> Self {
-        Str(s)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct VecToken(pub Vec<Token>);
-
-impl ToString for VecToken {
-    fn to_string(&self) -> String {
-        self.0.iter().map(|x| format!("{:?}", x)).collect::<Vec<String>>().join(" ")
-    }
-}
-
-impl ArrayLike for VecToken {
-    type Element = Token;
-
-    fn get(&self, index: usize) -> Option<Self::Element> {
-        self.0.get(index).cloned()
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    fn slice(&self, start: usize, end: usize) -> Self {
-        VecToken(self.0[start..end].to_vec())
-    }
-}
+use utils::SharedString;
 
 pub struct Lexer {
-    state: ParserState<Str>,
+    state: ParserState<char>,
     parenthesize_stack: Vec<ParenthesisIndex>,
 }
 
 impl Lexer {
-    pub fn new(input: Str) -> Self {
+    pub fn new(input: Vec<char>) -> Self {
         Lexer {
-            state: ParserState::new(input, vec![]),
+            state: ParserState::new(input),
             parenthesize_stack: Vec::new(),
         }
     }
@@ -107,7 +51,7 @@ impl Lexer {
         self.state.proceed()
     }
 
-    pub fn consume(&mut self, token: Str) -> Result<(), String> {
+    pub fn consume(&mut self, token: Vec<char>) -> Result<(), String> {
         self.state.consume(token)
     }
     
@@ -169,7 +113,6 @@ pub enum Token {
     Delete,
     Do,
     Extends,
-    InstanceOf,
     In,
     New,
     Super,
@@ -263,9 +206,135 @@ pub enum Token {
     Instanceof,
     Require,
     Static,
-
 }
 
+impl ToString for Token {
+    fn to_string(&self) -> String {
+        match self {
+            Token::EOF => "EOF".to_string(),
+            Token::Await => "await".to_string(),
+            Token::Break => "break".to_string(),
+            Token::Case => "case".to_string(),
+            Token::Catch => "catch".to_string(),
+            Token::Const => "const".to_string(),
+            Token::Continue => "continue".to_string(),
+            Token::Debugger => "debugger".to_string(),
+            Token::Default => "default".to_string(),
+            Token::Do => "do".to_string(),
+            Token::Else => "else".to_string(),
+            Token::Export => "export".to_string(),
+            Token::Extends => "extends".to_string(),
+            Token::Enum => "enum".to_string(),
+            Token::Finally => "finally".to_string(),
+            Token::For => "for".to_string(),
+            Token::Function => "function".to_string(),
+            Token::If => "if".to_string(),
+            Token::Instanceof => "instanceof".to_string(),
+            Token::In => "in".to_string(),
+            Token::Implements => "implements".to_string(),
+            Token::Import => "import".to_string(),
+            Token::Interface => "interface".to_string(),
+            Token::Let => "let".to_string(),
+            Token::Package => "package".to_string(),
+            Token::Protected => "protected".to_string(),
+            Token::Private => "private".to_string(),
+            Token::Public => "public".to_string(),
+            Token::Return => "return".to_string(),
+            Token::Require => "require".to_string(),
+            Token::Switch => "switch".to_string(),
+            Token::Super => "super".to_string(),
+            Token::Static => "static".to_string(),
+            Token::Throw => "throw".to_string(),
+            Token::Try => "try".to_string(),
+            Token::This => "this".to_string(),
+            Token::Void => "void".to_string(),
+            Token::Var => "var".to_string(),
+            Token::With => "with".to_string(),
+            Token::While => "while".to_string(),
+            Token::Yield => "yield".to_string(),
+            Token::Null => "null".to_string(),
+            Token::New => "new".to_string(),
+            Token::False => "false".to_string(),
+            Token::True => "true".to_string(),
+            Token::Async => "async".to_string(),
+            Token::Arguments => "arguments".to_string(),
+            Token::Eval => "eval".to_string(),
+            Token::Get => "get".to_string(),
+            Token::Set => "set".to_string(),
+            Token::Class => "class".to_string(),
+            Token::Delete => "delete".to_string(),
+            Token::AmpAmp => "&&".to_string(),
+            Token::BarBar => "||".to_string(),
+            Token::QuestionQuestion => "??".to_string(),
+            Token::Caret => "^".to_string(),
+            Token::Ampersand => "&".to_string(),
+            Token::EqualEqualEqual => "===".to_string(),
+            Token::BangEqualEqual => "!==".to_string(),
+            Token::LAngle => "<".to_string(),
+            Token::LAngleEqual => "<=".to_string(),
+            Token::RAngle => ">".to_string(),
+            Token::RAngleEqual => ">=".to_string(),
+            Token::LAngleLAngle => "<<".to_string(),
+            Token::RAngleRAngle => ">>".to_string(),
+            Token::RAngleRAngleRAngle => ">>>".to_string(),
+            Token::Plus => "+".to_string(),
+            Token::Minus => "-".to_string(),
+            Token::Asterisk => "*".to_string(),
+            Token::Slash => "/".to_string(),
+            Token::Percent => "%".to_string(),
+            Token::AsteriskAsterisk => "**".to_string(),
+            Token::Bar => "|".to_string(),
+            Token::Equal => "=".to_string(),
+            Token::PlusEqual => "+=".to_string(),
+            Token::MinusEqual => "-=".to_string(),
+            Token::AsteriskEqual => "*=".to_string(),
+            Token::SlashEqual => "/=".to_string(),
+            Token::PercentEqual => "%=".to_string(),
+            Token::BarEqual => "|=".to_string(),
+            Token::AmpersandEqual => "&=".to_string(),
+            Token::CaretEqual => "^=".to_string(),
+            Token::LAngleLAngleEqual => "<<=".to_string(),
+            Token::RAngleRAngleEqual => ">>=".to_string(),
+            Token::RAngleRAngleRAngleEqual => ">>>=".to_string(),
+            Token::TypeOf => "typeof".to_string(),
+            Token::Tilde => "~".to_string(),
+            Token::Bang => "!".to_string(),
+            Token::LeftParen => "(".to_string(),
+            Token::RightParen => ")".to_string(),
+            Token::ArrowLeftParen => "(".to_string(),
+            Token::ArrowRightParen => ")".to_string(),
+            Token::LeftBrace => "{".to_string(),
+            Token::RightBrace => "}".to_string(),
+            Token::LeftBracket => "[".to_string(),
+            Token::RightBracket => "]".to_string(),
+            Token::Comma => ",".to_string(),
+            Token::Dot => ".".to_string(),
+            Token::Colon => ":".to_string(),
+            Token::Semicolon => ";".to_string(),
+            Token::DotDotDot => "...".to_string(),
+            Token::FatArrow => "=>".to_string(),
+            Token::Question => "?".to_string(),
+            Token::QuasiQuote => "`".to_string(),
+            Token::Dollar => "$".to_string(),
+            Token::DoubleSlash => "//".to_string(),
+            Token::SlashAsterisk => "/*".to_string(),
+            Token::AsteriskSlash => "*/".to_string(),
+
+            Token::Undefined => "undefined".to_string(),
+            Token::Identifier(s) => s.to_string(),
+            Token::String(s) => s.to_string(),
+            Token::Integer(i) => i.to_string(),
+            Token::Decimal(i, f) => format!("{}.{}", i, f), // TODO
+            Token::Bigint(s, v) => {
+                let mut s = if *s { "-".to_string() } else { "".to_string() };
+                for i in v.iter() {
+                    s.push_str(&i.to_string()); // TODO
+                }
+                s
+            },
+        }
+    }
+}
 
 #[inline]
 fn given_keyword_or_ident(lexer: &mut Lexer, keyword: &'static str, token: Token) -> Result<Token, String> {
@@ -276,7 +345,7 @@ fn given_keyword_or_ident(lexer: &mut Lexer, keyword: &'static str, token: Token
         return ident(lexer);   
     }
 
-    if lexer.consume(Str(keyword.to_string())).is_ok() {
+    if lexer.consume(keyword.chars().collect()).is_ok() {
         println!("keyword given_keyword_or_ident: {:?}", token);
         Ok(token)
     } else {
@@ -336,8 +405,11 @@ fn keyword_or_ident(lexer: &mut Lexer) -> Result<Token, String> {
                 },
                 Some('l') => given_keyword_or_ident(lexer, &"class", Token::Class),
                 Some('o') => match lexer.lookahead_3() {
-                    Some('n') => given_keyword_or_ident(lexer, &"const", Token::Const),
-                    Some('n') => given_keyword_or_ident(lexer, &"continue", Token::Continue),
+                    Some('n') => match lexer.lookahead_4() {
+                        Some('s') => given_keyword_or_ident(lexer, &"const", Token::Const),
+                        Some('t') => given_keyword_or_ident(lexer, &"continue", Token::Continue),
+                        _ => ident(lexer),
+                    },
                     _ => ident(lexer),
                 },
                 _ => ident(lexer),
@@ -485,7 +557,7 @@ fn keyword_or_ident(lexer: &mut Lexer) -> Result<Token, String> {
 
 pub fn lex_jessie(input: String) -> Result<Vec<Token>, String> {
     let mut result = Vec::new();
-    let mut lexer = Lexer::new(Str(input));
+    let mut lexer = Lexer::new(input.chars().collect());
     lex(&mut lexer, &mut result)?;
     Ok(result)
 }
@@ -830,62 +902,8 @@ fn ident(state: &mut Lexer) -> Result<Token, String> {
 
 
 
-/////////
-/// 
-/// // comma seperated list of elements, with optional trailing comma
-pub fn repeated_elements<Data: Debug>(
-    state: &mut ParserState<VecToken>, 
-    open: Option<Token>, 
-    close: Token, 
-    element: &impl Fn(&mut ParserState<VecToken>) -> Result<Data, ParserError<Option<Token>>>, 
-    trailing: bool
-) -> Result<Vec<Data>, ParserError<Option<Token>>> {
-    let mut elements = Vec::new();
-    if let Some(some_open) = open.clone() {
-        state.consume_1(some_open)?;
-    }
-    loop { // I don't like having loop here
-        println!("loop {:?}", elements);
-        // consume_whitespace(state);
-        if state.lookahead_1() == Some(close.clone()) {
-            state.proceed();
-            break;
-        }
-        println!("element start");
-        println!("{:?}{:?}", state.lookahead_1(), state.lookahead_2());
-        elements.push(element(state)?);
-        println!("element end");
-        // consume_whitespace(state);
-        if state.try_proceed(Token::Comma) {
-            if state.lookahead_1() == Some(close.clone()) {
-                if trailing {
-                    state.proceed();
-                    break;
-                } else {
-                    return state.err_expected("no trailing comma", Some(Token::Comma))
-                }
-            } 
-        } else if state.try_proceed(close.clone()) {
-            break
-        } else {
-            return state.err_expected("comma or close", state.lookahead_1())
-        }
-    }
 
-    Ok(elements)
-}
 
-pub fn enclosed_element<Data: Debug>(
-    state: &mut ParserState<VecToken>, 
-    open: Token, 
-    close: Token, 
-    element: &impl Fn(&mut ParserState<VecToken>) -> Result<Data, ParserError<Option<Token>>>
-) -> Result<Data, ParserError<Option<Token>>> {
-    state.consume_1(open)?;
-    let result = element(state)?;
-    state.consume_1(close)?;
-    Ok(result)
-}
 
 /*
 pub fn parse_number(state: &mut Lexer) -> Result<DataLiteral, String> {

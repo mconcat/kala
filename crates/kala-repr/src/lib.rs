@@ -11,3 +11,4 @@ pub mod array;
 pub mod function;
 pub mod operation;
 pub mod completion;
+pub mod error;

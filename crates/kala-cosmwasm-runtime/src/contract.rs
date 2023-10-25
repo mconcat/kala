@@ -1,7 +1,10 @@
+use std::rc::Rc;
+
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary};
-use jessie_parser::VecToken;
+use jessie_ast::GlobalDeclarations;
+use jessie_parser::JessieParserState;
 use jessie_parser::lexer::lex_jessie;
 use jessie_parser::parser::ParserState;
 use kala_repr::slot::Slot;
@@ -40,7 +43,7 @@ pub fn execute(
 pub(crate) fn run_expression(code: String) -> Completion {
     let tokenstream = lex_jessie(code).unwrap();
 
-    let mut state = ParserState::new(VecToken(tokenstream), vec![]);
+    let mut state = JessieParserState::new(tokenstream, Rc::new(GlobalDeclarations::empty()));
     let expr = jessie_parser::expression(&mut state).unwrap();
 
     println!("{:?}", expr);

@@ -49,7 +49,7 @@ pub struct FrameRecovery {
 }
 
 impl Frame {
-    pub fn get_argument(&mut self, index: usize) -> &mut Slot {  ㅕu
+    pub fn get_argument(&mut self, index: usize) -> &mut Slot {
         &mut self.slots[self.fp - 1 - index]
     }
 
@@ -81,7 +81,7 @@ impl Frame {
     
         recovery
     }
-
+    
     // destructs the child frame and recovers the parent frame
     pub fn exit_function_frame(&mut self, recovery: FrameRecovery) {
         self.slots.truncate(recovery.fp);

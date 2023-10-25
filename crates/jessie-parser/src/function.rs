@@ -1,23 +1,7 @@
 use jessie_ast::*;
-use crate::{parser, pattern, use_variable};
-use crate::{
-    VecToken, Token,
+use crate::{jessie_parser::{JessieParserState, repeated_elements}, Token, statement::block_raw, expression::{prop_name, expression}, common::use_variable, parser, pattern::{pattern, param}};
 
-    repeated_elements,
-
-    expression,
-
-    prop_name,
-    param,
-
-    block_raw,
-
-    assign_or_cond_or_primary_expression,
-};
-use utils::{SharedString};
-use std::ops::Deref;
-
-type ParserState = parser::ParserState<VecToken>;
+type ParserState = JessieParserState;
 type ParserError = parser::ParserError<Option<Token>>;
 
 
@@ -43,9 +27,10 @@ pub fn function_expr(state: &mut ParserState) -> Result<Function, ParserError> {
 pub fn function_internal(state: &mut ParserState, name: FunctionName) -> Result<Function, ParserError> {
 
     println!("function_internal");
-    let parent_scope = state.enter_function_scope(Vec::new());
+    let parent_scope = state.enter_function_scope();
     
-    let parameter_patterns = repeated_elements(state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
+    let parameter_patterns = repeated_elements
+    (state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
 
     let mut parameters = Vec::with_capacity(parameter_patterns.len());
     state.scope.declare_parameters(parameter_patterns, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
@@ -58,13 +43,11 @@ pub fn function_internal(state: &mut ParserState, name: FunctionName) -> Result<
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
             let statements = Block { statements: block_raw(state)? };
-            let (locals, captures) = state.exit_function_scope(parent_scope);
+            let declarations = state.exit_function_scope(parent_scope);
             let func = Function {
-                locals,
                 name,
+                declarations,
                 statements,
-                captures,
-                parameters,
             };
             Ok(func)
         },
@@ -99,8 +82,8 @@ pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
         Some(Token::QuasiQuote) => {
             unimplemented!("quasiquote")
         },
-        _ => {
-            state.err_expected(": for property pair", state.lookahead_1())
+        la => {
+            state.err_expected(": for property pair", la)
         }
     }
 }
@@ -121,20 +104,19 @@ pub fn arrow_function_body(state: &mut ParserState) -> Result<Vec<Statement>, Pa
 pub fn arrow_expr(state: &mut ParserState) -> Result<Expr, ParserError> { 
     let params = repeated_elements(state, Some(Token::ArrowLeftParen), Token::ArrowRightParen, &param, true)?;
     if !state.try_proceed(Token::FatArrow) {
-        return state.err_expected("=>", state.lookahead_1())
+        let la = state.lookahead_1();
+        return state.err_expected("=>", la)
     }
-    let parent_scope = state.enter_function_scope(Vec::new());
+    let parent_scope = state.enter_function_scope();
     let mut parameters = Vec::with_capacity(params.len());
     state.scope.declare_parameters(params, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
 
     let statements = Block { statements: arrow_function_body(state)? };
-    let (locals, captures) = state.exit_function_scope(parent_scope);
+    let declarations = state.exit_function_scope(parent_scope);
 
     let function = Function {
         name: FunctionName::Arrow,
-        captures,
-        parameters,
-        locals,
+        declarations,
         statements,
     };
 

@@ -1,14 +1,15 @@
 use jessie_ast::*;
+use crate::jessie_parser::JessieParserState;
 use crate::parser;
 use crate::{
-    Token, VecToken,
+    Token,
 };
 
 use utils::SharedString;
 ///////////////////////////
 // Basic components
 
-type ParserState = parser::ParserState<VecToken>;
+type ParserState = JessieParserState; 
 type ParserError = parser::ParserError<Option<Token>>;
 
 

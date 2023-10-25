@@ -1,20 +1,7 @@
 use jessie_ast::*;
-use crate::parser;
-use crate::{
-    VecToken, Token,
+use crate::{jessie_parser::{JessieParserState, enclosed_element, repeated_elements}, Token, parser, expression::{expression, arg, call_and_unary_op, primary_expr}, common::identifier};
 
-    identifier,
-
-    enclosed_element,
-    repeated_elements,
-
-    primary_expr,
-    expression,
-    arg,
-    call_and_unary_op,
-};
-
-type ParserState = parser::ParserState<VecToken>;
+type ParserState = JessieParserState; 
 type ParserError = parser::ParserError<Option<Token>>;
 
 ///////////////////////////
@@ -24,7 +11,8 @@ type ParserError = parser::ParserError<Option<Token>>;
 pub fn cond_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, ParserError> {
     println!("cond_expr_internal");
     if state.try_proceed(Token::Question) {
-        let expr1 = expression(state)?;
+        let expr1 = expression
+        (state)?;
         state.consume_1(Token::Colon)?;
         let expr2 = expression(state)?;
         Ok(Expr::CondExpr(Box::new(CondExpr(result, expr1, expr2))))

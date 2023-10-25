@@ -1,8 +1,6 @@
-use std::thread::scope;
-
 use utils::{FxMap, Map, VectorMap};
 
-use crate::{Statement, CaptureDeclaration, ParameterDeclaration, Expr, LocalDeclaration, CallPostOp, VariableCell, PropDef, Function, DeclarationIndex, Pattern, PatternVisitor};
+use crate::{Statement, ParameterDeclaration, Expr, LocalDeclaration, CallPostOp, VariableCell, Function, DeclarationIndex,  PatternVisitor};
 
 // - The function first iterates over the body of the function, and collects all the local declarations
 // - Then, it iterates over the body again, and all the variables occuring inside the function body are bound to either one of local / capture / parameter
@@ -265,8 +263,6 @@ pub fn scope_function(function: &mut Function) {
     let mut visitor = ScopingVisitor {
         map: FxMap::new(),
     };
-    
-    let mut captures = VectorMap::new();
 
     for (i, parameter) in function.parameters.clone().into_iter().enumerate() {
         match parameter {
@@ -295,19 +291,15 @@ pub fn scope_function(function: &mut Function) {
             LocalDeclaration::Let { pattern, value } => {
                 pattern.visit(DeclarationIndex::Local(i.try_into().unwrap()), &mut visitor);
             },
+            LocalDeclaration::Capture { name, variable } => {
+                captures.insert(name.clone(), ());
+            }
         }
     }
 
     for stmt in &mut function.statements.statements {
         scope_statement(stmt, &mut visitor.map, &mut captures);
     }
-
-    function.captures = captures.drain().map(|(name, _)| {
-        CaptureDeclaration::Local {
-            name: name.clone(),
-            variable: visitor.map.get(name).unwrap().clone(),
-        }
-    }).collect();
 
 }
 

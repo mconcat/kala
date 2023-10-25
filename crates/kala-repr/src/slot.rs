@@ -1,4 +1,4 @@
-use core::panic;
+use core::{panic};
 use std::{mem::{ManuallyDrop, transmute}, rc::{Rc, Weak}, cell::Cell, any::Any, ops::{Index, IndexMut}, fmt::{Debug, LowerHex}};
 
 use utils::SharedString;
@@ -327,6 +327,7 @@ impl Slot {
                 Reference::Number(number) => unimplemented!("wrapped number object"),
                 Reference::String(string) => unimplemented!("wrapped string object"),
                 Reference::Function(function) => unimplemented!("wrapped function object"),
+                Reference::Error(error) => unimplemented!("wrapped error object"),
             }
             SlotTag::Integer => unimplemented!("wrapped number object"),
             SlotTag::Constant => unimplemented!("wrapped constant object"),
@@ -347,6 +348,7 @@ impl Slot {
                 Reference::Number(number) => unimplemented!("wrapped number object"),
                 Reference::String(string) => unimplemented!("wrapped string object"),
                 Reference::Function(function) => unimplemented!("wrapped function object"),
+                Reference::Error(error) => unimplemented!("wrapped error object"),
             }
             SlotTag::Integer => unimplemented!("wrapped number object"),
             SlotTag::Constant => unimplemented!("wrapped constant object"),

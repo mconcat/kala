@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 use std::rc::Rc;
 
-use jessie_ast::{VariableCell, VariablePointer, VariableIndex, DeclarationIndex, LocalDeclaration, CaptureDeclaration};
+use jessie_ast::{VariableCell, DeclarationIndex, CaptureDeclaration, FunctionDeclarations, GlobalDeclarations};
 
 use crate::{scope::LexicalScope, map::VariablePointerMap, map::VariablePointerMapPool};
 
@@ -140,31 +140,17 @@ pub trait Node {
 }
 */
 
-
-pub trait ArrayLike {
-    type Element: PartialEq+Debug+Clone;
-
-    fn get(&self, index: usize) -> Option<Self::Element>;
-    fn len(&self) -> usize;
-    fn slice(&self, start: usize, end: usize) -> Self;
-}
-
 #[derive(Debug)]
-pub struct ParserState<T: ArrayLike+Clone+Debug+ToString> {
-    pub input: T,
+pub struct ParserState<T> {
+    pub input: Vec<T>,
     pub pos: usize,
-    pub scope: LexicalScope,
-    pub map_pool: VariablePointerMapPool,
 }
 
-impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
-    pub fn new(input: T, global_declarations: Vec<Rc<LocalDeclaration>>) -> Self {
-        let mut map_pool = VariablePointerMapPool::new();
+impl<T: ToString+Clone+Debug+ToString+PartialEq> ParserState<T> {
+    pub fn new(input: Vec<T>) -> Self {
         Self {
             input,
             pos: 0,
-            scope: LexicalScope::new(global_declarations, map_pool.get()),
-            map_pool,
         }
     }
 
@@ -173,37 +159,37 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
         self.pos >= self.input.len()
     }
 
-    pub fn lookahead_1(&self) -> Option<T::Element> {
-        self.input.get(self.pos)
+    pub fn lookahead_1(&self) -> Option<T> {
+        self.input.get(self.pos).cloned()
     }
 
-    pub fn lookahead_2(&self) -> Option<T::Element> {
-        self.input.get(self.pos + 1)
+    pub fn lookahead_2(&self) -> Option<T> {
+        self.input.get(self.pos + 1).cloned()
     }
 
-    pub fn lookahead_3(&self) -> Option<T::Element> {
-        self.input.get(self.pos + 2)
+    pub fn lookahead_3(&self) -> Option<T> {
+        self.input.get(self.pos + 2).cloned()
     }
 
-    pub fn lookahead_4(&self) -> Option<T::Element> {
-        self.input.get(self.pos + 3)
+    pub fn lookahead_4(&self) -> Option<T> {
+        self.input.get(self.pos + 3).cloned()
     }
 
-    pub fn lookahead_n(&self, n: usize) -> Option<T::Element> {
+    pub fn lookahead_n(&self, n: usize) -> Option<T> {
         if n == 0 {
             panic!("lookahead_n(0) is not allowed");
         }
-        self.input.get(self.pos + n - 1)
+        self.input.get(self.pos + n - 1).cloned()
     }
 
-    pub fn proceed(&mut self) -> Option<T::Element> {
+    pub fn proceed(&mut self) -> Option<T> {
         let result = self.input.get(self.pos);
         if result.is_some() {
             self.pos += 1;
         }
-        result
+        result.cloned()
     }
-    pub fn try_proceed(&mut self, c: T::Element) -> bool {
+    pub fn try_proceed(&mut self, c: T) -> bool {
         if self.lookahead_1() == Some(c) {
             self.proceed();
             true
@@ -212,7 +198,7 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
         }
     }
 
-    pub fn consume_1(&mut self, c: T::Element) -> Result<(), ParserError<Option<T::Element>>> {
+    pub fn consume_1(&mut self, c: T) -> Result<(), ParserError<Option<T>>> {
         if self.lookahead_1() == Some(c.clone()) {
             self.proceed();
             Ok(())
@@ -221,11 +207,11 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
         }
     }
 
-    pub fn consume(&mut self, s: T) -> Result<(), String> {
+    pub fn consume(&mut self, s: Vec<T>) -> Result<(), String> {
         let pos = self.pos;
 
         for i in 0..s.len() {
-            if self.lookahead_1() == s.get(i) {
+            if self.lookahead_1() == s.get(i).cloned() {
                 self.proceed();
             } else {
                 self.pos = pos;
@@ -236,47 +222,6 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
         Ok(())
     }
 
-    pub fn enter_function_scope(&mut self, declarations: Vec<LocalDeclaration>) -> LexicalScope {
-        self.scope.enter_function_scope(self.map_pool.get())
-    }
-
-    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> (Vec<Rc<LocalDeclaration>>, Vec<CaptureDeclaration>) {
-        let LexicalScope{mut declarations, variables} = self.scope.exit_function_scope(parent_scope);
-        let mut captures = Vec::with_capacity(variables.len());
-        let mut ptrs = self.map_pool.drain(variables);
-        for (name, mut ptr) in ptrs {
-            println!("exit function scope {:?} {:?}", name, ptr);
-            if ptr.is_uninitialized() {
-                // make a capturing declaration targeting upper scope, set the local pointer to reference it
-                let capture_cell = VariableCell::uninitialized(name.clone());
-                let decl = CaptureDeclaration::Local { name: name.clone(), variable: capture_cell.clone() };
-                let capture_index = DeclarationIndex::Capture(captures.len() as u32);
-                captures.push(decl);
-
-                // Set the ptr to reference the new declaration
-                ptr.set(capture_index.clone(), vec![]).unwrap();
-
-                // assert equivalence
-                self.scope.assert_equivalence(name, capture_cell.ptr);
-            }
-        }
-
-        (declarations, captures)
-    }
-
-    pub fn enter_block_scope(&mut self) -> VariablePointerMap {
-        self.scope.replace_variable_map(self.map_pool.get())
-    }
-
-    pub fn exit_block_scope(&mut self, parent_variables: VariablePointerMap) {
-        let mut variables = self.scope.replace_variable_map(parent_variables);
-        let ptrs = self.map_pool.drain(variables);
-        for (name, ptr) in ptrs {
-            if ptr.is_uninitialized() {
-                self.scope.assert_equivalence(name, ptr/*TODO: optimize */);
-            }
-        }
-    }
 /* 
     pub fn exit_merge_block_scope(&mut self, parent_scope: LexicalScope) {
         let scope = std::mem::replace(&mut self.scope, parent_scope);
@@ -417,21 +362,26 @@ impl<T: ArrayLike+Clone+Debug+ToString> ParserState<T> {
     }
     */
 
+    fn input_slice(&self) -> String {
+        let slice = self.input[0..self.pos].into_iter().cloned().map(|x| x.to_string()).collect::<String>();
+        slice
+    }
+
     pub fn err_expected<R, C>(&self, message: &'static str, actual: C) -> Result<R, ParserError<C>> {
-        Err(ParserError::ExpectedToken(self.input.slice(0, self.pos).to_string(), message.to_string(), actual))
+        Err(ParserError::ExpectedToken(self.input_slice(), message.to_string(), actual))
     }
     
     
     pub fn err_invalid<R, C>(&self, message: &'static str) -> Result<R, ParserError<C>> {
-        Err(ParserError::InvalidExpression(self.input.slice(0, self.pos).to_string(), message.to_string()))
+        Err(ParserError::InvalidExpression(self.input_slice(), message.to_string()))
     }
     
     pub fn err_unimplemented<R, C>(&self, message: &'static str) -> Result<R, ParserError<C>> {
-        Err(ParserError::Unimplemented(self.input.slice(0, self.pos).to_string(), message.to_string()))
+        Err(ParserError::Unimplemented(self.input_slice(), message.to_string()))
     }
     
     pub fn err_scope<R, C>(&self, message: &'static str, var: String) -> Result<R, ParserError<C>> {
-        Err(ParserError::ScopeError(self.input.slice(0, self.pos).to_string(), message.to_string(), var))
+        Err(ParserError::ScopeError(self.input_slice(), message.to_string(), var))
     }
 }
 

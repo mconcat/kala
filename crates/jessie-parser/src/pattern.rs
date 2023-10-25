@@ -1,16 +1,11 @@
 use jessie_ast::*;
-use crate::common::identifier;
-use crate::{parser, use_variable};
-use crate::{
-    VecToken, Token,
+use crate::{Token, parser, expression};
+use crate::common::{identifier, use_variable};
+use crate::jessie_parser::{JessieParserState, repeated_elements};
 
-    repeated_elements,
-
-    expression,
-};
-
-type ParserState = parser::ParserState<VecToken>;
-type ParserError = parser::ParserError<Option<Token>>;
+type ParserState = JessieParserState; 
+type ParserError = parser
+::ParserError<Option<Token>>;
 
 ///////////////////////
 // Patterns, Bindings, Definitions
