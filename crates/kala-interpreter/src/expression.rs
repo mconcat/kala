@@ -86,7 +86,6 @@ fn exit_function(interpreter: &mut Interpreter, arguments_len: usize, captures_l
 }
 */
 
-
 fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
     let captures: Vec<Slot> = func.declarations.captures.into_iter().map(|capture| {
         let variable = interpreter.fetch_variable(capture.variable.get());
@@ -99,21 +98,30 @@ fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
 
     //let mut local_initializers: Vec<Option<Box<dyn FnOnce(&mut Frame) -> Completion>>> = Vec::with_capacity(func.locals.len());
 
+    let statements = func.statements.clone();
+
+    let builtins = interpreter.builtins.clone();
+
     let function = Slot::new_function(func.name.get_name().cloned(), Box::new(move |frame, arguments| {
         println!("function call: {:?}", frame);
         // push arguments
         frame.slots.extend(arguments);
 
         // enter function frame with captures and locals
-        let recovery = frame.enter_function_frame(captures.clone(), func.declarations.variables.len());
+        let recovery = frame.enter_function_frame(captures.clone(), func.declarations.locals.len());
         let frame_value = std::mem::take(frame);
 
-        let mut interpreter = Interpreter {
+        // hoist(pre-declare) function declarations
+        // TODO
+        // 
+
+        let mut function_interpreter = Interpreter {
+            builtins: builtins.clone(),
             current_frame: frame_value, 
         };
-        let result = eval_block(&mut interpreter, &func.statements);
+        let result = eval_block(&mut function_interpreter, &statements);
 
-        let _ = replace(frame, interpreter.current_frame);
+        let _ = replace(frame, function_interpreter.current_frame);
 
         // exit function frame, arguments still remain
         frame.exit_function_frame(recovery);
@@ -168,6 +176,7 @@ fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Completion 
                 DeclarationIndex::Local(index) => interpreter.current_frame.get_local(index as usize),
                 DeclarationIndex::Capture(index) => interpreter.current_frame.get_capture(index as usize),
                 DeclarationIndex::Parameter(index) => interpreter.current_frame.get_argument(index as usize),
+                DeclarationIndex::Builtin(_) => panic!("cannot assign to builtin")
             }
         }
 

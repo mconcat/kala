@@ -1,6 +1,6 @@
 use utils::{FxMap, Map, SharedString};
 
-use crate::{Expr, ExprDiscriminant, VariableCell, Record, Field, AssignOp, LValue, PropertyAccess, DeclarationIndex};
+use crate::{Expr, ExprDiscriminant, Record, Field, AssignOp, LValue, PropertyAccess, DeclarationIndex, VariablePointer};
 
 // Pattern is a subset of Expr
 #[repr(u8)]
@@ -10,7 +10,7 @@ pub enum Pattern {
     Optional(Box<OptionalPattern>) = ExprDiscriminant::Assignment as u8,
     ArrayPattern(Box<ArrayPattern>) = ExprDiscriminant::Array as u8, // only Vec<Param> form is valid
     RecordPattern(Box<RecordPattern>) = ExprDiscriminant::Record as u8,
-    Variable(Box<VariableCell>) = ExprDiscriminant::Variable as u8,
+    Variable(Box<VariablePointer>) = ExprDiscriminant::Variable as u8,
 }
 
 impl Pattern {
@@ -59,7 +59,7 @@ impl Pattern {
 }
 
 impl Pattern {
-    pub fn optional(lvalue: VariableCell, expr: Expr) -> Self {
+    pub fn optional(lvalue: VariablePointer, expr: Expr) -> Self {
         Pattern::Optional(Box::new(OptionalPattern(OptionalOp::Optional, LValueOptional::Variable(Box::new(lvalue)), expr)))
     }
 }
@@ -81,7 +81,7 @@ pub enum OptionalOp {
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum LValueOptional {
-    Variable(Box<VariableCell>) = 12, // LValue::Variable
+    Variable(Box<VariablePointer>) = 12, // LValue::Variable
 }
 
 // ArrayPattern is a subset of Expr::Array
@@ -98,8 +98,8 @@ pub struct RecordPattern(pub Vec<PropParam>);
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropParam {
     KeyValue(Box<Field>, Pattern),
-    Shorthand(Box<Field>, Box<VariableCell>),
-    Rest(Box<VariableCell>),
+    Shorthand(Box<Field>, Box<VariablePointer>),
+    Rest(Box<VariablePointer>),
 }
 
 

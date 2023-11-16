@@ -1,4 +1,6 @@
 
+use std::{rc::Rc, cell::{OnceCell, Cell}};
+
 use jessie_ast::{VariableIndex, DeclarationIndex, PropertyAccess};
 use kala_repr::{slot::Slot, function::{Frame}};
 
@@ -71,6 +73,7 @@ impl BlockFlag {
 }
 */
 pub struct Interpreter {
+    pub(crate) builtins: Rc<OnceCell<Vec<Cell<Slot>>>>,
    // pub(crate) stack: &'a mut Stack,
     pub(crate) current_frame: Frame,
 }
@@ -88,14 +91,16 @@ impl Drop for Interpreter {
 }
 */
 impl Interpreter {
-    pub fn new(current_frame: Frame) -> Self {
+    pub fn new(builtins: Rc<OnceCell<Vec<Cell<Slot>>>>, current_frame: Frame) -> Self {
         Interpreter {
+            builtins,
             current_frame,
         }
     }
 
     pub fn empty() -> Self {
         Interpreter {
+            builtins: Rc::new(OnceCell::new()),
             current_frame: Frame::empty(),
         }
     }
@@ -105,6 +110,7 @@ impl Interpreter {
             DeclarationIndex::Capture(index) => self.current_frame.get_capture(index as usize),
             DeclarationIndex::Local(index) => self.current_frame.get_local(index as usize),
             DeclarationIndex::Parameter(index) => self.current_frame.get_argument(index as usize),
+            DeclarationIndex::Builtin(index) => unsafe{&mut*self.builtins.get().unwrap().get(index as usize).unwrap().as_ptr()},
         };
 
         for property in index.property_access {

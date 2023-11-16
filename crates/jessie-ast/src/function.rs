@@ -30,8 +30,7 @@ impl FunctionName {
 pub struct FunctionDeclarations {
     pub parameters: Vec<ParameterDeclaration>,
     pub captures: Vec<CaptureDeclaration>,
-    pub variables: Vec<Rc<VariableDeclaration>>,
-    pub functions: Vec<Rc<FunctionDeclaration>>,
+    pub locals: Vec<Rc<LocalDeclaration>>,
 }
 
 impl FunctionDeclarations {
@@ -39,8 +38,7 @@ impl FunctionDeclarations {
         Self {
             parameters: Vec::new(),
             captures: Vec::new(),
-            variables: Vec::new(),
-            functions: Vec::new(),
+            locals: Vec::new(),
         }
     }
 }
@@ -60,8 +58,7 @@ impl Function {
         name: FunctionName, 
         parameters: Vec<ParameterDeclaration>, 
         captures: Vec<CaptureDeclaration>, 
-        variables: Vec<Rc<VariableDeclaration>>,
-        functions: Vec<Rc<FunctionDeclaration>>, 
+        locals: Vec<Rc<LocalDeclaration>>,
         statements: Block,
     ) -> Self {
         Self {
@@ -69,8 +66,7 @@ impl Function {
             declarations: FunctionDeclarations {
                 parameters,
                 captures,
-                variables,
-                functions,
+                locals,
             },
             statements,
         }
@@ -125,27 +121,14 @@ impl Function {
     }
     */
 }
-#[derive(Debug, PartialEq, Clone)]
-pub struct GlobalDeclarations {
-    pub builtins: Vec<Rc<BuiltinDeclaration>>,
-    pub imports: Vec<Rc<ImportDeclaration>>,
-}
-
-impl GlobalDeclarations {
-    pub fn empty() -> Self {
-        Self {
-            builtins: Vec::new(),
-            imports: Vec::new(),
-        }
-    }
-}
-
+/* 
 #[derive(Debug, PartialEq, Clone)]
 // Builtin declarations, console, Object, Array, etc
-pub struct BuiltinDeclaration {
+pub struct BuiltinDeclaration<Function> {
     pub name: SharedString,
+    pub function: Function
 }
-
+*/
 #[derive(Debug, PartialEq, Clone)]
 pub struct ImportDeclaration {
     pub name: SharedString,
@@ -169,7 +152,7 @@ pub enum ParameterDeclaration {
 impl From<Pattern> for ParameterDeclaration {
     fn from(pattern: Pattern) -> Self {
         match pattern {
-            Pattern::Variable(var) => ParameterDeclaration::Variable { name: var.name },
+            Pattern::Variable(var) => ParameterDeclaration::Variable { name: var.get_name().unwrap() },
             Pattern::Optional(pat) => {
                 let OptionalPattern(_, crate::LValueOptional::Variable(var), default) = *pat;
                 ParameterDeclaration::Optional { name: var.name, default }
@@ -180,34 +163,35 @@ impl From<Pattern> for ParameterDeclaration {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum DeclarationType {
-    Const,
-    Let,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct VariableDeclaration {
-    pub declaration_type: DeclarationType,
-    pub pattern: Pattern,
-    pub value: Option<Expr>,
-    // index: DeclarationIndex,
-}
-#[derive(Debug, PartialEq, Clone)]
-pub struct FunctionDeclaration {
-    pub function: Box<Function>,
-    //index: DeclarationIndex,
+pub enum LocalDeclaration {
+    Const {
+        pattern: Pattern,
+        value: Expr,
+    },
+    Let {
+        pattern: Pattern,
+        value: Option<Expr>,
+    },
+    Function {
+        function: Box<Function>,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CaptureDeclaration {
     pub name: SharedString,
-    pub variable: VariableCell, // pointing upper function scope
+    pub variable: VariablePointer, // pointing upper function scope
 }   
 
 
-impl VariableDeclaration {
+impl LocalDeclaration {
     pub fn get_initial_value(&self) -> Option<Expr> {
-        self.value.clone()
+        match self {
+            LocalDeclaration::Const { pattern: _, value } => Some(value.clone()),
+            LocalDeclaration::Let { pattern: _, value } => value.clone(),
+            LocalDeclaration::Function { function } => Some(Expr::Function(function.clone())),
+        
+        }
     }
     
 }
@@ -216,7 +200,7 @@ impl CaptureDeclaration {
     pub fn uninitialized(name: SharedString) -> Self {
         CaptureDeclaration {
             name: name.clone(),
-            variable: VariableCell::uninitialized(name),
+            variable: VariablePointer::new(),
         }
     }
 }
@@ -227,10 +211,13 @@ pub enum DeclarationIndex {
     Parameter(u32),
     Capture(u32),
     Local(u32),
+    Builtin(u32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct VariableIndex {
+    // pub name: SharedString,
+
     // index of the variable declaration in the innermost function 
     pub declaration_index: DeclarationIndex,
 
@@ -270,11 +257,6 @@ impl VariablePointer {
         *inner = other.0.borrow().clone()
     }
 
-    pub fn new_cell(&self, name: SharedString) -> VariableCell {
-        let cell = OnceCell::new();
-        VariableCell { name, cell, ptr: self.clone() }
-    }
-
     pub fn is_initialized(&self) -> bool {
         (*self.0.borrow()).get().is_some()
     }
@@ -282,12 +264,18 @@ impl VariablePointer {
     pub fn is_uninitialized(&self) -> bool {
         (*self.0.borrow()).get().is_none()
     }
-}
 
+    pub fn get_name(&self) -> Option<SharedString> {
+        let inner = (*self.0).borrow();
+        let ptr_var = inner.as_ref().get()?;
+        Some(ptr_var.name.clone())
+    }
+}
+/* 
 #[derive(Debug, Clone)]
 pub struct VariableCell {
     pub name: SharedString,
-    pub cell: OnceCell<VariableIndex>,
+    //pub cell: OnceCell<VariableIndex>,
     pub ptr: VariablePointer,
 }
 
@@ -308,7 +296,7 @@ impl VariableCell {
     pub fn uninitialized(name: SharedString) -> Self {
         VariableCell {
             name,
-            cell: OnceCell::new(),
+            //cell: OnceCell::new(),
             ptr: VariablePointer(Rc::new(RefCell::new(Rc::new(OnceCell::new())))),
         }
     }
@@ -327,24 +315,27 @@ impl VariableCell {
     pub fn get(&self) -> VariableIndex {
         println!("Getting variable {:?}", self);
 
+        /* 
         if let Some(var) = self.cell.get() {
             return var.clone()
         }
+        */
 
         let mut inner = (*self.ptr.0).borrow_mut();
         let ptr_var = inner.as_ref().get().unwrap();
-        self.cell.set(ptr_var.clone());
+        //self.cell.set(ptr_var.clone());
         ptr_var.clone()
     }
 
     pub fn get_checked(&self) -> Option<VariableIndex> {
+        /* 
         if let Some(var) = self.cell.get() {
             return Some(var.clone())
         }
-
+        */
         let inner = (*self.ptr.0).borrow();
         let ptr_var = inner.as_ref().get()?;
-        self.cell.set(ptr_var.clone());
+        //self.cell.set(ptr_var.clone());
         Some(ptr_var.clone())
     }
 
@@ -361,7 +352,7 @@ impl VariableCell {
         self.ptr.overwrite(&other.ptr)
     }
 }
-
+*/
 #[derive(Debug, PartialEq, Clone)] 
 pub enum PropertyAccess {
     Property(Box<Field>),

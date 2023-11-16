@@ -11,7 +11,7 @@ pub mod expression;
 pub mod function;
 pub mod statement;
 pub mod pattern;
-//pub mod module;
+pub mod module;
 pub mod object;
 pub mod operation;
 pub mod scope;

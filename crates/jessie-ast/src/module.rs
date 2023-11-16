@@ -1,18 +1,31 @@
-#[derive(Debug, PartialEq, Clone)]
-pub struct ModuleBody(pub Vec<ModuleItem>);
+use std::rc::Rc;
+
+use utils::SharedString;
+
+use crate::LocalDeclaration;
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ModuleItem {
-    // ImportDeclaration(ImportDeclaration),
-    ModuleDeclaration(ModuleDeclaration),
+pub struct ModuleBody {
+    pub builtins: Vec<SharedString>, // TODO: typify
+    pub globals: Vec<(ExportClause, Rc<LocalDeclaration>)>,
+    // pub imports: Vec<ImportDeclaration>,
 }
-/* 
+
+impl ModuleBody {
+    pub fn new() -> Self {
+        Self {
+            builtins: Vec::new(),
+            globals: Vec::new(),
+            // imports: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct ImportDeclaration {
     import_clause: ImportClause,
     source: String,
 }
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ImportClause {
@@ -20,7 +33,7 @@ pub enum ImportClause {
     Named(Vec<(String, Option<String>)>), // import { name1, name2 as name3 } from source
     Default(String), // import name from source
 }
-*/
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExportClause {
     NoExport,
@@ -28,9 +41,11 @@ pub enum ExportClause {
     ExportDefault,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct ModuleDeclaration {
-    pub export_clause: ExportClause,
-    // Using MutableDeclarationPointer as top level const/functions might be used before their declaration
-    pub declaration: MutableDeclarationPointer, // Must be pointing either Function or Const, TODO: enforce
+impl ExportClause {
+    pub fn is_default(&self) -> bool {
+        match self {
+            ExportClause::ExportDefault => true,
+            _ => false,
+        }
+    }
 }

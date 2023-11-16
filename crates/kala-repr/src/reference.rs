@@ -2,7 +2,7 @@ use std::{any::Any, ops::{Index, IndexMut}, ptr, cell::Ref, mem::ManuallyDrop};
 
 use utils::SharedString;
 
-use crate::{number::NUMBER_ZERO, object::Property, slot::Slot, function::Function, error::Error};
+use crate::{number::NUMBER_ZERO, object::Property, slot::Slot, function::Function, error::Error, completion::Completion};
 
 use super::{number::Number, object::Object, constant::Constant, array::Array};
 
@@ -16,7 +16,9 @@ pub enum Reference {
     //StaticFunction(StaticFunction<Box<dyn Any>>), // no capture, just function pointer
     Function(Function), // closure with captured environment variable
 
-    Error(Error)
+    Error(Error),
+
+    NativeFunction(SharedString, Box<dyn Fn(&mut [Slot]) -> Completion>),
 }
 
 impl Reference {
@@ -57,6 +59,7 @@ impl ToString for Reference {
             Reference::Array(array) => unimplemented!("array to string"), 
             Reference::Function(function) => unimplemented!("function to string"),
             Reference::Error(error) => error.to_string(),
+            Reference::NativeFunction(name, _) => name.to_string(),
         }
     }
 }

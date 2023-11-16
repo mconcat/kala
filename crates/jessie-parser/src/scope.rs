@@ -1,8 +1,8 @@
 use std::{cell::{RefCell, OnceCell}, rc::Rc};
 
 use fxhash::FxHashMap;
-use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, VariableIndex, Function, DeclarationIndex, VariablePointer, OptionalPattern, ParameterDeclaration, LValueOptional, PatternVisitor, FunctionDeclarations, VariableDeclaration, DeclarationType, FunctionDeclaration, GlobalDeclarations};
-use utils::{SharedString, Map};
+use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, VariableIndex, Function, DeclarationIndex, VariablePointer, OptionalPattern, ParameterDeclaration, LValueOptional, PatternVisitor, FunctionDeclarations, LocalDeclaration};
+use utils::{SharedString, Map, FxMap};
 use crate::{map::VariablePointerMap};
 
 pub struct DeclarationVisitor<'a> {
@@ -15,6 +15,8 @@ impl<'a> PatternVisitor for DeclarationVisitor<'a> {
         self.scope.declare(name.clone(), index, &property_access, self.is_hoisting_allowed)
     }
 }
+
+
 
 #[derive(Debug)]
 pub struct LexicalScope {
@@ -222,8 +224,8 @@ impl LexicalScope {
         Some(decl)
     }
 
-    pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<(u32, Rc<VariableDeclaration>)> {
-        let index = self.declarations.variables.len() as u32;
+    pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<(u32, Rc<LocalDeclaration>)> {
+        let index = self.declarations.locals.len() as u32;
 
         println!("declare_let {:?} {:?}", pattern, index);
         pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
@@ -231,46 +233,44 @@ impl LexicalScope {
             is_hoisting_allowed: true,
         })?;
 
-        let decl = Rc::new(VariableDeclaration {
-            declaration_type: DeclarationType::Let,
+        let decl = Rc::new(LocalDeclaration::Let {
             pattern: pattern.clone(),
             value,
         });
-        self.declarations.variables.push(decl.clone());
+        self.declarations.locals.push(decl.clone());
 
         Some((index, decl))
     }
 
-    pub fn declare_const(&mut self, pattern: Pattern, value: Option<Expr>) -> Option<(u32, Rc<VariableDeclaration>)> {
-        let index = self.declarations.variables.len() as u32;
+    pub fn declare_const(&mut self, pattern: Pattern, value: Expr) -> Option<(u32, Rc<LocalDeclaration>)> {
+        let index = self.declarations.locals.len() as u32;
 
         pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
             scope: self,
             is_hoisting_allowed: true,
         })?;
 
-        let decl = Rc::new(VariableDeclaration {
-            declaration_type: DeclarationType::Const,
+        let decl = Rc::new(LocalDeclaration::Const {
             pattern,
             value,
         });
-        self.declarations.variables.push(decl.clone());
+        self.declarations.locals.push(decl.clone());
 
 
         Some((index, decl))
     }
 
-    pub fn declare_function(&mut self, function: Function) -> Option<(u32, Rc<FunctionDeclaration>)> {
+    pub fn declare_function(&mut self, function: Function) -> Option<(u32, Rc<LocalDeclaration>)> {
         if !function.name.is_named() {
             return None
         }
 
-        let index = self.declarations.functions.len() as u32;
+        let index = self.declarations.locals.len() as u32;
         let function_name = function.name.clone();
-        let decl = Rc::new(FunctionDeclaration {
+        let decl = Rc::new(LocalDeclaration::Function {
             function: Box::new(function),
         });
-        self.declarations.functions.push(decl.clone());
+        self.declarations.locals.push(decl.clone());
 
         self.declare(function_name.get_name().unwrap().clone(), DeclarationIndex::Local(index as u32), &vec![], true)?;
 

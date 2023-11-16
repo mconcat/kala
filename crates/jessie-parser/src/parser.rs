@@ -1,12 +1,12 @@
 use core::fmt::Debug;
 use std::rc::Rc;
 
-use jessie_ast::{VariableCell, DeclarationIndex, CaptureDeclaration, FunctionDeclarations, GlobalDeclarations};
+use jessie_ast::{VariableCell, DeclarationIndex, CaptureDeclaration, FunctionDeclarations};
 
 use crate::{scope::LexicalScope, map::VariablePointerMap, map::VariablePointerMapPool};
 
 extern crate utils;
-use utils::{FxMap, MapPool, FxMapPool, Map};
+use utils::{FxMap, MapPool, FxMapPool, Map, SharedString};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {
@@ -24,6 +24,8 @@ pub enum ParserError<C: Sized> {
     ScopeError(String, String, String),
 
     DuplicateDeclaration,
+
+    UnresolvedVariable(SharedString),
 }
 
 

@@ -1,4 +1,4 @@
-use crate::{operation::*, Function, Record, Assignment, VariableCell, VariablePointer, Field, Pattern, PropDef};
+use crate::{operation::*, Function, Record, Assignment,  VariablePointer, Field, Pattern, PropDef};
 use utils::{SharedString, FxMap, Map};
 use sha3::{Digest, Sha3_256};
 
@@ -38,7 +38,7 @@ pub enum Expr {
     CallExpr(Box<CallExpr>) = ExprDiscriminant::CallExpr as u8,
     // QuasiExpr() = 10
     ParenedExpr(Box<Expr>) = ExprDiscriminant::ParenedExpr as u8,
-    Variable(Box<VariableCell>) = ExprDiscriminant::Variable as u8,
+    Variable(Box<VariablePointer>) = ExprDiscriminant::Variable as u8,
     Spread(Box<Expr>) = ExprDiscriminant::Spread as u8, // for array elements
 }
 

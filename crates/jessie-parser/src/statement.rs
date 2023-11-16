@@ -58,17 +58,16 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
     }
 }
 
-
-fn const_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<VariableDeclaration>)>, ParserError> {
+fn const_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<LocalDeclaration>)>, ParserError> {
     state.consume_1(Token::Const)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
         println!("const_decl {:?} {:?}", pattern, init);
-        state.scope.declare_const(pattern, init).ok_or(ParserError::DuplicateDeclaration)
+        state.scope.declare_const(pattern, init.unwrap()).ok_or(ParserError::DuplicateDeclaration)
     }, false)
 }
 
-fn let_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<VariableDeclaration>)>, ParserError> {
+fn let_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<LocalDeclaration>)>, ParserError> {
     state.consume_1(Token::Let)?;
     repeated_elements(state, None, Token::Semicolon, &|state| {
         let (pattern, init) = binding(state)?;
@@ -76,7 +75,7 @@ fn let_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<VariableDeclaration>
     }, false)
 }
 
-fn function_decl(state: &mut ParserState) -> Result<(u32, Rc<FunctionDeclaration>), ParserError> {
+fn function_decl(state: &mut ParserState) -> Result<(u32, Rc<LocalDeclaration>), ParserError> {
     state.consume_1(Token::Function)?;
     let name = identifier(state)?;
     let parent_scope = state.enter_block_scope();

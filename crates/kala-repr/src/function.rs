@@ -62,7 +62,6 @@ impl Frame {
         &mut self.slots[self.fp + 1 + self.captures + index]
     }
 
-
     // destructs the current frame and returns the child frame
     pub fn enter_function_frame(&mut self, captures: Vec<Slot>, local_len: usize) -> FrameRecovery {
         // constructing child frame

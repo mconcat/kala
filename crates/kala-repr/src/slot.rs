@@ -217,6 +217,12 @@ impl Slot {
         }
     }
 
+    pub fn new_native_function(name: SharedString, function: Box<dyn Fn(&mut [Slot]) -> Completion>) -> Self {
+        Self {
+            reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::NativeFunction(name, function))))),
+        }
+    }
+
     pub const fn new_uninitialized() -> Self {
         Self::UNINITIALIZED
     }
@@ -328,6 +334,7 @@ impl Slot {
                 Reference::String(string) => unimplemented!("wrapped string object"),
                 Reference::Function(function) => unimplemented!("wrapped function object"),
                 Reference::Error(error) => unimplemented!("wrapped error object"),
+                Reference::NativeFunction(name, _) => unimplemented!("wrapped native function object")
             }
             SlotTag::Integer => unimplemented!("wrapped number object"),
             SlotTag::Constant => unimplemented!("wrapped constant object"),
@@ -349,6 +356,7 @@ impl Slot {
                 Reference::String(string) => unimplemented!("wrapped string object"),
                 Reference::Function(function) => unimplemented!("wrapped function object"),
                 Reference::Error(error) => unimplemented!("wrapped error object"),
+                Reference::NativeFunction(name, _) => unimplemented!("wrapped native function object")
             }
             SlotTag::Integer => unimplemented!("wrapped number object"),
             SlotTag::Constant => unimplemented!("wrapped constant object"),

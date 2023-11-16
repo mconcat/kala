@@ -4,26 +4,24 @@ use std::rc::Rc;
 use crate::map::{VariablePointerMapPool, VariablePointerMap};
 use crate::parser::{self, ParserState}; 
 use crate::lexer::{Token};
-use crate::scope::LexicalScope;
+use crate::scope::{LexicalScope};
 use jessie_ast::*;
-use utils::MapPool;
+use utils::{MapPool, FxMap};
 
 type ParserError = parser::ParserError<Option<Token>>;
 
 #[derive(Debug)]
 pub struct JessieParserState {
     pub state: ParserState<Token>,
-    pub global_declarations: GlobalDeclarations,
     pub scope: LexicalScope,
     pub map_pool: VariablePointerMapPool,
 }
 
 impl JessieParserState {
-    pub fn new(tokens: Vec<Token>, global_declarations: GlobalDeclarations) -> JessieParserState {
+    pub fn new(tokens: Vec<Token>) -> JessieParserState {
         let mut map_pool = VariablePointerMapPool::new();
         JessieParserState {
             state: ParserState::new(tokens),
-            global_declarations,
             scope: LexicalScope::new(FunctionDeclarations::empty(), map_pool.get()),
             map_pool: VariablePointerMapPool::new(),
         }

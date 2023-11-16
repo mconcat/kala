@@ -1,6 +1,6 @@
 use std::{rc::{self, Rc}};
 
-use jessie_ast::{Statement, IfStatement, ElseArm, WhileStatement, Block, Expr, DeclarationIndex, VariableIndex, VariableDeclaration, FunctionDeclaration};
+use jessie_ast::{Statement, IfStatement, ElseArm, WhileStatement, Block, Expr, DeclarationIndex, VariableIndex, LocalDeclaration};
 
 use crate::{expression::eval_expr, interpreter::Interpreter};
 
@@ -22,8 +22,7 @@ pub fn eval_statement(interpreter: &mut Interpreter, statement: &Statement) -> C
     }
 }
 
-pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<(u32, Rc<VariableDeclaration
-    >)>>) -> Completion {
+pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<(u32, Rc<LocalDeclaration>)>>) -> Completion {
     for (index, declaration) in &**local {
         let initializer = declaration.get_initial_value();
         if initializer.is_none() {
@@ -40,7 +39,7 @@ pub fn eval_local_declaration(interpreter: &mut Interpreter, local: &Box<Vec<(u3
     Completion::Normal
 }
 
-pub fn eval_function_declaration(interpreter: &mut Interpreter, func: &FunctionDeclaration) -> Completion {
+pub fn eval_function_declaration(interpreter: &mut Interpreter, func: &LocalDeclaration) -> Completion {
     // Functions are hoisted, so they are already implicitly initialized.
     // TODO: unreachable?
 

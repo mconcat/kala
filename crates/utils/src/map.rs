@@ -25,6 +25,12 @@ pub trait Map<V>: Sized {
 
 pub struct FxMap<V>(FxHashMap<SharedString, V>);
 
+impl<V> FromIterator<(SharedString, V)> for FxMap<V> {
+    fn from_iter<T: IntoIterator<Item = (SharedString, V)>>(iter: T) -> Self {
+        Self(FxHashMap::from_iter(iter))
+    }
+}
+
 impl<V: Debug> Debug for FxMap<V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_map().entries(self.0.iter()).finish()

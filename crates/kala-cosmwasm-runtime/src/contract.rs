@@ -3,7 +3,6 @@ use std::rc::Rc;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary};
-use jessie_ast::GlobalDeclarations;
 use jessie_parser::JessieParserState;
 use jessie_parser::lexer::lex_jessie;
 use jessie_parser::parser::ParserState;
@@ -40,10 +39,36 @@ pub fn execute(
     return Ok(Response::default())
 }
 
+pub(crate) fn run_module(code: String) -> Completion {
+    let tokenstream = lex_jessie(code).unwrap();
+
+    let mut state = JessieParserState::new(tokenstream);
+
+    let mut builtins = vec![
+        ("console", Slot::new_object(vec![
+            ("log", Slot::new_native_function(
+                "log",
+                Box::new(|args| {
+                    println!("{:?}", args);
+                })
+            ))
+        ]))
+    ],
+
+    let module = jessie_parser::module::module(state, &builtins).unwrap();
+
+    println!("{:?}", module);
+    let mut interpreter = kala_interpreter::interpreter::Interpreter::empty();
+
+    println!("module: {:?}", module);
+    let result = kala_interpreter::module::eval_module(&mut interpreter, &module);
+    result
+}
+
 pub(crate) fn run_expression(code: String) -> Completion {
     let tokenstream = lex_jessie(code).unwrap();
 
-    let mut state = JessieParserState::new(tokenstream, Rc::new(GlobalDeclarations::empty()));
+    let mut state = JessieParserState::new(tokenstream);
     let expr = jessie_parser::expression(&mut state).unwrap();
 
     println!("{:?}", expr);
