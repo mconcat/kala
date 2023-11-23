@@ -1,8 +1,12 @@
+use std::rc::Rc;
+
 use jessie_ast::*;
 use crate::{jessie_parser::{JessieParserState, repeated_elements}, function::{function_expr, arrow_expr}, Token, operation::{cond_expr_with_leftmost, cond_expr_with_leftmost_no_power, unary_op, call_expr_internal}, common::use_variable, parser};
 
 type ParserState = JessieParserState; 
 type ParserError = parser::ParserError<Option<Token>>;
+
+
 
 ///////////////////////
 // Expressions
@@ -24,11 +28,12 @@ type ParserError = parser::ParserError<Option<Token>>;
 // LValue or CondExpr, for the valid lefthand operand for assignment operators.
 // ArrowFunction argument or Parenthesized Expression, for the valid lefthand for fat arrow. 
 pub fn expression(state: &mut ParserState) -> Result<Expr, ParserError> {
+    println!("expression {:?}", state);
     match state.lookahead_1() {
         // Function expression
         // function f(x) { return x + 1; }
         
-        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Box::new(x))),
+        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Rc::new(x))),
 
         // Parenthesized expression or arrow function
         // (x + y)
@@ -241,7 +246,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::False) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::False))),
         Some(Token::Undefined) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Undefined))),
         Some(Token::Bigint(sign, abs)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Bigint(sign, abs)))),
-        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Box::new(x))),
+        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Rc::new(x))),
         _ => use_variable(state).map(|x| Expr::Variable(Box::new(x))),
     }
 }
@@ -281,7 +286,7 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
         },
         // Shorthand
         Some(Token::Comma) | Some(Token::RightBrace) => {
-            let var = state.scope.use_variable(&prop_name.dynamic_property);
+            let var = state.scope.use_variable(prop_name.clone().dynamic_property);
             Ok(PropDef::Shorthand(prop_name, Box::new(var)))
         },
         la => {

@@ -1,4 +1,4 @@
-use crate::{expression::Expr, VariablePointer};
+use crate::{expression::Expr, Variable};
 use utils::{SharedString};
 
 #[repr(transparent)]
@@ -9,7 +9,7 @@ pub struct Record(pub Vec<PropDef>);
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropDef {
     KeyValue(Box<Field>, Expr),
-    Shorthand(Box<Field>, Box<VariablePointer>),
+    Shorthand(Box<Field>, Box<Variable>),
     Spread(Expr),
     // Getter(Function) = PropDefDiscriminant::Getter as u8,
     // Setter(Function) = PropDefDiscriminant::Setter as u8,

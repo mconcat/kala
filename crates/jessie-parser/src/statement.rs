@@ -14,9 +14,9 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
     // putting whitespace in consumes is a hack, need to fix later
     match state.lookahead_1() {
         Some(Token::LeftBrace) => block(state).map(|x| Statement::Block(Box::new(x))), // TODO: implement statement level record literal?
-        Some(Token::Const) => const_decl(state).map(|x| Statement::VariableDeclaration(Box::new(x))),
-        Some(Token::Let) => let_decl(state).map(|x| Statement::VariableDeclaration(Box::new(x))),
-        Some(Token::Function) => function_decl(state).map(|(index, decl)| Statement::FunctionDeclaration(index, decl)),
+        Some(Token::Const) => const_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
+        Some(Token::Let) => let_decl(state).map(|x| Statement::LocalDeclaration(Box::new(x))),
+        Some(Token::Function) => function_decl(state).map(|decl| Statement::LocalDeclaration(Box::new(decl))),
         Some(Token::If) => if_statement(state).map(|x| Statement::IfStatement(Box::new(x))),
         Some(Token::While) => while_statement(state).map(|x| Statement::WhileStatement(Box::new(x))),
         Some(Token::Try) => {
@@ -52,37 +52,35 @@ pub fn statement(state: &mut ParserState) -> Result<Statement, ParserError> {
         },
         _ => {
             let e = expression(state)?;
+            println!("expression statement {:?}", e);
             state.consume_1(Token::Semicolon)?;
             Ok(Statement::ExprStatement(Box::new(e)))
         }
     }
 }
 
-fn const_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<LocalDeclaration>)>, ParserError> {
-    state.consume_1(Token::Const)?;
-    repeated_elements(state, None, Token::Semicolon, &|state| {
-        let (pattern, init) = binding(state)?;
-        println!("const_decl {:?} {:?}", pattern, init);
-        state.scope.declare_const(pattern, init.unwrap()).ok_or(ParserError::DuplicateDeclaration)
-    }, false)
+pub fn const_decl(state: &mut ParserState) -> Result<Declaration, ParserError> {
+    let bindings = repeated_elements(state, Some(Token::Const), Token::Semicolon, &binding, false)?;
+
+    state.scope.declare_const(bindings).ok_or(ParserError::DuplicateDeclaration)
 }
 
-fn let_decl(state: &mut ParserState) -> Result<Vec<(u32, Rc<LocalDeclaration>)>, ParserError> {
-    state.consume_1(Token::Let)?;
-    repeated_elements(state, None, Token::Semicolon, &|state| {
-        let (pattern, init) = binding(state)?;
-        state.scope.declare_let(&pattern, init).ok_or(ParserError::DuplicateDeclaration)
-    }, false)
+fn let_decl(state: &mut ParserState) -> Result<Declaration, ParserError> {
+    let bindings = repeated_elements(state, Some(Token::Let), Token::Semicolon, &binding, false)?;
+
+    state.scope.declare_let(bindings).ok_or(ParserError::DuplicateDeclaration)
 }
 
-fn function_decl(state: &mut ParserState) -> Result<(u32, Rc<LocalDeclaration>), ParserError> {
+pub fn function_decl(state: &mut ParserState) -> Result<Declaration, ParserError> {
     state.consume_1(Token::Function)?;
     let name = identifier(state)?;
-    let parent_scope = state.enter_block_scope();
+    let parent_scope = state.scope.enter_block();
     // TODO: support recursive reference to function
     let function = function_internal(state, FunctionName::Named(name))?;
-    state.exit_block_scope(parent_scope);
-    state.scope.declare_function(function).ok_or(ParserError::DuplicateDeclaration)
+    state.scope.exit_block();
+    let decl = state.scope.declare_function(function).ok_or(ParserError::DuplicateDeclaration)?;
+
+    Ok(decl)
 }
 
 pub fn binding(state: &mut ParserState) -> Result<(Pattern, Option<Expr>), ParserError> {
@@ -106,12 +104,12 @@ pub fn binding(state: &mut ParserState) -> Result<(Pattern, Option<Expr>), Parse
 }
 
 pub fn block(state: &mut ParserState) -> Result<Block, ParserError> {
-    let parent_scope = state.enter_block_scope();
+    state.scope.enter_block();
 
     let statements = block_raw(state)?;
 
     // Unbound uses list is only needed for function declarations, so we can ignore it here.
-    state.exit_block_scope(parent_scope);
+    state.scope.exit_block();
 
     Ok(Block{statements})
 }

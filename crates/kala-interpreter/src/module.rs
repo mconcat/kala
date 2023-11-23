@@ -1,8 +1,8 @@
 use std::cell::{OnceCell, Cell};
 use std::rc::Rc;
 
-use jessie_ast::LocalDeclaration;
-use jessie_ast::module::ModuleBody;
+use jessie_ast::Declaration;
+use jessie_ast::module::{Module, ModuleItem, ExportClause, Script};
 use kala_repr::function::Frame;
 use kala_repr::{completion::Completion, slot::Slot};
 use utils::{SharedString, FxMap};
@@ -10,44 +10,43 @@ use utils::map::Map;
 
 use crate::expression::eval_expr;
 use crate::interpreter::Interpreter;
-use crate::statement::{eval_local_declaration, eval_function_declaration};
+use crate::statement::{eval_local_declaration, eval_statement};
 
-pub fn eval_declaration(interpreter: &mut Interpreter, index: u32, declaration: &Rc<LocalDeclaration>) -> Completion {
-    match declaration.as_ref() {
-        LocalDeclaration::Const { .. } => eval_local_declaration(interpreter, &Box::new(vec![(index, declaration.clone())])),
-        LocalDeclaration::Let { .. } => eval_local_declaration(interpreter, &Box::new(vec![(index, declaration.clone())])),
-        LocalDeclaration::Function { .. } => eval_function_declaration(interpreter, declaration),
+pub fn eval_script(
+    script: Script<Slot>,
+) -> Completion {
+    let mut interpreter = Interpreter::new(script.used_builtins, Frame::empty());
+
+    let mut result = Slot::new_undefined();
+
+    for statement in script.statements {
+        result = eval_statement(&mut interpreter, &statement)?;
     }
+
+    Completion::Value(result)
 }
 
-pub fn eval_module(
-    mut builtins_map: FxMap<Slot>,
-    module: ModuleBody
+pub fn eval_module( 
+    module: Module<Slot>,
 ) -> Completion {
-    let builtins = module.builtins.iter().map(|name| Cell::new(builtins_map.get(name.clone()).unwrap().clone())).collect::<Vec<Cell<Slot>>>();
-
-    let frame = Frame::empty();
-
-    let mut interpreter = Interpreter::new(Rc::new(OnceCell::from(builtins)), frame);
-
     let mut export_default = OnceCell::new();
 
-    let mut results = Vec::with_capacity(module.globals.len());
-
-
-    for (i, (export_clause, variable_declaration)) in module.globals.iter().enumerate() {
-        if export_clause.is_default() {
-            if export_default.set(i).is_err() {
-                panic!("Multiple default exports");
+    let mut interpreter = Interpreter::new(module.used_builtins, Frame::empty());
+    for item in module.body {
+        match item {
+            ModuleItem::ImportDeclaration(_) => unimplemented!("import"),
+            ModuleItem::ModuleDeclaration(decl) => {
+                let slot = eval_local_declaration(&mut interpreter, &decl.declaration)?;
+                if decl.export_clause == ExportClause::ExportDefault {
+                    export_default.set(slot);
+                }
             }
         }
-
-        results.push(eval_declaration(&mut interpreter, i.try_into().unwrap(), variable_declaration)?);
-    };
-
-    if export_default.get().is_some() {
-        return Completion::Value(results[*export_default.get().unwrap()].clone());
     }
-
-    Completion::Value(results.last().unwrap().clone())
+    
+    if let Some(default) = export_default.get() {
+        Completion::Value(default.clone())
+    } else {
+        Completion::Normal
+    }
 }

@@ -9,6 +9,7 @@ pub mod assignment;
 pub mod object;
 pub mod module;
 pub mod variable;
+pub mod declaration;
 //pub mod t;
 //pub mod t;
 
@@ -20,3 +21,5 @@ pub use function::*;
 pub use assignment::*;
 pub use object::*;
 pub use variable::*;
+pub use declaration::*;
+pub use module::*;

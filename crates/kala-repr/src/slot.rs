@@ -271,17 +271,18 @@ impl Slot {
         unsafe { &mut self.constant.0 }
     }
 
-    pub fn as_function(&self) -> Option<&Function> {
+    pub fn call(&self, frame: &mut Frame, arguments: &mut Vec<Slot>) -> Completion {
         if self.is_uninitialized() {
             panic!("uninitialized slot")
         }
 
         match self.get_tag() {
             SlotTag::Reference => match self.unwrap_reference() {
-                Reference::Function(function) => Some(function),
-                _ => None,
+                Reference::Function(function) => (function.function)(frame, arguments.clone()),
+                Reference::NativeFunction(_, function) => function(&mut arguments[..]),
+                _ => Completion::Throw(Slot::new_string(SharedString::from_str("TypeError: not a function"))),
             },
-            _ => None,
+            _ => Completion::Throw(Slot::new_string(SharedString::from_str("TypeError: not a function"))),
         }
     }
 

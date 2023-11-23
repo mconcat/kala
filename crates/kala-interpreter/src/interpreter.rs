@@ -1,7 +1,7 @@
 
 use std::{rc::Rc, cell::{OnceCell, Cell}};
 
-use jessie_ast::{VariableIndex, DeclarationIndex, PropertyAccess};
+use jessie_ast::{VariableIndex};
 use kala_repr::{slot::Slot, function::{Frame}};
 
 
@@ -73,7 +73,7 @@ impl BlockFlag {
 }
 */
 pub struct Interpreter {
-    pub(crate) builtins: Rc<OnceCell<Vec<Cell<Slot>>>>,
+    pub(crate) builtins: Vec<Slot>,
    // pub(crate) stack: &'a mut Stack,
     pub(crate) current_frame: Frame,
 }
@@ -91,7 +91,7 @@ impl Drop for Interpreter {
 }
 */
 impl Interpreter {
-    pub fn new(builtins: Rc<OnceCell<Vec<Cell<Slot>>>>, current_frame: Frame) -> Self {
+    pub fn new(builtins: Vec<Slot>, current_frame: Frame) -> Self {
         Interpreter {
             builtins,
             current_frame,
@@ -100,24 +100,19 @@ impl Interpreter {
 
     pub fn empty() -> Self {
         Interpreter {
-            builtins: Rc::new(OnceCell::new()),
+            builtins: Vec::new(),
             current_frame: Frame::empty(),
         }
     }
 
+    
     pub fn fetch_variable(&mut self, index: VariableIndex) -> Option<&mut Slot> {
-        let mut var = match index.declaration_index {
-            DeclarationIndex::Capture(index) => self.current_frame.get_capture(index as usize),
-            DeclarationIndex::Local(index) => self.current_frame.get_local(index as usize),
-            DeclarationIndex::Parameter(index) => self.current_frame.get_argument(index as usize),
-            DeclarationIndex::Builtin(index) => unsafe{&mut*self.builtins.get().unwrap().get(index as usize).unwrap().as_ptr()},
-        };
-
-        for property in index.property_access {
-            var = match property {
-                PropertyAccess::Element(elem) => var.get_element(elem.try_into().unwrap())?,
-                PropertyAccess::Property(prop) => var.get_property(&prop.dynamic_property)?,
-            }
+        let var = match index {
+            VariableIndex::Capture(index) => self.current_frame.get_capture(index as usize),
+            VariableIndex::Local(index) => self.current_frame.get_local(index as usize),
+            VariableIndex::Parameter(index) => self.current_frame.get_argument(index as usize),
+            VariableIndex::Static(index) => self.builtins.get_mut(index as usize).unwrap(),
+            VariableIndex::Unknown => unreachable!("Unknown variable index")
         };
 
         Some(var)

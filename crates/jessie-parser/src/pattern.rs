@@ -70,7 +70,7 @@ fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
             */
         }
         _ => {
-            let var = state.scope.use_variable(&key);
+            let var = state.scope.use_variable(key.clone());
             let field = Box::new(Field::new_dynamic(key));
             Ok(PropParam::Shorthand(field, Box::new(var)))
         }

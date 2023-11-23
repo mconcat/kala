@@ -1,4 +1,6 @@
-use crate::{operation::*, Function, Record, Assignment,  VariablePointer, Field, Pattern, PropDef};
+use std::rc::Rc;
+
+use crate::{operation::*, Function, Record, Assignment, Field, Pattern, PropDef, Variable};
 use utils::{SharedString, FxMap, Map};
 use sha3::{Digest, Sha3_256};
 
@@ -30,7 +32,7 @@ pub enum Expr {
     DataLiteral(Box<DataLiteral>) = ExprDiscriminant::DataLiteral as u8,
     Array(Box<Array>) = ExprDiscriminant::Array as u8,
     Record(Box<Record>) = ExprDiscriminant::Record as u8,
-    Function(Box<Function>) = ExprDiscriminant::Function as u8,
+    Function(Rc<Function>) = ExprDiscriminant::Function as u8,
     Assignment(Box<Assignment>) = ExprDiscriminant::Assignment as u8,
     CondExpr(Box<CondExpr>) = ExprDiscriminant::CondExpr as u8,
     BinaryExpr(Box<BinaryExpr>) = ExprDiscriminant::BinaryExpr as u8,
@@ -38,7 +40,7 @@ pub enum Expr {
     CallExpr(Box<CallExpr>) = ExprDiscriminant::CallExpr as u8,
     // QuasiExpr() = 10
     ParenedExpr(Box<Expr>) = ExprDiscriminant::ParenedExpr as u8,
-    Variable(Box<VariablePointer>) = ExprDiscriminant::Variable as u8,
+    Variable(Box<Variable>) = ExprDiscriminant::Variable as u8,
     Spread(Box<Expr>) = ExprDiscriminant::Spread as u8, // for array elements
 }
 

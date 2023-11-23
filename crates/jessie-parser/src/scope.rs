@@ -1,299 +1,306 @@
-use std::{cell::{RefCell, OnceCell}, rc::Rc};
+use std::{io::empty, rc::{Rc, self}};
 
-use fxhash::FxHashMap;
-use jessie_ast::{Expr, VariableCell, Pattern, PropertyAccess, PropParam, VariableIndex, Function, DeclarationIndex, VariablePointer, OptionalPattern, ParameterDeclaration, LValueOptional, PatternVisitor, FunctionDeclarations, LocalDeclaration};
-use utils::{SharedString, Map, FxMap};
-use crate::{map::VariablePointerMap};
+use jessie_ast::{Variable, Declaration, Pattern, Expr, variable, VariableIndex, PropParam, LValueOptional, Function, Block, VariableDeclaration};
+use utils::{SharedSlice, SharedString, Map, MapPool, VectorMap, FxMap};
 
-pub struct DeclarationVisitor<'a> {
-    scope: &'a mut LexicalScope,
-    is_hoisting_allowed: bool,
-}
-
-impl<'a> PatternVisitor for DeclarationVisitor<'a> {
-    fn visit(&mut self, index: DeclarationIndex, name: SharedString, property_access: Vec<PropertyAccess>) -> Option<()> {
-        self.scope.declare(name.clone(), index, &property_access, self.is_hoisting_allowed)
-    }
-}
-
-
+use crate::map::{VariableMap, VariableMapPool, self};
 
 #[derive(Debug)]
-pub struct LexicalScope {
-    pub declarations: FunctionDeclarations,
-    pub variables: VariablePointerMap,
+pub struct ModuleScope {
+    pub function_scopes: Vec<FunctionScope>,
+
+    map_pool: VariableMapPool,
 }
 
-impl LexicalScope {
-    pub fn new(declarations: FunctionDeclarations , variables: VariablePointerMap) -> Self {
-        Self {
-            declarations,
-            variables,
+impl ModuleScope {
+    pub fn new() -> Self {
+        let mut map_pool = VariableMapPool::new();
+
+        ModuleScope {
+            // implicity initial top level function scope
+            function_scopes: vec![FunctionScope{
+                functions: vec![],
+                declarations: vec![],
+                declared_variables: vec![],
+                block_scopes: vec![BlockScope{
+                    variables_map: map_pool.get(),
+                    block_id: 0,
+                }],
+                block_id: 0,
+            }],
+            map_pool,
         }
     }
 
-    // Replaces both declarations and variable trie
-    pub fn enter_function_scope(&mut self, variables: VariablePointerMap) -> Self {
-        std::mem::replace(self, Self {
-            declarations: FunctionDeclarations::empty(),
-            variables,
-        })
+    pub fn declare_const(&mut self, decl: Vec<(Pattern, Option<Expr>)>) -> Option<Declaration> {
+        self.get_function_scope().declare_const(decl)
     }
 
-    pub fn exit_function_scope(&mut self, parent: Self) -> Self {
-        std::mem::replace(self, parent)
+    pub fn declare_let(&mut self, decl: Vec<(Pattern, Option<Expr>)>) -> Option<Declaration> {
+        self.get_function_scope().declare_let(decl)
     }
 
-    // Preserves declarations, only resets variable trie
-    pub fn replace_variable_map(&mut self, variables: VariablePointerMap) -> VariablePointerMap {
-        std::mem::replace(&mut self.variables, variables)
-    }
-/* 
-    // Replaces itself with an empty lexical scope(parent declarations and empty variable trie)
-    // Returns lexical scope with empty declarations and parent variable trie
-    pub fn replace_with_child(&mut self, variables: Map<VariablePointer>) -> Self {
-        let parent_variables = std::mem::replace(&mut self.variables, variables);
-
-        Self {
-            declarations: Vec::new(),
-            variables: parent_variables,
-        }
+    pub fn declare_function(&mut self, function: Function) -> Option<Declaration> {
+        self.get_function_scope().declare_function(function)
     }
 
-    pub fn recover_parent(&mut self, parent: Self) -> Map<VariablePointer> {
-        std::mem::replace(&mut self.variables, parent.variables)
-    }
-*/
-
-    fn declare(&mut self, name: SharedString, declaration_index: DeclarationIndex, property_access: &Vec<PropertyAccess>, is_hoisting_allowed: bool) -> Option<()> {
-        println!("declare environment variables: {:?}", self.variables);
-        if let Some(cell) = self.variables.get(name.clone()) {
-            if cell.is_uninitialized() {
-                println!("declare uninitialized {:?} {:?}", name, cell);
-                // variable is in its first occurance
-                return cell.set(declaration_index, property_access.clone()).ok()
-            }
-
-            println!("declare exists {:?} {:?}", name, cell);
-            // Variable has been occured in this scope
-            // hoisting
-
-            if is_hoisting_allowed {
-                if cell.set(declaration_index, property_access.clone()).is_err() {
-                    // Variable has been declared, redeclaration is not allowed
-                    return None
-                }
-            } else {
-                // XXX
-                // for now, only the parameter declarations are not allowed to be hoisted,
-                // however the use_variable call inside param() makes sort of "usage" before the declaration,
-                // so we just proceed, super adhoc, need to be fixed later
-                if cell.set(declaration_index, property_access.clone()).is_err() {
-                    // Variable has been declared, redeclaration is not allowed
-                    return Some(()) // XXXXXXX
-                }
-
-                // Is there even a case where a variable cannot be hoisted??? 
-
-                // hoisting is not allowed, variable usage cannot come before the declaration
-                // return None
-            }
-
-            Some(())
-        } else {
-            unreachable!("variable should have been occured in the left side of the declaration, logic error")
-            /* 
-            println!("declare not exists {:?}", name);
-            // Variable has not been occured in this scope
-            let cell = VariablePointer::initialized(declaration_index, &property_access);
-            self.variables.insert(name, cell.clone());
-
-            Some(())
-            */
-        }
-    }
-/* 
-    fn visit_pattern(&mut self, pattern: &Pattern, declaration_index: DeclarationIndex, is_hoisting_allowed: bool) -> Option<()> {
-        let mut property_access = Vec::new();
-        self.visit_pattern_internal(pattern, declaration_index, &mut property_access, is_hoisting_allowed)
+    pub fn use_variable(&mut self, name: SharedString) -> Variable {
+        self.get_function_scope().use_variable(name)
     }
 
-    fn visit_pattern_internal(&mut self, pattern: &Pattern, declaration_index: DeclarationIndex, property_access: &mut Vec<PropertyAccess>, is_hoisting_allowed: bool) -> Option<()> {
-
-        match pattern {
-            Pattern::Rest(x) => unimplemented!("Rest pattern is not supported yet"),
-            Pattern::Optional(opt) => {
-                unimplemented!("Optional pattern is not supported yet")
-                /* 
-                let OptionalPattern(_, jessie_ast::LValueOptional::Variable(var), default) = *opt;
-                self.declare(&name, declaration_index, property_access, Some(init), is_hoisting_allowed)
-                */
-            }
-            Pattern::ArrayPattern(elements) => {
-                let mut index = 0;
-                for element in &elements.0 {
-                    property_access.push(PropertyAccess::Element(index));
-                    self.visit_pattern_internal(element, declaration_index.clone(), property_access, is_hoisting_allowed)?;
-                    property_access.pop();
-                    index += 1;
-                }
-                Some(())
-            }
-            Pattern::RecordPattern(props) => {
-                for prop in &props.0 {
-                    match prop {
-                        PropParam::Shorthand(field, var) => {
-                            property_access.push(PropertyAccess::Property(field.clone()));
-                            
-                            property_access.pop();
-                        }
-                        PropParam::KeyValue(field, value) => {
-                            property_access.push(PropertyAccess::Property(field.clone()));
-                            self.visit_pattern_internal(&value, declaration_index.clone(), property_access, is_hoisting_allowed)?;
-                            property_access.pop();
-                        }
-                        /* 
-                        PropParam::Optional(name, init) => {
-                            access.push_str(name.as_str());
-                            self.declare(&name, declaration_index, property_access, Some(init), is_hoisting_allowed)?;
-                        }
-                        */
-                        PropParam::Rest(name) => {
-                            unimplemented!("Rest property is not supported yet")
-                        }
-                    }
-                }
-
-                Some(())
-            }
-            Pattern::Variable(var) => {
-                // The variable declarations are already set by the caller, but it is 
-                
-            }
-        }
+    fn get_function_scope(&mut self) -> &mut FunctionScope {
+        self.function_scopes.last_mut().unwrap()
     }
-*/
-    pub fn declare_parameter(&mut self, pattern: Pattern, result: &mut Vec<ParameterDeclaration>) -> Option<()> {
-        let param_index = result.len() as u32;
-        println!("declare_parameter {:?} {:?}", pattern, param_index);
-        let decl = match pattern {
-            Pattern::Optional(pat) => {
-                let OptionalPattern(_, LValueOptional::Variable(var), default) = *pat;
-                self.declare_optional_parameter(var.name, default, param_index)?
-            }
-            Pattern::Rest(pat) => unimplemented!("Rest parameter is not supported yet"),
-            Pattern::Variable(var) => self.declare_variable_parameter(var.name, param_index)?,
-            Pattern::ArrayPattern(_) => self.declare_pattern_parameter(&pattern, param_index)?,
-            Pattern::RecordPattern(_) => self.declare_pattern_parameter(&pattern, param_index)?,
+
+    pub fn enter_function(&mut self) {
+        let mut function_scope = FunctionScope {
+            functions: vec![],
+            declarations: vec![],
+            declared_variables: vec![],
+            block_scopes: vec![],
+            block_id: 0,
         };
-        result.push(decl);
-        Some(()) 
+
+        self.function_scopes.push(function_scope);
+
+        self.enter_block();
     }
 
-    pub fn declare_parameters(&mut self, patterns: Vec<Pattern>, result: &mut Vec<ParameterDeclaration>) -> Option<()> {
-        for pattern in patterns.into_iter() {
-            self.declare_parameter(pattern, result)?;
+    pub fn initialize_parameters(&mut self, parameters: &Vec<Pattern>) {
+        let mut param_index = 0;
+
+        for param in parameters {
+            match param {
+                Pattern::Variable (var) => {
+                    match self.get_function_scope().get_variable(&var.name).unwrap().index.get() {
+                        VariableIndex::Unknown => {
+                            var.set_parameter_index(param_index);
+                        }
+                        VariableIndex::Parameter(_) => unimplemented!("Duplicate parameter"),
+                        VariableIndex::Local(_) => unreachable!("Local variable cannot be parameter"),
+                        VariableIndex::Capture(_) => unreachable!("Captured variable cannot be parameter"), 
+                        VariableIndex::Static(_) => unreachable!("Static variable cannot be parameter"),
+                    }
+                    var.set_parameter_index(param_index);
+
+                    // function_scope.block_scope().variables_map.insert(var.name, Variable::new(var.name, VariableIndex::Parameter(param_index), function_scope.current_block_id())).unwrap()
+                    param_index += 1;
+                }
+                _ => unimplemented!("Pattern parameter"),
+            };
+
         }
+    }
+
+    pub fn exit_function(&mut self) -> (Vec<(Variable, Rc<Function>)>, Vec<Variable>, Vec<Variable>) {
+        let BlockScope{mut variables_map, ..} = self.get_function_scope().block_scopes.pop().unwrap();
+        let FunctionScope{mut declarations, mut declared_variables, functions, ..} = self.function_scopes.pop().unwrap();
+
+        let mut captures = vec![];
+
+        for (_, var) in self.map_pool.drain(variables_map) {
+            match var.index.get() {
+                VariableIndex::Unknown => {
+                    var.set_capture_index(captures.len() as u32);
+
+                    captures.push(self.get_function_scope().use_variable(var.name.clone())) 
+                }
+                _ => (),
+            }
+        }
+
+        (functions, declared_variables, captures)
+    }
+
+    pub fn enter_block(&mut self) {
+        let variables_map = self.map_pool.get();
+
+        let block_scope = BlockScope {
+            variables_map,
+            block_id: self.get_function_scope().block_id,
+        };
+
+        self.get_function_scope().block_scopes.push(block_scope);
+
+        self.get_function_scope().block_id += 1;
+    }
+
+    pub fn exit_block(&mut self) {
+        let mut block_scope = self.get_function_scope().block_scopes.pop().unwrap();
+
+        for (name, mut var) in self.map_pool.drain(block_scope.variables_map) {
+            if var.index.get() == VariableIndex::Unknown {
+                if let Some(existing_var) = self.get_function_scope().get_variable(&name) {
+                    var.index = existing_var.index.clone();
+                } else {
+                    self.get_function_scope().block_scope().variables_map.insert(name, var);
+                }
+            }
+        }
+    }
+
+    pub fn exit_module<T: Clone>(&mut self, builtins: &mut FxMap<T>) -> Vec<T> {
+        assert!(self.function_scopes.len() == 1);
+
+        let BlockScope{mut variables_map, ..} = self.get_function_scope().block_scopes.pop().unwrap();
+        let FunctionScope{mut declarations, mut declared_variables, functions, ..} = self.function_scopes.pop().unwrap();
+
+        // settle undeclared(capture) variables
+        let mut used_builtins: Vec<T> = Vec::new();
+        let mut used_builtins_map: FxMap<Variable> = FxMap::new();
+
+        for (_, mut used_var) in self.map_pool.drain(variables_map) {
+            if used_var.index.get() != VariableIndex::Unknown {
+                // pass if already bound
+                continue
+            }
+            if let Some(builtin_var) = used_builtins_map.get(used_var.name.clone()) {
+                used_var.index.set(builtin_var.index.get());
+                continue
+            }
+            let index = used_builtins.len();
+            used_var.set_static_index(index as u32);
+            used_builtins.push(builtins.get(used_var.name.clone()).unwrap().clone());
+            used_builtins_map.insert(used_var.name.clone(), used_var);
+        }
+
+        used_builtins
+    }
+}
+
+#[derive(Debug)]
+pub struct FunctionScope {
+    pub declarations: Vec<Declaration>,
+    pub functions: Vec<(Variable, Rc<Function>)>,
+    pub declared_variables: Vec<Variable>, // as declared order, corresponds to VariableIndex::Local
+    pub block_scopes: Vec<BlockScope>,
+    pub block_id: u32, // current block scope id, introduced to distinguish variables with same name across different scopes
+}
+
+#[derive(Debug)]
+pub struct BlockScope {
+    pub block_id: u32,
+    pub variables_map: VariableMap, // any variables occured in this scope, regardless of declaration
+}
+
+impl FunctionScope {
+    fn block_scope(&mut self) -> &mut BlockScope {
+        self.block_scopes.last_mut().unwrap()
+    }
+
+    fn current_block_id(&self) -> u32 {
+        self.block_scopes.last().unwrap().block_id
+    }
+
+    fn get_variable(&mut self, name: &SharedString) -> Option<&mut Variable> {
+        self.block_scope().variables_map.get(name.clone())
+    }
+
+    fn hoist_declare(&mut self, name: SharedString) -> Variable {
+        let var = Variable::unknown(name.clone(), self.current_block_id());
+        self.block_scope().variables_map.insert(name, var.clone());
+        var
+    }
+
+    pub fn use_variable(&mut self, name: SharedString) -> Variable {
+        if let Some(var) = self.get_variable(&name) {
+            var.clone()
+        } else {
+            self.hoist_declare(name)
+        }
+    }
+
+    fn declare_variable(&mut self, var: &mut Variable) -> Option<()> {
+        if let Some(existing_var) = self.get_variable(&var.name).cloned() {
+            match existing_var.index.get() {
+                VariableIndex::Unknown => {
+                    // Variable has been used before declaration
+                    existing_var.set_local_index(self.declared_variables.len().try_into().unwrap());
+                    self.declared_variables.push(existing_var.clone());
+                    *var = existing_var.clone();
+                    return Some(())
+                }
+                _ => {
+                    // Variable has been declared before
+                    // duplicate declaration
+                    return None;
+                }
+            }
+        }
+
+        // declared for the first time
+        var.set_local_index(self.declared_variables.len().try_into().unwrap());
+        self.declared_variables.push(var.clone());
+        self.block_scope().variables_map.insert(var.name.clone(), var.clone());
         Some(())
     }
 
-    pub fn declare_variable_parameter(&mut self, name: SharedString, index: u32) -> Option<ParameterDeclaration> {
-        let decl = ParameterDeclaration::Variable { name: name.clone() };
-        self.declare(name, DeclarationIndex::Parameter(index as u32), &vec![], false)?;
+    fn declare_item(&mut self, pattern: &mut Pattern) -> Option<()> {
+        match pattern {
+            Pattern::Variable(ref mut var) => {
+                self.declare_variable(var)?;
+                Some(())
+            }
+            Pattern::ArrayPattern(items) => {
+                for item in &mut items.0 {
+                    self.declare_item(item)?;
+                }
+                Some(())
+            }
+            Pattern::RecordPattern(items) => {
+                for item in &mut items.0 {
+                    match item {
+                        PropParam::KeyValue(key, ref mut value) => self.declare_item(value),
+                        PropParam::Shorthand(key, ref mut var) => self.declare_variable(var),
+                        PropParam::Rest(ref mut var) => self.declare_variable(var)
+                    }?
 
-        Some(decl)
-    }
-
-    pub fn declare_pattern_parameter(&mut self, pattern: &Pattern, param_index: u32) -> Option<ParameterDeclaration> {
-        let decl = ParameterDeclaration::Pattern { 
-            pattern: pattern.clone(),
-        };
-
-        pattern.visit(DeclarationIndex::Parameter(param_index), &mut DeclarationVisitor {
-            scope: self,
-            is_hoisting_allowed: false,
-        })?;
-
-        Some(decl)
-    }
-
-    pub fn declare_optional_parameter(&mut self, name: SharedString, default: Expr, index: u32) -> Option<ParameterDeclaration> {
-        let decl = ParameterDeclaration::Optional { name: name.clone(), default };
-        self.declare(name, DeclarationIndex::Parameter(index), &vec![], false)?;
-
-        Some(decl)
-    }
-
-    pub fn declare_let(&mut self, pattern: &Pattern, value: Option<Expr>) -> Option<(u32, Rc<LocalDeclaration>)> {
-        let index = self.declarations.locals.len() as u32;
-
-        println!("declare_let {:?} {:?}", pattern, index);
-        pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
-            scope: self,
-            is_hoisting_allowed: true,
-        })?;
-
-        let decl = Rc::new(LocalDeclaration::Let {
-            pattern: pattern.clone(),
-            value,
-        });
-        self.declarations.locals.push(decl.clone());
-
-        Some((index, decl))
-    }
-
-    pub fn declare_const(&mut self, pattern: Pattern, value: Expr) -> Option<(u32, Rc<LocalDeclaration>)> {
-        let index = self.declarations.locals.len() as u32;
-
-        pattern.visit(DeclarationIndex::Local(index as u32), &mut DeclarationVisitor {
-            scope: self,
-            is_hoisting_allowed: true,
-        })?;
-
-        let decl = Rc::new(LocalDeclaration::Const {
-            pattern,
-            value,
-        });
-        self.declarations.locals.push(decl.clone());
-
-
-        Some((index, decl))
-    }
-
-    pub fn declare_function(&mut self, function: Function) -> Option<(u32, Rc<LocalDeclaration>)> {
-        if !function.name.is_named() {
-            return None
-        }
-
-        let index = self.declarations.locals.len() as u32;
-        let function_name = function.name.clone();
-        let decl = Rc::new(LocalDeclaration::Function {
-            function: Box::new(function),
-        });
-        self.declarations.locals.push(decl.clone());
-
-        self.declare(function_name.get_name().unwrap().clone(), DeclarationIndex::Local(index as u32), &vec![], true)?;
-
-        Some((index, decl))
-    }
-
-    pub fn use_variable(&mut self, name: &SharedString) -> VariableCell {
-        if let Some(ptr) = self.variables.get(name.clone()) {
-            println!("exists {:?} {:?}", name, ptr);
-            ptr.clone().new_cell(name.clone())
-        } else {
-            println!("not exists {:?}", name);
-            let ptr = VariablePointer::new();
-            self.variables.insert(name.clone(), ptr.clone());
-            ptr.new_cell(name.clone())
+                }
+                Some(())
+            }
+            Pattern::Optional(pattern) => {
+                match &mut pattern.1 {
+                    LValueOptional::Variable(ref mut var) => {
+                        self.declare_variable(var)
+                    }
+                }
+            }
+            Pattern::Rest(pattern) => {
+                self.declare_item(&mut *pattern)
+            }
         }
     }
+    // similar with declare_variable but does not check existing declaration and does not push to the declared_variables
+    pub fn declare_parameter(&mut self, var: &mut Variable) {
+    }
+        
 
-    pub fn assert_equivalence(&mut self, name: SharedString, mut var: VariablePointer) {
-        if let Some(ptr) = self.variables.get(name.clone()) {
-            var.overwrite(ptr);
-        } else {
-            self.variables.insert(name.clone(), var);
+    pub fn declare_function(&mut self, function: Function) -> Option<Declaration> {
+        let mut var = Variable::unknown(function.name.get_name().unwrap().clone(), self.current_block_id());
+        self.declare_variable(&mut var)?;
+
+        let rc_function = Rc::new(function);
+
+        self.functions.push((var, rc_function.clone()));
+
+        Some(Declaration::Function(rc_function))
+    }
+
+    pub fn declare_const(&mut self, pattern: Vec<(Pattern, Option<Expr>)>) -> Option<Declaration> {
+        let mut decls = Vec::with_capacity(pattern.len());
+        for (ref mut item, init) in pattern {
+            self.declare_item(item)?;
+            decls.push(VariableDeclaration{pattern: item.clone(), value: init.clone()})
         }
+        Some(Declaration::Const(Rc::new(decls)))
+    }
+
+    pub fn declare_let(&mut self, pattern: Vec<(Pattern, Option<Expr>)>) -> Option<Declaration> {
+        let mut decls = Vec::with_capacity(pattern.len());
+        for (ref mut item, init) in pattern {
+            self.declare_item(item)?;
+            decls.push(VariableDeclaration{pattern: item.clone(), value: init.clone()})
+        }
+        Some(Declaration::Let(Rc::new(decls)))
     }
 }

@@ -1,7 +1,7 @@
 use core::panic;
-use std::mem::replace;
+use std::{mem::replace, rc::Rc};
 
-use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, CaptureDeclaration, LValue, UnaryExpr, Assignment, DeclarationIndex, LValueCallPostOp, VariableIndex};
+use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, LValue, UnaryExpr, Assignment,  LValueCallPostOp, VariableIndex, Variable};
 use kala_repr::{slot::Slot, object::Property, completion::Completion};
 
 use crate::{interpreter::Interpreter, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}, statement::eval_block};
@@ -13,14 +13,14 @@ pub fn eval_expr(interpreter: &mut Interpreter, expr: &Expr) -> Completion {
         Expr::DataLiteral(lit) => eval_literal(lit),
         Expr::Array(array) => eval_array(interpreter, array),
         Expr::Record(obj) => eval_record(interpreter, obj),
-        Expr::Function(func) => eval_function(interpreter, (**func).clone()),
+        Expr::Function(func) => eval_function(interpreter, func.clone()),
         Expr::Assignment(assignment) => eval_assignment(interpreter, assignment),
         Expr::CondExpr(cond) => eval_cond(interpreter, cond),
         Expr::BinaryExpr(binary) => eval_binary(interpreter, binary),
         Expr::UnaryExpr(unary) => eval_unary(interpreter, unary),
         Expr::CallExpr(call) => eval_call(interpreter, call),
         Expr::ParenedExpr(parened) => eval_expr(interpreter, &*parened),
-        Expr::Variable(index) => eval_variable(interpreter, index.get()),
+        Expr::Variable(var) => eval_variable(interpreter, var.as_ref().clone()),
         Expr::Spread(spread) => unreachable!("Spread should be handled by eval_array"),
     }
 }
@@ -61,10 +61,10 @@ fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Completion {
                     value: eval_expr(interpreter, &value)?,
                 });
             }
-            PropDef::Shorthand(key, index) => {
+            PropDef::Shorthand(key, var) => {
                 props.push(Property{
                     key: key.dynamic_property.clone(),
-                    value: eval_variable(interpreter, index.get())?,
+                    value: eval_variable(interpreter, var.as_ref().clone())?,
                 });
             }
             PropDef::Spread(spread) => unimplemented!("spread in record literal")
@@ -86,20 +86,18 @@ fn exit_function(interpreter: &mut Interpreter, arguments_len: usize, captures_l
 }
 */
 
-fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
-    let captures: Vec<Slot> = func.declarations.captures.into_iter().map(|capture| {
-        let variable = interpreter.fetch_variable(capture.variable.get());
+fn eval_function(interpreter: &mut Interpreter, func: Rc<Function>) -> Completion {
+    let mut captures = Vec::with_capacity(func.captures.len());
+
+    for capture in &func.captures {
+        let variable = interpreter.fetch_variable(capture.index.get());
         if variable.is_none() {
             panic!("should have variable");
         }
-        variable.unwrap().clone()
+        captures.push(variable.unwrap().clone());
     }
-    ).collect();
 
     //let mut local_initializers: Vec<Option<Box<dyn FnOnce(&mut Frame) -> Completion>>> = Vec::with_capacity(func.locals.len());
-
-    let statements = func.statements.clone();
-
     let builtins = interpreter.builtins.clone();
 
     let function = Slot::new_function(func.name.get_name().cloned(), Box::new(move |frame, arguments| {
@@ -108,18 +106,22 @@ fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
         frame.slots.extend(arguments);
 
         // enter function frame with captures and locals
-        let recovery = frame.enter_function_frame(captures.clone(), func.declarations.locals.len());
+        let recovery = frame.enter_function_frame(captures.clone(), func.locals.len());
         let frame_value = std::mem::take(frame);
 
-        // hoist(pre-declare) function declarations
-        // TODO
-        // 
 
         let mut function_interpreter = Interpreter {
             builtins: builtins.clone(),
             current_frame: frame_value, 
         };
-        let result = eval_block(&mut function_interpreter, &statements);
+
+        // hoist(pre-declare) function declarations
+        for (var, local_function) in &func.functions {
+            let local_evaluated_function = eval_function(&mut function_interpreter, local_function.clone())?;
+            *function_interpreter.current_frame.get_local(var.index.get().unwrap_local() as usize) = local_evaluated_function;
+        }
+
+        let result = eval_block(&mut function_interpreter, &func.statements);
 
         let _ = replace(frame, function_interpreter.current_frame);
 
@@ -134,7 +136,7 @@ fn eval_function(interpreter: &mut Interpreter, func: Function) -> Completion {
 
 fn lvalue<'a>(interpreter: &'a mut Interpreter, lvalue: &LValue) -> Option<Slot> {
     match lvalue {
-        LValue::Variable(index) => interpreter.fetch_variable(index.get()).cloned().into(),
+        LValue::Variable(var) => interpreter.fetch_variable(var.index.get()).cloned().into(),
         LValue::CallLValue(expr) => {
             let res_eval = eval_expr(interpreter, &expr.expr);
             let mut res = match res_eval {
@@ -172,11 +174,12 @@ fn lvalue<'a>(interpreter: &'a mut Interpreter, lvalue: &LValue) -> Option<Slot>
 fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Completion {
     let mut lvalue = match lhs {
         LValue::Variable(var) => {
-            match var.get().declaration_index {
-                DeclarationIndex::Local(index) => interpreter.current_frame.get_local(index as usize),
-                DeclarationIndex::Capture(index) => interpreter.current_frame.get_capture(index as usize),
-                DeclarationIndex::Parameter(index) => interpreter.current_frame.get_argument(index as usize),
-                DeclarationIndex::Builtin(_) => panic!("cannot assign to builtin")
+            match var.index.get() {
+                VariableIndex::Local(index) => interpreter.current_frame.get_local(index as usize),
+                VariableIndex::Capture(index) => interpreter.current_frame.get_capture(index as usize),
+                VariableIndex::Parameter(index) => interpreter.current_frame.get_argument(index as usize),
+                VariableIndex::Static(_) => todo!("static variable assignment"),
+                VariableIndex::Unknown => unreachable!("Unknown variable index")
             }
         }
 
@@ -335,9 +338,7 @@ fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Comple
     for arg_completion in argument_completions {
         arguments.push(arg_completion?)
     }
-    let closure = callee.as_function()?;
-
-    let result = (*closure.function)(&mut interpreter.current_frame, arguments);
+    let result = callee.call(&mut interpreter.current_frame, &mut arguments);
 
     match result {
         Completion::Return(slot) => Completion::Value(slot),
@@ -347,6 +348,6 @@ fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Comple
     }
 }
 
-fn eval_variable(interpreter: &mut Interpreter, index: VariableIndex) -> Completion {
-    Completion::Value(interpreter.fetch_variable(index).map(|slot| slot.clone())?)
+fn eval_variable(interpreter: &mut Interpreter, var: Variable) -> Completion {
+    Completion::Value(interpreter.fetch_variable(var.index.get()).map(|slot| slot.clone())?)
 }

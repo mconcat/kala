@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use jessie_ast::*;
 use crate::{jessie_parser::{JessieParserState, repeated_elements}, Token, statement::block_raw, expression::{prop_name, expression}, common::use_variable, parser, pattern::{pattern, param}};
 
@@ -27,27 +29,31 @@ pub fn function_expr(state: &mut ParserState) -> Result<Function, ParserError> {
 pub fn function_internal(state: &mut ParserState, name: FunctionName) -> Result<Function, ParserError> {
 
     println!("function_internal");
-    let parent_scope = state.enter_function_scope();
+    state.scope.enter_function();
     
-    let parameter_patterns = repeated_elements
-    (state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
 
-    let mut parameters = Vec::with_capacity(parameter_patterns.len());
-    state.scope.declare_parameters(parameter_patterns, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
+    let parameters = repeated_elements
+    (state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
 
     println!("parameters {:?}", parameters);
     println!("scope {:?}", state.scope);
+
+    state.scope.initialize_parameters(&parameters);
+
 
     // TODO: spread parameter can only come at the end
 
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
             let statements = Block { statements: block_raw(state)? };
-            let declarations = state.exit_function_scope(parent_scope);
+            let (functions, locals, captures) = state.scope.exit_function();
             let func = Function {
                 name,
-                declarations,
+                functions,
+                locals,
                 statements,
+                captures,
+                parameters,
             };
             Ok(func)
         },
@@ -76,7 +82,7 @@ pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
             */
         },
         Some(Token::Comma) | Some(Token::RightBrace) => {
-            let var = state.scope.use_variable(&prop_name.dynamic_property);
+            let var = state.scope.use_variable(prop_name.clone().dynamic_property);
             Ok(PropParam::Shorthand(prop_name, Box::new(var)))
         },
         Some(Token::QuasiQuote) => {
@@ -102,23 +108,25 @@ pub fn arrow_function_body(state: &mut ParserState) -> Result<Vec<Statement>, Pa
 }
 
 pub fn arrow_expr(state: &mut ParserState) -> Result<Expr, ParserError> { 
-    let params = repeated_elements(state, Some(Token::ArrowLeftParen), Token::ArrowRightParen, &param, true)?;
+    state.scope.enter_function();
+    let parameters = repeated_elements(state, Some(Token::ArrowLeftParen), Token::ArrowRightParen, &param, true)?;
     if !state.try_proceed(Token::FatArrow) {
         let la = state.lookahead_1();
         return state.err_expected("=>", la)
     }
-    let parent_scope = state.enter_function_scope();
-    let mut parameters = Vec::with_capacity(params.len());
-    state.scope.declare_parameters(params, &mut parameters).ok_or(ParserError::DuplicateDeclaration)?;
+    state.scope.initialize_parameters(&parameters);
 
     let statements = Block { statements: arrow_function_body(state)? };
-    let declarations = state.exit_function_scope(parent_scope);
+    let (functions, locals, captures) = state.scope.exit_function();
 
     let function = Function {
         name: FunctionName::Arrow,
-        declarations,
+        functions,
+        locals,
         statements,
+        parameters,
+        captures,
     };
 
-    Ok(Expr::Function(Box::new(function)))
+    Ok(Expr::Function(Rc::new(function)))
 }

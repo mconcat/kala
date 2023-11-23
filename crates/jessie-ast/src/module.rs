@@ -2,23 +2,24 @@ use std::rc::Rc;
 
 use utils::SharedString;
 
-use crate::LocalDeclaration;
+use crate::{Declaration, Statement};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ModuleBody {
-    pub builtins: Vec<SharedString>, // TODO: typify
-    pub globals: Vec<(ExportClause, Rc<LocalDeclaration>)>,
-    // pub imports: Vec<ImportDeclaration>,
+pub struct Script<T>{
+    pub used_builtins: Vec<T>,
+    pub statements: Vec<Statement>,
 }
 
-impl ModuleBody {
-    pub fn new() -> Self {
-        Self {
-            builtins: Vec::new(),
-            globals: Vec::new(),
-            // imports: Vec::new(),
-        }
-    }
+#[derive(Debug, PartialEq, Clone)]
+pub struct Module<T>{
+    pub used_builtins: Vec<T>,
+    pub body: Vec<ModuleItem>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ModuleItem {
+    ImportDeclaration(ImportDeclaration),
+    ModuleDeclaration(ModuleDeclaration),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -48,4 +49,10 @@ impl ExportClause {
             _ => false,
         }
     }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ModuleDeclaration {
+    pub export_clause: ExportClause,
+    pub declaration: Declaration,
 }

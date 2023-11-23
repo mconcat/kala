@@ -1,72 +1,27 @@
 use std::fmt::Debug;
+use std::mem::replace;
 use std::rc::Rc;
 
-use crate::map::{VariablePointerMapPool, VariablePointerMap};
+use crate::map::VariableMapPool;
 use crate::parser::{self, ParserState}; 
 use crate::lexer::{Token};
-use crate::scope::{LexicalScope};
+use crate::scope::{ModuleScope};
 use jessie_ast::*;
-use utils::{MapPool, FxMap};
+use utils::{MapPool, FxMap, Map};
 
 type ParserError = parser::ParserError<Option<Token>>;
 
 #[derive(Debug)]
 pub struct JessieParserState {
     pub state: ParserState<Token>,
-    pub scope: LexicalScope,
-    pub map_pool: VariablePointerMapPool,
+    pub scope: ModuleScope,
 }
 
 impl JessieParserState {
     pub fn new(tokens: Vec<Token>) -> JessieParserState {
-        let mut map_pool = VariablePointerMapPool::new();
         JessieParserState {
             state: ParserState::new(tokens),
-            scope: LexicalScope::new(FunctionDeclarations::empty(), map_pool.get()),
-            map_pool: VariablePointerMapPool::new(),
-        }
-    }
-
-    
-    pub fn enter_function_scope(&mut self) -> LexicalScope {
-        self.scope.enter_function_scope(self.map_pool.get())
-    }
-
-    pub fn exit_function_scope(&mut self, parent_scope: LexicalScope) -> FunctionDeclarations {
-        let LexicalScope{mut declarations, variables} = self.scope.exit_function_scope(parent_scope);
-        let mut ptrs = self.map_pool.drain(variables);
-        for (name, mut ptr) in ptrs {
-            println!("exit function scope {:?} {:?}", name, ptr);
-            if ptr.is_uninitialized() {
-                // used variable that is not locally declared, probably captured.
-                // make a capturing declaration targeting upper scope, set the local pointer to reference it
-                let capture_cell = VariableCell::uninitialized(name.clone());
-                let decl = CaptureDeclaration { name: name.clone(), variable: capture_cell.clone() };
-                let capture_index = DeclarationIndex::Capture(declarations.captures.len() as u32);
-                declarations.captures.push(decl);
-
-                // Set the ptr to reference the new declaration
-                ptr.set(capture_index.clone(), vec![]).unwrap();
-
-                // assert equivalence
-                self.scope.assert_equivalence(name, capture_cell.ptr);
-            }
-        }
-
-        declarations
-    }
-
-    pub fn enter_block_scope(&mut self) -> VariablePointerMap {
-        self.scope.replace_variable_map(self.map_pool.get())
-    }
-
-    pub fn exit_block_scope(&mut self, parent_variables: VariablePointerMap) {
-        let mut variables = self.scope.replace_variable_map(parent_variables);
-        let ptrs = self.map_pool.drain(variables);
-        for (name, ptr) in ptrs {
-            if ptr.is_uninitialized() {
-                self.scope.assert_equivalence(name, ptr/*TODO: optimize */);
-            }
+            scope: ModuleScope::new(),
         }
     }
 

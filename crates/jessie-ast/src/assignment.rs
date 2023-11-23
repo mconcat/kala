@@ -1,6 +1,6 @@
 use utils::SharedString;
 
-use crate::{Expr, VariablePointer};
+use crate::{Expr, Variable};
 use std::mem;
 
 #[repr(C)]
@@ -29,7 +29,7 @@ pub enum AssignOp {
 #[derive(Debug, PartialEq, Clone)]
 pub enum LValue {
     CallLValue(Box<CallLValue>) = 9,
-    Variable(Box<VariablePointer>) = 12,
+    Variable(Box<Variable>) = 12,
 }
 
 #[repr(u8)]

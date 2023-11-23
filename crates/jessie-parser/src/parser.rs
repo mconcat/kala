@@ -1,10 +1,6 @@
 use core::fmt::Debug;
 use std::rc::Rc;
 
-use jessie_ast::{VariableCell, DeclarationIndex, CaptureDeclaration, FunctionDeclarations};
-
-use crate::{scope::LexicalScope, map::VariablePointerMap, map::VariablePointerMapPool};
-
 extern crate utils;
 use utils::{FxMap, MapPool, FxMapPool, Map, SharedString};
 
@@ -342,28 +338,6 @@ impl<T: ToString+Clone+Debug+ToString+PartialEq> ParserState<T> {
         r
     }
     
-/* 
-    // used to parse variable names in context of declarations
-    pub pub fn def_var(&mut self) -> Result<String, String> {
-
-    }
-
-    // used to parse variable names in context of reference
-    pub pub fn use_var(&mut self) -> Result<String, String> {
-
-    }
-
-    // push one scope level
-    pub pub fn push_scope(&mut self) {
-
-    }
-
-    // pop one scope level, returning the innermost scope constructed
-    pub pub fn pop_scope(&mut self) -> Scope {
-
-    }
-    */
-
     fn input_slice(&self) -> String {
         let slice = self.input[0..self.pos].into_iter().cloned().map(|x| x.to_string()).collect::<String>();
         slice

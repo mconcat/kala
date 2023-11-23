@@ -23,6 +23,7 @@ pub mod jessie_parser;
 pub use jessie_parser::JessieParserState;
 pub use lexer::{Lexer, Token};
 pub use expression::expression;
+pub use module::*;
 
 ///////
 

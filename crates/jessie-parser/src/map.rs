@@ -1,2 +1,2 @@
-pub type VariablePointerMap = utils::VectorMap<jessie_ast::VariablePointer>;
-pub type VariablePointerMapPool = utils::VectorMapPool<jessie_ast::VariablePointer>;
+pub type VariableMap = utils::VectorMap<jessie_ast::Variable>;
+pub type VariableMapPool = utils::VectorMapPool<jessie_ast::Variable>;

@@ -23,9 +23,9 @@ pub fn identifier(state: &mut ParserState) -> Result<SharedString, ParserError> 
     }
 }
 
-pub fn use_variable(state: &mut ParserState) -> Result<VariableCell, ParserError> {
+pub fn use_variable(state: &mut ParserState) -> Result<Variable, ParserError> {
     let ident = identifier(state)?;
-    Ok(state.scope.use_variable(&ident))
+    Ok(state.scope.use_variable(ident))
 }
 /* 
 pub fn use_variable_with_parsed(state: &mut ParserState, ident: String) -> UseVariable {

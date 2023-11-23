@@ -1,11 +1,10 @@
 use std::rc::Rc;
 
-use crate::{expression::Expr, DeclarationIndex, LocalDeclaration};
+use crate::{expression::Expr, Declaration, VariableDeclaration, Function};
 
 #[repr(u8)]
 pub enum StatementDiscriminant {
     LocalDeclaration = 0,
-    FunctionDeclaration = 1,
     Block = 2,
     IfStatement = 3,
     // ForStatement = 4
@@ -26,8 +25,7 @@ pub enum Statement {
     // The actual declaration is stored in the innermost function. DeclarationIndicies point to them.
     // When encountered, declaration statements initializes the variable to undefined, or with init value.
     // TODO: we can actually remove the declaration indicies as they always match with the order they appears inside the function, but I will just use u32 indices for now - refactor later
-    VariableDeclaration(Box<Vec<(u32, Rc<LocalDeclaration>)>>) = StatementDiscriminant::LocalDeclaration as u8,
-    FunctionDeclaration(u32, Rc<LocalDeclaration>) = StatementDiscriminant::FunctionDeclaration as u8,
+    LocalDeclaration(Box<Declaration>) = StatementDiscriminant::LocalDeclaration as u8,
     Block(Box<Block>) = StatementDiscriminant::Block as u8,
     IfStatement(Box<IfStatement>) = StatementDiscriminant::IfStatement as u8,
     // ForStatement(ForStatement),
