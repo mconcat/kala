@@ -1,25 +1,6 @@
-use crate::{expression::Expr, Variable};
+use crate::{expression::Expr, Variable, Function};
 use utils::{SharedString};
 
-#[repr(transparent)]
-#[derive(Debug, PartialEq, Clone)]
-pub struct Record(pub Vec<PropDef>);
-
-#[repr(u8)]
-#[derive(Debug, PartialEq, Clone)]
-pub enum PropDef {
-    KeyValue(Box<Field>, Expr),
-    Shorthand(Box<Field>, Box<Variable>),
-    Spread(Expr),
-    // Getter(Function) = PropDefDiscriminant::Getter as u8,
-    // Setter(Function) = PropDefDiscriminant::Setter as u8,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Field {
-    pub dynamic_property: SharedString,
-    pub static_property: Option<StaticProperty>,    
-}
 
 impl Field {
     pub fn new_dynamic(dynamic_property: SharedString) -> Self {

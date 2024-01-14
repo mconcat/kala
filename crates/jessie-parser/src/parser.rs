@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use std::rc::Rc;
 
 extern crate utils;
-use utils::{FxMap, MapPool, FxMapPool, Map, SharedString};
+use utils::{ MapPool,  Map, };
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {
@@ -21,7 +21,7 @@ pub enum ParserError<C: Sized> {
 
     DuplicateDeclaration,
 
-    UnresolvedVariable(SharedString),
+    UnresolvedVariable(Rc<str>),
 }
 
 
@@ -201,7 +201,7 @@ impl<T: ToString+Clone+Debug+ToString+PartialEq> ParserState<T> {
             self.proceed();
             Ok(())
         } else {
-            self.err_expected("consume_1", /*c.clone(),*/ self.lookahead_1())
+            Err(ParserError::ExpectedToken(self.input_slice(), format!("consume_1: {:?}", c), self.lookahead_1()))
         }
     }
 

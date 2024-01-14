@@ -1,17 +1,16 @@
-use std::{cell::{Cell, RefCell, UnsafeCell}, rc::{UniqueRc, Weak, Rc}, mem::{replace, zeroed}};
-
-use utils::SharedString;
+use std::{cell::{Cell, RefCell, UnsafeCell}, rc::{UniqueRc, Weak, Rc}, mem::{replace, zeroed}, fmt::Debug};
 
 use crate::completion::Completion;
 
 use super::slot::Slot;
 
+#[derive(Clone)]
 pub struct Function {
-    pub name: Option<SharedString>,
+    pub name: Option<Rc<str>>,
     //pub parameters_len: usize,
     // pub captures: Vec<Slot>,
     //pub locals_len: usize,
-    pub function: Box<dyn Fn(&mut Frame, Vec<Slot>) -> Completion>,
+    pub function: Rc<dyn Fn(&mut Frame, Vec<Slot>) -> Completion>,
 }
 
 // Frame points to the slice of the stack
@@ -20,11 +19,23 @@ pub struct Function {
 // 0 is reserved
 // captures, 1..1+captures_len
 // locals, 1+captures_len+1..1+captures_len+locals_len
-#[derive(Debug)]
 pub struct Frame {
     pub slots: Vec<Slot>,
     pub fp: usize,
     pub captures: usize,
+}
+
+impl Debug for Frame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        for (i, slot) in self.slots.iter().enumerate() {
+            if i == self.fp {
+                write!(f, " |")?;
+            }
+            write!(f, " {:?}", slot)?;
+        }
+        write!(f, " ]")
+    } 
 }
 
 impl Frame {
@@ -43,8 +54,10 @@ impl Default for Frame {
     }
 }
 
+#[derive(Debug)]
 pub struct FrameRecovery {
     pub fp: usize,
+    pub sp: usize,
     pub captures: usize,
 }
 
@@ -65,7 +78,7 @@ impl Frame {
     // destructs the current frame and returns the child frame
     pub fn enter_function_frame(&mut self, captures: Vec<Slot>, local_len: usize) -> FrameRecovery {
         // constructing child frame
-        println!("entering function frame");
+        println!("entering function frame: {:?} {:?} {}", self, captures, local_len);
         let fp = self.slots.len();
         self.slots.extend(vec![Slot::UNINITIALIZED]); // reserved 0 index
         let captures_len = captures.len();
@@ -75,7 +88,7 @@ impl Frame {
         let recovery = FrameRecovery {
             fp: replace(&mut self.fp, fp),
             captures: replace(&mut self.captures, captures_len),
-
+            sp: fp,
         };
     
         recovery
@@ -83,7 +96,8 @@ impl Frame {
     
     // destructs the child frame and recovers the parent frame
     pub fn exit_function_frame(&mut self, recovery: FrameRecovery) {
-        self.slots.truncate(recovery.fp);
+        println!("exiting function frame: {:?} {:?}", self, recovery);
+        self.slots.truncate(recovery.sp);
 
         replace(&mut self.fp, recovery.fp);
         replace(&mut self.captures, recovery.captures);

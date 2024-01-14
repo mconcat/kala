@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use jessie_ast::*;
-use crate::{jessie_parser::{JessieParserState, repeated_elements}, function::{function_expr, arrow_expr}, Token, operation::{cond_expr_with_leftmost, cond_expr_with_leftmost_no_power, unary_op, call_expr_internal}, common::use_variable, parser};
+use crate::{jessie_parser::{JessieParserState, repeated_elements}, function::{function_expr, arrow_expr}, Token, operation::{cond_expr_with_leftmost, cond_expr_with_leftmost_no_power, unary_op, call_expr_internal}, common::use_variable, parser, statement::{block_raw, self}, pattern::param};
 
 type ParserState = JessieParserState; 
 type ParserError = parser::ParserError<Option<Token>>;
@@ -33,7 +33,7 @@ pub fn expression(state: &mut ParserState) -> Result<Expr, ParserError> {
         // Function expression
         // function f(x) { return x + 1; }
         
-        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Rc::new(x))),
+        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Box::new(x))),
 
         // Parenthesized expression or arrow function
         // (x + y)
@@ -81,7 +81,7 @@ fn call_and_unary_op_internal(state: &mut ParserState, expr: Expr, preops: Vec<U
 
     // apply unaryops(lower precedence than call ops)
     if !preops.is_empty() {
-        let unary_expr = Expr::UnaryExpr(Box::new(UnaryExpr { op: preops, expr: call_expr }));
+        let unary_expr = Expr::UnaryExpr(Box::new(UnaryExpr { op: preops.into_boxed_slice(), expr: call_expr }));
         Ok((unary_expr, only_member_post_op))
     } else {
         Ok((call_expr, only_member_post_op))
@@ -105,11 +105,7 @@ pub fn assign_or_cond_or_primary_expression(state: &mut ParserState) -> Result<E
     // 5. If we reach here, we are parsing a PrimaryExpression. Return the parsing result.
     // TODO: support quasi expression
 
-    println!("assign_or_cond_or_something");
-
     let (expr, only_member_post_op) = call_and_unary_op(state)?;
-
-    println!("expr {:?} {:?}", expr, only_member_post_op);
 
     match expr {
         Expr::DataLiteral(_) | Expr::Function(_) => {
@@ -246,12 +242,12 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         Some(Token::False) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::False))),
         Some(Token::Undefined) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Undefined))),
         Some(Token::Bigint(sign, abs)) => state.proceed_then(Expr::DataLiteral(Box::new(DataLiteral::Bigint(sign, abs)))),
-        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Rc::new(x))),
+        Some(Token::Function) => function_expr(state).map(|x| Expr::Function(Box::new(x))),
         _ => use_variable(state).map(|x| Expr::Variable(Box::new(x))),
     }
 }
 pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
-    let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &mut element, true)?;
+    let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &mut element, true)?.into_boxed_slice();
     Ok(Array(elements))
 }
 
@@ -268,8 +264,46 @@ pub fn element(state: &mut ParserState) -> Result<Expr, ParserError> {
 
 pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
     if state.try_proceed(Token::DotDotDot) {
+        // Spread
         let expr = expression(state)?;
         return Ok(PropDef::Spread(expr))
+    }
+    
+    if state.try_proceed(Token::Get) {
+        // Getter
+        let prop_name = prop_name(state)?;
+        state.consume_1(Token::LeftParen)?;
+        state.consume_1(Token::RightParen)?;
+        state.enter_block();
+        let statements = block_raw(state)?;
+        let declarations = state.exit_block();
+        let body = Block { statements, declarations};
+        let getter = Function {
+            name: FunctionName::Named(prop_name.name),
+            parameters: Box::new([]),
+            body: ExprOrBlock::Block(body),
+            scope: None,
+        };
+        return Ok(PropDef::Getter(Box::new(getter)))
+    }
+
+    if state.try_proceed(Token::Set) {
+        // Setter
+        let prop_name = prop_name(state)?;
+        state.consume_1(Token::LeftParen)?;
+        let param = param(state)?;
+        state.consume_1(Token::RightParen)?;
+        state.enter_block();
+        let statements = block_raw(state)?;
+        let declarations = state.exit_block();
+        let body = Block { statements, declarations };
+        let setter = Function {
+            name: FunctionName::Named(prop_name.name),
+            parameters: Box::new([param]),
+            body: ExprOrBlock::Block(body),
+            scope: None,
+        };
+        return Ok(PropDef::Setter(Box::new(setter)))
     }
 
     let prop_name = prop_name(state)?;
@@ -286,8 +320,8 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
         },
         // Shorthand
         Some(Token::Comma) | Some(Token::RightBrace) => {
-            let var = state.scope.use_variable(prop_name.clone().dynamic_property);
-            Ok(PropDef::Shorthand(prop_name, Box::new(var)))
+            //let var = state.scope.use_variable(prop_name.clone().name);
+            Ok(PropDef::Shorthand(prop_name.clone(), Box::new(Variable::new(prop_name.name))))
         },
         la => {
             state.err_expected(": for property pair", la)
@@ -296,7 +330,7 @@ pub fn prop_def(state: &mut ParserState) -> Result<PropDef, ParserError> {
 }
 
 pub fn record(state: &mut ParserState) -> Result<Record, ParserError> {
-    let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &mut prop_def, true)?;
+    let props = repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &mut prop_def, true)?.into_boxed_slice();
     Ok(Record(props))
 }
 /* 
@@ -349,7 +383,7 @@ pub fn prop_name(state: &mut ParserState) -> Result<Box<Field>, ParserError> {
     match state.lookahead_1() {
         Some(Token::Identifier(s)) => {
             state.proceed();
-            Ok(Box::new(Field::new_dynamic(s)))
+            Ok(Box::new(Field{name: s}))
         },
         /* 
         Some(Token::String(s)) => {

@@ -1,24 +1,43 @@
-use std::{any::Any, ops::{Index, IndexMut}, ptr, cell::Ref, mem::ManuallyDrop};
-
-use utils::SharedString;
+use core::fmt;
+use std::{any::Any, ops::{Index, IndexMut}, ptr, cell::{Ref, RefCell}, mem::ManuallyDrop, fmt::{Formatter, Debug}, rc::Rc};
 
 use crate::{number::NUMBER_ZERO, object::Property, slot::Slot, function::Function, error::Error, completion::Completion};
 
 use super::{number::Number, object::Object, constant::Constant, array::Array};
 
+#[derive(Clone)]
 pub enum Reference {
     Object(Object),
+    // Integer(Integer),
     Number(Number),
     Constant(Constant),
-    String(SharedString),
+    String(Rc<str>),
     Array(Array),
-
+    
     //StaticFunction(StaticFunction<Box<dyn Any>>), // no capture, just function pointer
     Function(Function), // closure with captured environment variable
 
     Error(Error),
 
-    NativeFunction(SharedString, Box<dyn Fn(&mut [Slot]) -> Completion>),
+    NativeFunction(Rc<str>, Rc<RefCell<dyn FnMut(&mut [Slot]) -> Completion>>),
+
+    // Reference type for accessor property
+}
+
+impl Debug for Reference {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Reference::Object(object) => write!(f, "[Object]"),
+            Reference::Number(number) => write!(f, "Number({:?})", number),
+            Reference::Constant(constant) => write!(f, "Constant({:?})", constant),
+            Reference::String(string) => write!(f, "String({:?})", string),
+            Reference::Array(array) => write!(f, "[Array]"),
+            Reference::Function(function) => write!(f, "[Function {:?}]", function.name),
+            Reference::Error(error) => write!(f, "[Error]"),
+            Reference::NativeFunction(name, _) => write!(f, "[NativeFunction {:?}]", name),
+        }
+    }
+
 }
 
 impl Reference {

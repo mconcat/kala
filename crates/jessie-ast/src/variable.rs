@@ -1,12 +1,18 @@
-use std::{cell::{Cell, OnceCell}, rc::Rc};
+use std::{cell::{Cell, OnceCell}, rc::Rc, fmt::Debug};
 
 use utils::SharedString;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Variable {
     pub name: SharedString,
     pub index: Rc<Cell<VariableIndex>>,
     pub block_index: u32,
+}
+
+impl Debug for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{:?}", self.name.0, self.index.get())
+    }
 }
 
 impl Variable {
@@ -46,13 +52,26 @@ impl Variable {
 
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum VariableIndex {
     Unknown,
     Parameter(u32), // points to the function scope's parameter_variables
     Capture(u32), // points to the function scope's captured_variables, which is a Vec<Variable> refering to the parent function's variables
     Local(u32), // points to the function scope's declared_variables
     Static(u32), // points to the module scope's static_variables
+}
+
+impl Debug for VariableIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariableIndex::Unknown => write!(f, "?"),
+            VariableIndex::Parameter(index) => write!(f, "&{}", index),
+            VariableIndex::Capture(index) => write!(f, "@{}", index),
+            VariableIndex::Local(index) => write!(f, "#{}", index),
+            VariableIndex::Static(index) => write!(f, "/{}", index),
+        }
+    }
+
 }
 
 impl VariableIndex {

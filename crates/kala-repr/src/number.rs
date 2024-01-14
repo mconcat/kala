@@ -36,7 +36,7 @@ impl Number {
     #[cfg(target_endian="little")] 
     fn assert_memory_sanity(&self) {
         unsafe {
-            assert_eq!(transmute::<Number, i128>(Number{x0: 1, x1: 0, x2: 0, x3: 0}), 1i128);
+            assert_eq!(transmute::<Number, i128>(Number{x0: 0, x1: 0, x2: 1, x3: 0}), 1i128);
             assert_eq!(transmute::<Number, i128>(Number{x0: u32::MAX-1, x1: u32::MAX, x2: u32::MAX, x3: i32::MIN}), i128::MIN+1);
         }
     }
@@ -46,10 +46,10 @@ impl Number {
         let mut result = MaybeUninit::<Number>::uninit();
         unsafe {
             result.as_mut_ptr().write(Number {
-                x0: i as u32,
-                x1: (i >> 32) as u32,
-                x2: f as u32,
-                x3: (f >> 32) as i32,
+                x0: f as u32,
+                x1: (f >> 32) as u32,
+                x2: i as u32,
+                x3: (i >> 32) as i32,
             });
             result.assume_init()
         } 
@@ -137,6 +137,7 @@ impl Number {
     pub(crate) fn op_neg(&self) -> Self {
         unimplemented!("op_neg")
     }
+
 }
 
 impl ToString for Number {

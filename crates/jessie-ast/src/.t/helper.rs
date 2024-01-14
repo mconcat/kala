@@ -1,7 +1,5 @@
 use std::rc::Rc;
 
-use utils::{SharedString};
-
 use crate::{*};
 
 // Expression
@@ -23,7 +21,7 @@ pub fn record(fields: Vec<PropDef>) -> Expr {
 }
 
 pub fn keyvalue(key: &str, value: Expr) -> PropDef {
-    PropDef::KeyValue(Box::new(Field::new_dynamic(SharedString::from_str(key))), value)
+    PropDef::KeyValue(Box::new(Field::new_dynamic(Rc::from(key))), value)
 }
 /* 
 pub fn shorthand(key: &str, value: VariableCell) -> PropDef {

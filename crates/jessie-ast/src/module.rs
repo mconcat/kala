@@ -1,7 +1,5 @@
 use std::rc::Rc;
 
-use utils::SharedString;
-
 use crate::{Declaration, Statement};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -31,7 +29,7 @@ pub struct ImportDeclaration {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ImportClause {
     Namespace(String), // import * as name from source
-    Named(Vec<(String, Option<String>)>), // import { name1, name2 as name3 } from source
+    Named(Box<[(String, Option<String>)]>), // import { name1, name2 as name3 } from source
     Default(String), // import name from source
 }
 

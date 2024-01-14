@@ -1,6 +1,4 @@
-use std::{ops::{Add, Sub, Mul, Div, Rem}, fmt::Binary};
-
-use utils::SharedString;
+use std::{ops::{Add, Sub, Mul, Div, Rem}, fmt::Binary, rc::Rc};
 
 use crate::BinaryOp;
 
@@ -67,5 +65,5 @@ impl From<bool> for crate::DataLiteral {
 }
 
 pub struct Variable {
-    pub name: SharedString,
+    pub name: Rc<str>,
 }

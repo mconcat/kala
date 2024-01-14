@@ -1,6 +1,4 @@
-use utils::{FxMap, Map, VectorMap};
 
-use crate::{Statement, ParameterDeclaration, Expr, LocalDeclaration, CallPostOp, VariableCell, Function, DeclarationIndex,  PatternVisitor};
 
 // - The function first iterates over the body of the function, and collects all the local declarations
 // - Then, it iterates over the body again, and all the variables occuring inside the function body are bound to either one of local / capture / parameter

@@ -1,6 +1,6 @@
 use std::{mem::ManuallyDrop, fmt::Debug};
 
-use crate::slot::{SlotInteger, Slot};
+use crate::{slot::{SlotInteger, Slot}, number::Number};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Integer(pub isize); // tagged with 0b0001
@@ -92,6 +92,22 @@ impl Integer {
         res.tag();
         res
     }
+
+    #[cfg(target_pointer_width="64")]
+    pub(crate) fn overflowing_mul(self, other: Self) -> (isize, isize) {
+        let x = self.unwrap() as i128;
+        let y = other.unwrap() as i128;
+        let res = x * y;
+        (res as isize, (res >> 64) as isize)
+    }
+
+    #[cfg(target_pointer_width="32")]
+    pub(crate) fn overflowing_mul(self, other: Self) -> (isize, isize) {
+        let x = self.unwrap() as i64;
+        let y = other.unwrap() as i64;
+        let res = x * y;
+        (res as isize, (res >> 32) as isize)
+    }
 }
 
 impl ToString for Integer {
@@ -112,5 +128,14 @@ impl Debug for Integer {
 impl Into<Slot> for Integer {
     fn into(self) -> Slot {
         Slot{ integer: ManuallyDrop::new(SlotInteger(self)) }
+    }
+}
+
+impl Into<Number> for Integer {
+    fn into(self) -> Number {
+        Number::new(
+            self.unwrap() as i64,
+            0,
+        )
     }
 }

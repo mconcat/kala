@@ -1,8 +1,8 @@
 use core::panic;
-use std::{mem::replace, rc::Rc};
+use std::{mem::{replace, self}, rc::Rc};
 
-use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, LValue, UnaryExpr, Assignment,  LValueCallPostOp, VariableIndex, Variable};
-use kala_repr::{slot::Slot, object::Property, completion::Completion};
+use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, LValue, UnaryExpr, Assignment,  LValueCallPostOp, Variable, CallLValue, VariableIndex};
+use kala_repr::{slot::Slot, object::Property, completion::Completion, function::Frame};
 
 use crate::{interpreter::Interpreter, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}, statement::eval_block};
 
@@ -40,7 +40,7 @@ fn eval_literal(lit: &DataLiteral) -> Completion {
 
 fn eval_array(interpreter: &mut Interpreter, array: &Array) -> Completion {
     let mut slots = Vec::with_capacity(array.0.len());
-    for expr in &array.0 {
+    for expr in array.0.iter() {
         match expr {
             Expr::Spread(spread) => {
                 unimplemented!("spread in array literal");
@@ -53,19 +53,47 @@ fn eval_array(interpreter: &mut Interpreter, array: &Array) -> Completion {
 
 fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Completion {
     let mut props = Vec::with_capacity(obj.0.len());
-    for propdef in &obj.0 {
+    for propdef in obj.0.iter() {
         match propdef {
             PropDef::KeyValue(key, value) => {
-                props.push(Property{
-                    key: key.dynamic_property.clone(),
-                    value: eval_expr(interpreter, &value)?,
-                });
+                props.push(Property::data(
+                    key.name.clone(),
+                    eval_expr(interpreter, &value)?,
+                ));
             }
             PropDef::Shorthand(key, var) => {
-                props.push(Property{
-                    key: key.dynamic_property.clone(),
-                    value: eval_variable(interpreter, var.as_ref().clone())?,
-                });
+                props.push(Property::data(
+                    key.name.clone(),
+                    eval_variable(interpreter, var.as_ref().clone())?,
+                ));
+            }
+            PropDef::Getter(func) => {
+                let found = props.as_mut_slice().into_iter().find(|prop| Some(prop.key.clone()) == func.get_name());
+                if let Some(prop) = found {
+                    if prop.getter != Slot::UNINITIALIZED {
+                        panic!("duplicate getter");
+                    }
+                    prop.getter = eval_function(interpreter, func.clone().into())?;
+                } else {
+                    props.push(Property::getter(
+                        func.get_name().unwrap(),
+                        eval_function(interpreter, (*func).into())?,
+                    ));
+                }
+            }
+            PropDef::Setter(func) => {
+                let found = props.as_mut_slice().into_iter().find(|prop| Some(prop.key.clone()) == func.get_name());
+                if let Some(prop) = found {
+                    if prop.setter != Slot::UNINITIALIZED {
+                        panic!("duplicate setter");
+                    }
+                    prop.setter = eval_function(interpreter, func.clone())?; 
+                } else {
+                    props.push(Property::setter(
+                        func.get_name().unwrap(),
+                        eval_function(interpreter, func.clone())?,
+                    ));
+                }
             }
             PropDef::Spread(spread) => unimplemented!("spread in record literal")
         }
@@ -86,29 +114,44 @@ fn exit_function(interpreter: &mut Interpreter, arguments_len: usize, captures_l
 }
 */
 
-fn eval_function(interpreter: &mut Interpreter, func: Rc<Function>) -> Completion {
-    let mut captures = Vec::with_capacity(func.captures.len());
+fn eval_function(interpreter: &mut Interpreter, func: Box<Function>) -> Completion {
 
-    for capture in &func.captures {
-        let variable = interpreter.fetch_variable(capture.index.get());
+    //let mut local_initializers: Vec<Option<Box<dyn FnOnce(&mut Frame) -> Completion>>> = Vec::with_capacity(func.locals.len());
+    let builtins = interpreter.builtins.clone();
+
+    let mut captures = Vec::with_capacity(func.scope.unwrap().captures.len());
+
+    for capture in func.scope.unwrap().captures.iter() {
+        let variable = interpreter.fetch_variable(capture.index());
         if variable.is_none() {
             panic!("should have variable");
         }
         captures.push(variable.unwrap().clone());
     }
 
-    //let mut local_initializers: Vec<Option<Box<dyn FnOnce(&mut Frame) -> Completion>>> = Vec::with_capacity(func.locals.len());
-    let builtins = interpreter.builtins.clone();
 
-    let function = Slot::new_function(func.name.get_name().cloned(), Box::new(move |frame, arguments| {
-        println!("function call: {:?}", frame);
+    let function = Slot::new_function(func.get_name(), Rc::new(move |frame: &mut Frame, arguments| {
+        // NOTE: because of how local values are always initialized after the function declarations(because of the hoisting), we are capturing the variables when the function is called, not when it is declared.
+        // This would cause a problem when the function escapes the scope where it is defined, probably in a way that the variables being captured will be the ones in the scope where the function is called, not where it is defined.
+        // To fix this problem, when a locally defined function escapes a scope, we need to capture the variables at that point, not when the function is called.
+        // We don't need to do it recursively as the list of captured variables contains all the children captured variables, see jessie_parser/scope.rs
+        // I think this behavior is equivalent to how javascript works.
+
+        println!("function called: {:?} {:?}", func.get_name(), arguments);
+
+        println!("captures: {:?}", captures);
+
+        let mut frame_value = std::mem::take(frame);
+
         // push arguments
-        frame.slots.extend(arguments);
+        frame_value.slots.extend(arguments);
+
+        println!("pushed arguments: {:?}", frame_value.slots);
 
         // enter function frame with captures and locals
-        let recovery = frame.enter_function_frame(captures.clone(), func.locals.len());
-        let frame_value = std::mem::take(frame);
+        let recovery = frame_value.enter_function_frame(captures.clone(), func.locals().len());
 
+        println!("function frame: {:?}", frame_value);
 
         let mut function_interpreter = Interpreter {
             builtins: builtins.clone(),
@@ -116,94 +159,108 @@ fn eval_function(interpreter: &mut Interpreter, func: Rc<Function>) -> Completio
         };
 
         // hoist(pre-declare) function declarations
-        for (var, local_function) in &func.functions {
-            let local_evaluated_function = eval_function(&mut function_interpreter, local_function.clone())?;
-            *function_interpreter.current_frame.get_local(var.index.get().unwrap_local() as usize) = local_evaluated_function;
+        for (function_var, local_function) in func.functions().iter() {
+            // promote local variables to heap if it is captured by any of the local functions
+            for local_function_capture in local_function.captures() {
+                if let VariableIndex::Local(index) = local_function_capture.index.get() {
+                    let captured_var = function_interpreter.current_frame.get_local(index as usize);
+
+                    // promote local variable to heap
+                    *captured_var = Slot::new_variable_slot();
+                    println!("promoted local variable to heap: {:?}@{:?}", captured_var, index)
+                }
+            }
+
+            let local_evaluated_function = eval_function(&mut function_interpreter, local_function)?;
+            *function_interpreter.current_frame.get_local(function_var.index().unwrap_local() as usize) = local_evaluated_function;
         }
 
-        let result = eval_block(&mut function_interpreter, &func.statements);
+        let result = eval_block(&mut function_interpreter, func.statements);
+
 
         let _ = replace(frame, function_interpreter.current_frame);
 
         // exit function frame, arguments still remain
-        frame.exit_function_frame(recovery);
 
+        println!("exit 1: function frame: {:?}", frame);
+        frame.exit_function_frame(recovery);
+        println!("exit 2: function frame: {:?}", frame);
         result
     }));
 
     Completion::Value(function)
 }
 
-fn lvalue<'a>(interpreter: &'a mut Interpreter, lvalue: &LValue) -> Option<Slot> {
-    match lvalue {
-        LValue::Variable(var) => interpreter.fetch_variable(var.index.get()).cloned().into(),
-        LValue::CallLValue(expr) => {
-            let res_eval = eval_expr(interpreter, &expr.expr);
-            let mut res = match res_eval {
-                Completion::Value(slot) => slot,
-                _ => return None,
-            };
-            for op in &expr.post_ops {
-                res = match op {
-                    LValueCallPostOp::Index(index_expr) => {
-                        let index_eval = eval_expr(interpreter, &index_expr);
-                        let index = match index_eval {
-                            Completion::Value(slot) => slot,
-                            _ => return None,
-                        };
-                        let res_eval = res.get_element(index.unwrap_integer().0.try_into().unwrap());
-                        match res_eval {
-                            Some(slot) => slot.clone(),
-                            _ => return None,
-                        }
-                    } 
-                    LValueCallPostOp::Member(field) => {
-                        let res_eval = res.get_property(field);
-                        match res_eval {
-                            Some(slot) => slot.clone(),
-                            _ => return None,
-                        }
-                    },
-                }
-            } 
-            Some(res)
-        }
-    }
-}
-
 fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Completion {
-    let mut lvalue = match lhs {
-        LValue::Variable(var) => {
-            match var.index.get() {
-                VariableIndex::Local(index) => interpreter.current_frame.get_local(index as usize),
-                VariableIndex::Capture(index) => interpreter.current_frame.get_capture(index as usize),
-                VariableIndex::Parameter(index) => interpreter.current_frame.get_argument(index as usize),
-                VariableIndex::Static(_) => todo!("static variable assignment"),
-                VariableIndex::Unknown => unreachable!("Unknown variable index")
-            }
-        }
+    if let LValue::Variable(var) = lhs {
+        let lvalue = match var.index() {
+            VariableIndex::Local(index) => interpreter.current_frame.get_local(index as usize),
+            VariableIndex::Captured(index) => interpreter.current_frame.get_capture(index as usize),
+            VariableIndex::Parameter(index) => interpreter.current_frame.get_argument(index as usize),
+            VariableIndex::Static(_) => todo!("static variable assignment"),
+            VariableIndex::Unknown => unreachable!("Unknown variable index")
+        };
+        lvalue.set(rhs);
+        return Completion::Value(lvalue.clone())
+    }
 
-        LValue::CallLValue(var) => {
-            unimplemented!("call lvalue")
-            /* 
-            let mut lvalue = eval_expr(interpreter, &var.expr)?;
-            for op in var.post_ops {
-                match op {
-                    LValueCallPostOp::Index(index) => {
-                        lvalue = lvalue.get_element(eval_expr(interpreter, &index)?.as_number())?;
-                    },
-                    LValueCallPostOp::Member(field) => {
-                        lvalue = lvalue.get_property(field)?;
-                    },
-                }
-            }
-            lvalue
-            */
+
+
+    let LValue::CallLValue(lvalue) = lhs else { unreachable!("invalid lvalue") };
+    let mut obj = eval_expr(interpreter, &lvalue.expr)?;
+
+    // This whole part is ugly
+    // please please please refactor this
+    enum ElementOrProperty<'a> {
+        Element(&'a mut Slot),
+        Property(&'a mut Property),
+    }
+
+
+    let mut prop = match lvalue.post_ops[0] {
+        LValueCallPostOp::Index(ref index) => {
+            let index = eval_expr(interpreter, index)?;
+            ElementOrProperty::Element(
+                obj.get_element(index.unwrap_integer().unwrap().try_into().unwrap())?,
+            )
+        },
+        LValueCallPostOp::Member(ref member) => {
+            ElementOrProperty::Property(obj.get_property(member)?)
+        },
+    };   
+
+    let mut left = Slot::UNINITIALIZED;
+
+    for op in &lvalue.post_ops[1..] {
+        left = match prop {
+            ElementOrProperty::Element(slot) => slot.clone(),
+            ElementOrProperty::Property(prop) => prop.get(&mut interpreter.current_frame)?,
+        };
+
+        prop = match op {
+            LValueCallPostOp::Index(ref index) => {
+                let index = eval_expr(interpreter, index)?;
+                ElementOrProperty::Element(
+                    left.get_element(index.unwrap_integer().unwrap().try_into().unwrap())?,
+                )
+            },
+            LValueCallPostOp::Member(ref member) => {
+                ElementOrProperty::Property(left.get_property(member)?)
+            },
         }
     };
 
-    *lvalue = rhs;
-    Completion::Value(lvalue.clone())
+
+
+    match prop {
+        ElementOrProperty::Element(slot) => {
+            slot.set(rhs);
+            Completion::Value(slot.clone())
+        },
+        ElementOrProperty::Property(prop) => {
+            prop.set(&mut interpreter.current_frame, rhs)
+        }
+    }
 }
 
 fn eval_assignment(interpreter: &mut Interpreter, assignment: &Assignment) -> Completion {
@@ -278,7 +335,7 @@ fn eval_binary(interpreter: &mut Interpreter, expr: &BinaryExpr) -> Completion {
 
 fn eval_unary(interpreter: &mut Interpreter, expr: &UnaryExpr) -> Completion {
     let mut res = Slot::new_uninitialized();
-    for op in &expr.op {
+    for op in expr.op.iter() {
         res = match op {
             UnaryOp::Not => {
                 let operand = eval_expr(interpreter, &expr.expr)?;
@@ -311,26 +368,28 @@ fn eval_call(interpreter: &mut Interpreter, expr: &CallExpr) -> Completion {
     println!("eval_call: {:?}", expr);
 
     let mut callee = eval_expr(interpreter, &expr.expr)?;
-    for op in &expr.post_ops {
+    for op in expr.post_ops.iter() {
         match op {
             CallPostOp::Index(index) => {
                 let index_slot = eval_expr(interpreter, &index)?;
                 let index = index_slot.unwrap_integer().unwrap(); // TODO: non-smi array index
                 callee = callee.get_element(index.try_into().unwrap()).cloned()?;
             }
-            CallPostOp::Member(member) => { 
-                callee = callee.get_property(member).cloned()?;
+            CallPostOp::Member(member) => {
+                println!("object: {:?}", callee);
+                println!("member: {:?}", member);
+                callee = callee.get_property(&member).unwrap().get(&mut interpreter.current_frame)?;
+
             }
             CallPostOp::Call(args) => {
-                callee = call(interpreter, callee, args)?;
+                callee = call(interpreter, callee, args)?; // wtf use either Vec or Box<[]>
             }
         }
     }
-
     Completion::Value(callee)
 }
 
-fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Completion {
+fn call(interpreter: &mut Interpreter, callee: Slot, args: &Box<[Expr]>) -> Completion {
     let argument_completions = args.into_iter().map(|arg| eval_expr(interpreter, &arg));
 
     let mut arguments = Vec::with_capacity(argument_completions.len());
@@ -339,6 +398,8 @@ fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Comple
         arguments.push(arg_completion?)
     }
     let result = callee.call(&mut interpreter.current_frame, &mut arguments);
+
+    println!("call result: {:?}", result);
 
     match result {
         Completion::Return(slot) => Completion::Value(slot),
@@ -349,5 +410,5 @@ fn call(interpreter: &mut Interpreter, callee: Slot, args: &Vec<Expr>) -> Comple
 }
 
 fn eval_variable(interpreter: &mut Interpreter, var: Variable) -> Completion {
-    Completion::Value(interpreter.fetch_variable(var.index.get()).map(|slot| slot.clone())?)
+    Completion::Value(interpreter.fetch_variable(var.index()).map(|slot| slot.clone())?)
 }

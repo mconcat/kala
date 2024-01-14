@@ -1,16 +1,15 @@
 use core::{panic};
-use std::{mem::{ManuallyDrop, transmute}, rc::{Rc, Weak}, cell::Cell, any::Any, ops::{Index, IndexMut}, fmt::{Debug, LowerHex}};
-
-use utils::SharedString;
+use std::{mem::{ManuallyDrop, transmute}, rc::{Rc, Weak}, cell::{Cell, RefCell}, any::Any, ops::{Index, IndexMut}, fmt::{Debug, LowerHex}};
 
 use crate::{array::Array, object::{Object, Property}, number::Number, function::{Function, Stack, Frame}, completion::Completion};
 
 use super::{reference::Reference, integer::Integer, constant::Constant};
 
 #[repr(usize)]
+#[derive(Debug)]
 pub enum SlotTag {
     Reference = 0b00,
-    // Pointer = 0b10,
+    Pointer = 0b10,
 
     // Integer have 0b01 tag.
     // Having the second lowest bit unset means addition/subtraction
@@ -37,7 +36,7 @@ pub union Slot {
     // and should be treated as a raw pointer. 
     // Static analysis must be done in prior to ensure the safety.
     // Pointer is tagged with 10 and requires detagging before use.
-    // pointer: ManuallyDrop<SlotPointer>,
+    pointer: ManuallyDrop<SlotPointer>,
 
     // Integer is a 28-bit/60-bit signed inlined integer.
     // Integer should be heap allocated when captured by a closure.
@@ -72,7 +71,7 @@ impl Slot {
         raw: 0,
     };
 
-    pub(crate) fn get_tag(&self) -> SlotTag {
+    pub fn get_tag(&self) -> SlotTag {
         unsafe { transmute(self.raw & MASK) }
     }
 
@@ -104,10 +103,13 @@ impl Debug for Slot {
 
         unsafe{
             match self.get_tag() {
-                SlotTag::Reference => self.reference.0.as_ptr().fmt(f),
+                SlotTag::Reference => self.unwrap_reference().fmt(f),
                 SlotTag::Integer => self.integer.0.fmt(f),
                 SlotTag::Constant => self.constant.0.fmt(f),
-                _ => unreachable!(),
+                SlotTag::Pointer => {
+                    write!(f, "&");
+                    self.unwrap_pointer().fmt(f)
+                }
             }
         }
     }
@@ -129,7 +131,9 @@ impl Clone for Slot {
             SlotTag::Constant => Self {
                 constant: unsafe{ManuallyDrop::new(SlotConstant(self.constant.0))},
             },
-            _ => unreachable!(),
+            SlotTag::Pointer => Self {
+                pointer: unsafe{ManuallyDrop::new(SlotPointer(Rc::into_raw(Rc::from_raw(self.pointer.0 as *const Slot).clone())))},
+            } 
         }
     }
 }
@@ -145,12 +149,18 @@ impl Drop for Slot {
             //WEAK_REFERENCE_TAG => unsafe { ManuallyDrop::drop(&mut self.weak_reference) },
             SlotTag::Integer => unsafe { ManuallyDrop::drop(&mut self.integer) },
             SlotTag::Constant => unsafe { ManuallyDrop::drop(&mut self.constant) },
-            _ => unreachable!(),
+            SlotTag::Pointer => unsafe { ManuallyDrop::drop(&mut ManuallyDrop::new(Rc::from_raw(self.pointer.0))) },
         }
     }
 }
 
 impl Slot {
+    pub fn new_variable_slot() -> Self {
+        Self {
+            pointer: ManuallyDrop::new(SlotPointer::new(Slot::UNINITIALIZED)),
+        }
+    }
+
     pub fn new_null() -> Self {
         Self {
             constant: ManuallyDrop::new(SlotConstant(Constant::Null)),
@@ -185,9 +195,9 @@ impl Slot {
         Self::new_number(integer, 0)
     }
 
-    pub fn new_string(string: SharedString) -> Self {
+    pub fn new_string(string: impl Into<Rc<str>>) -> Self {
         Self {
-            reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::String(string))))),
+            reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::String(string.into()))))),
         }
     }
 
@@ -217,9 +227,9 @@ impl Slot {
         }
     }
 
-    pub fn new_native_function(name: SharedString, function: Box<dyn Fn(&mut [Slot]) -> Completion>) -> Self {
+    pub fn new_native_function(name: impl Into<Rc<str>>, function: Rc<RefCell<dyn FnMut(&mut [Slot]) -> Completion>>) -> Self {
         Self {
-            reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::NativeFunction(name, function))))),
+            reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::NativeFunction(name.into(), function))))),
         }
     }
 
@@ -228,11 +238,11 @@ impl Slot {
     }
 
     pub fn new_function(
-        name: Option<SharedString>,
+        name: Option<Rc<str>>,
         //parameters_len: usize,
         //captures: Vec<Slot>,
         //locals_len: usize,
-        function: Box<dyn Fn(&mut Frame, Vec<Slot>) -> Completion>,
+        function: Rc<dyn Fn(&mut Frame, Vec<Slot>) -> Completion>,
     ) -> Self {
         Self {
             reference: ManuallyDrop::new(SlotReference(Rc::new(Cell::new(Reference::Function(Function {
@@ -271,6 +281,14 @@ impl Slot {
         unsafe { &mut self.constant.0 }
     }
 
+    pub fn unwrap_pointer(&self) -> &Slot {
+        unsafe { &*((self.pointer.0 as usize & !MASK) as *const Slot) }
+    }
+
+    pub fn unwrap_mut_pointer(&mut self) -> &mut Slot {
+        unsafe { &mut *((self.pointer.0 as usize & !MASK) as *mut Slot)  }
+    }
+
     pub fn call(&self, frame: &mut Frame, arguments: &mut Vec<Slot>) -> Completion {
         if self.is_uninitialized() {
             panic!("uninitialized slot")
@@ -279,10 +297,10 @@ impl Slot {
         match self.get_tag() {
             SlotTag::Reference => match self.unwrap_reference() {
                 Reference::Function(function) => (function.function)(frame, arguments.clone()),
-                Reference::NativeFunction(_, function) => function(&mut arguments[..]),
-                _ => Completion::Throw(Slot::new_string(SharedString::from_str("TypeError: not a function"))),
+                Reference::NativeFunction(_, function) => function.borrow_mut()(&mut arguments[..]),
+                _ => Completion::Throw(Slot::new_string("TypeError: not a function")),
             },
-            _ => Completion::Throw(Slot::new_string(SharedString::from_str("TypeError: not a function"))),
+            _ => Completion::Throw(Slot::new_string("TypeError: not a function")),
         }
     }
 
@@ -292,6 +310,7 @@ impl Slot {
         }
 
         match self.get_tag() {
+            SlotTag::Pointer => self.unwrap_pointer().is_nullish(),
             SlotTag::Constant => unsafe { self.constant.0.is_nullish() },
             SlotTag::Reference => unsafe { match self.unwrap_reference() {
                 Reference::Constant(constant) => constant.is_nullish(),
@@ -321,13 +340,13 @@ impl Slot {
 }
 
 impl Slot {
-    pub fn index_property_by_string(&mut self, index: SharedString) -> Option<&Slot> {
+    pub fn get_property_by_string(&mut self, index: Rc<str>) -> Option<&Property> {
         if self.is_uninitialized() {
             panic!("uninitialized slot")
         }
 
         match self.get_tag() {
-            SlotTag::Reference => match self.unwrap_reference() {
+            SlotTag::Reference => match self.unwrap_mut_reference() {
                 Reference::Object(object) => object.index_property_by_string(index),
                 Reference::Array(array) => unimplemented!("wrapped array object"),
                 Reference::Constant(constant) => unimplemented!("wrapped constant object"),
@@ -343,7 +362,7 @@ impl Slot {
         }
     }
 
-    pub fn index_mut_property_by_string(&mut self, index: SharedString) -> Option<&mut Self> {
+    pub fn mut_property_by_string(&mut self, index: Rc<str>) -> Option<&mut Property> {
         if self.is_uninitialized() {
             panic!("uninitialized slot")
         }
@@ -364,6 +383,13 @@ impl Slot {
             _ => unreachable!("invalid slot tag")
         }
     }
+
+    pub fn set(&mut self, slot: Slot) {
+        match self.get_tag() {
+            SlotTag::Pointer => *self.unwrap_mut_pointer() = slot,
+            _ => *self = slot,
+        }
+    }
 }
 
 // SlotReference holds shared reference to a heap allocated object.
@@ -379,6 +405,22 @@ impl SlotReference {
     pub(crate) fn new(reference: Reference) -> Self {
         Self(Rc::new(Cell::new(reference)))
     }
+}
+
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct SlotPointer(pub *const Slot);
+
+impl SlotPointer {
+    pub(crate) fn new(slot: Slot) -> Self {
+        let rc = Rc::into_raw(Rc::new(Cell::new(slot)));
+
+        // Cell<T> and T have the same memory layout.
+        let ptr = (rc as usize | SlotTag::Pointer as usize) as *const Slot;
+
+        Self(ptr)
+    }
+
 }
 
 // WeakReference is used when the lifetime of the variable is guaranteed to be
@@ -398,7 +440,7 @@ pub struct SlotInteger(pub Integer);
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct SlotConstant(pub Constant);
-
+/* 
 impl LowerHex for Slot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_uninitialized() {
@@ -415,3 +457,4 @@ impl LowerHex for Slot {
         }
     }
 }
+*/

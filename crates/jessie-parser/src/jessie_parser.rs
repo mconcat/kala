@@ -2,26 +2,33 @@ use std::fmt::Debug;
 use std::mem::replace;
 use std::rc::Rc;
 
-use crate::map::VariableMapPool;
 use crate::parser::{self, ParserState}; 
 use crate::lexer::{Token};
-use crate::scope::{ModuleScope};
 use jessie_ast::*;
-use utils::{MapPool, FxMap, Map};
+use utils::{MapPool,  Map};
 
 type ParserError = parser::ParserError<Option<Token>>;
 
 #[derive(Debug)]
 pub struct JessieParserState {
     pub state: ParserState<Token>,
-    pub scope: ModuleScope,
+
+    pub scope: Vec<Vec<Declaration>>,
 }
 
 impl JessieParserState {
+    pub fn enter_block(&mut self) {
+        self.scope.push(Vec::new());
+    }
+
+    pub fn exit_block(&mut self) -> Box<[Declaration]> {
+        self.scope.pop().unwrap().into_boxed_slice()
+    }
+
     pub fn new(tokens: Vec<Token>) -> JessieParserState {
         JessieParserState {
             state: ParserState::new(tokens),
-            scope: ModuleScope::new(),
+            scope: Vec::new(),
         }
     }
 

@@ -1,8 +1,6 @@
-use std::{mem::ManuallyDrop, str::FromStr};
+use std::{mem::ManuallyDrop, str::FromStr, rc::Rc};
 
-use utils::SharedString;
-
-use crate::{slot::{Slot, MASK, SlotTag::{self}, SlotConstant, SlotInteger, SlotReference}, reference::Reference, constant::Constant, integer::Integer};
+use crate::{slot::{Slot, MASK, SlotTag::{self}, SlotConstant, SlotInteger, SlotReference}, reference::Reference, constant::Constant, integer::Integer, number::Number, object::Property};
 
 impl Slot {
     pub fn op_add(&self, other: &Self) -> Slot {
@@ -17,7 +15,10 @@ impl Slot {
     }
 
     pub fn op_mul(&self, other: &Self) -> Slot {
-        unimplemented!("multiplication")
+        match self.op_mul_internal(other) {
+            Some(slot) => slot,
+            None => Slot::UNDEFINED, // TODO: error
+        }
     }
 
     pub fn op_div(&self, other: &Self) -> Slot {
@@ -25,7 +26,10 @@ impl Slot {
     }
 
     pub fn op_modulo(&self, other: &Self) -> Slot {
-        unimplemented!("modulo")
+        match self.op_modulo_internal(other) {
+            Some(slot) => slot,
+            None => Slot::UNDEFINED, // TODO: error
+        }
     }
 
     pub fn op_pow(&self, other: &Self) -> Slot {
@@ -54,8 +58,16 @@ impl Slot {
             return true
         }
 
+        // Check if heap
+
         // Slow path
         match (self.get_tag(), other.get_tag()) {
+            (SlotTag::Pointer, _) => {
+                self.unwrap_pointer().op_strict_equal_internal(other)
+            },
+            (_, SlotTag::Pointer) => {
+                other.unwrap_pointer().op_strict_equal_internal(self)
+            },
             // forward to internal operations if same tag
             (SlotTag::Reference, SlotTag::Reference) => {
                 self.unwrap_reference().op_strict_equal_internal(other.unwrap_reference())
@@ -100,7 +112,6 @@ impl Slot {
             (SlotTag::Constant, SlotTag::Integer) => {
                 false
             }
-            _ => unreachable!("invalid slot tag"),
         }
     }
 
@@ -122,6 +133,12 @@ impl Slot {
 
     pub fn op_less_than_internal(&self, other: &Self) -> Option<bool> {
         match (self.get_tag(), other.get_tag()) {
+            (SlotTag::Pointer, _) => {
+                self.unwrap_pointer().op_less_than_internal(other)
+            },
+            (_, SlotTag::Pointer) => {
+                other.unwrap_pointer().op_less_than_internal(self).map(|x| !x)
+            },
             (SlotTag::Constant, SlotTag::Constant) => {
                 self.unwrap_constant().op_less_than_internal(&other.unwrap_constant())
             }
@@ -178,6 +195,12 @@ impl Slot {
     }
     pub fn op_less_than_or_equal_internal(&self, other: &Self) -> Option<bool> {
         match (self.get_tag(), other.get_tag()) {
+            (SlotTag::Pointer, _) => {
+                self.unwrap_pointer().op_less_than_internal(other)
+            },
+            (_, SlotTag::Pointer) => {
+                other.unwrap_pointer().op_less_than_internal(self).map(|x| !x)
+            },
             (SlotTag::Constant, SlotTag::Constant) => {
                 unimplemented!("comparison of constants")
             }
@@ -264,22 +287,28 @@ impl Slot {
 
     pub fn op_greater_than(&self, other: &Self) -> Slot {
         match other.op_less_than_or_equal_internal(&self) {
-            Some(true) => Slot::FALSE,
-            Some(false) => Slot::TRUE,
+            Some(true) => Slot::TRUE,
+            Some(false) => Slot::FALSE,
             None => Slot::UNDEFINED, // TODO: error
         }
     }
 
     pub fn op_greater_than_or_equal(&self, other: &Self) -> Slot {
         match other.op_less_than_internal(&self) {
-            Some(true) => Slot::FALSE,
-            Some(false) => Slot::TRUE,
+            Some(true) => Slot::TRUE,
+            Some(false) => Slot::FALSE,
             None => Slot::UNDEFINED, // TODO: error
         }
     }
 
     pub fn op_add_internal(&self, other: &Self) -> Option<Slot> {
         match (self.get_tag(), other.get_tag()) {
+            (SlotTag::Pointer, _) => {
+                self.unwrap_pointer().op_add_internal(other)
+            },
+            (_, SlotTag::Pointer) => {
+                other.unwrap_pointer().op_add_internal(self)
+            },
             (SlotTag::Constant, SlotTag::Constant) => {
                 self.unwrap_constant().op_add_internal(&other.unwrap_constant()).map(Into::into)
             }
@@ -344,8 +373,36 @@ impl Slot {
         }
     }
 
+    fn op_mul_internal(&self, other: &Self) -> Option<Slot> {
+        match (self.get_tag(), other.get_tag()) {
+            (SlotTag::Integer, SlotTag::Integer) => {
+                let (lo, hi) = self.unwrap_integer().overflowing_mul(other.unwrap_integer());
+
+                if hi == 0 {
+                    Integer::new(lo as i64).map(Into::into)
+                } else {
+                    unimplemented!("integer mul overflow")
+                    //Some(Reference::Number(Number::new(lo as i64, hi as u64)).into())
+                }
+            },
+            _ => None,
+        }
+    }
+
+    fn op_modulo_internal(&self, other: &Self) -> Option<Slot> {
+        match (self.get_tag(), other.get_tag()) {
+            (SlotTag::Integer, SlotTag::Integer) => {
+                Some(Slot::new_integer((self.unwrap_integer().unwrap()%other.unwrap_integer().unwrap()).try_into().unwrap()))
+            },
+            _ => None,
+        }
+    }
+
     pub fn op_not(&self) -> Slot {
         match self.get_tag() {
+            SlotTag::Pointer => {
+                self.unwrap_pointer().op_not()
+            },
             SlotTag::Constant => {
                 match self.unwrap_constant() {
                     Constant::Undefined => Slot::TRUE,
@@ -394,13 +451,16 @@ impl Slot {
                     _ => None,
                 }
             }
+            SlotTag::Pointer => {
+                self.unwrap_mut_pointer().get_element(index)
+            }
             _ => None, // TODO: wrapped objects
         }
     }
 
     // . operator
     // Retrieves the property with the given name.
-    pub fn get_property(&mut self, name: &SharedString) -> Option<&mut Slot> {
+    pub fn get_property(&mut self, name: &Rc<str>) -> Option<&mut Property> {
         match self.get_tag() {
             SlotTag::Reference => {
                 match self.unwrap_mut_reference() {
@@ -415,6 +475,9 @@ impl Slot {
                     }
                     _ => None,
                 }
+            },
+            SlotTag::Pointer => {
+                self.unwrap_mut_pointer().get_property(name)
             }
             _ => None, // TODO: wrapped objects
         }

@@ -1,14 +1,14 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+#![feature(box_patterns)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod statement;
+pub mod expression;
+pub mod scope;
+pub mod function;
+mod state;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod scope_test;
+
+pub use statement::*;
+pub use expression::*;
+pub use scope::*;
+pub use function::*;

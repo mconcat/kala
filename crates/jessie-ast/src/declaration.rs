@@ -1,20 +1,20 @@
-use std::rc::Rc;
+use std::{rc::Rc, fmt::Debug};
 
 use utils::SharedString;
 
 use crate::{Function, Pattern, Expr, OptionalPattern};
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Declaration {
-    Const(Rc<Vec<VariableDeclaration>>),
-    Let(Rc<Vec<VariableDeclaration>>),
-    Function(Rc<Function>),
-}
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct VariableDeclaration {
-    pub pattern: Pattern,
-    pub value: Option<Expr>,
+
+
+
+impl Debug for VariableDeclaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.value {
+            Some(value) => write!(f, "{:?} = {:?}", self.pattern, value),
+            None => write!(f, "{:?}", self.pattern),
+        }
+    }
 }
 /* 
 #[derive(Debug, PartialEq, Clone)]

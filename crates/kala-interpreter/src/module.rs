@@ -5,7 +5,6 @@ use jessie_ast::Declaration;
 use jessie_ast::module::{Module, ModuleItem, ExportClause, Script};
 use kala_repr::function::Frame;
 use kala_repr::{completion::Completion, slot::Slot};
-use utils::{SharedString, FxMap};
 use utils::map::Map;
 
 use crate::expression::eval_expr;

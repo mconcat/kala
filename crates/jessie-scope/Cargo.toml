@@ -6,4 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-jessie_ast = { version = "0.1.0", path = "../jessie_ast" }
+jessie-parser = { version = "0.1.0", path = "../jessie-parser" }
+jessie-ast = { version = "0.1.0", path = "../jessie-ast" }
+utils = { version = "0.1.0", path = "../utils" }

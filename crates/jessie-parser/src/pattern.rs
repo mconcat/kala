@@ -12,8 +12,8 @@ type ParserError = parser
 
 pub fn binding_pattern(state: &mut ParserState) -> Result<Pattern, ParserError> {
     match state.lookahead_1() {
-        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(Box::new(ArrayPattern(x)))),
-        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(Box::new(RecordPattern(x)))),
+        Some(Token::LeftBracket) => repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &param, false).map(|x| Pattern::ArrayPattern(Box::new(ArrayPattern(x.into_boxed_slice())))),
+        Some(Token::LeftBrace) => repeated_elements(state, Some(Token::LeftBrace), Token::RightBrace, &prop_param, false).map(|x| Pattern::RecordPattern(Box::new(RecordPattern(x.into_boxed_slice())))),
         c => state.err_expected("binding pattern", c),
     }
 }
@@ -59,7 +59,7 @@ fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
         Some(Token::Colon) => {
             state.proceed();
             let pat = pattern(state)?;
-            Ok(PropParam::KeyValue(Box::new(Field::new_dynamic(key)), pat))
+            Ok(PropParam::KeyValue(Box::new(Field{name: key}), pat))
         },
         Some(Token::Equal) => {
             unimplemented!("default value in record pattern")
@@ -70,9 +70,9 @@ fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
             */
         }
         _ => {
-            let var = state.scope.use_variable(key.clone());
-            let field = Box::new(Field::new_dynamic(key));
-            Ok(PropParam::Shorthand(field, Box::new(var)))
+            //let var = state.scope.use_variable(key.clone());
+            let field = Box::new(Field{name: key.clone()});
+            Ok(PropParam::Shorthand(field, Box::new(Variable::new(key))))
         }
     }
 }

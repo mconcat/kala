@@ -1,3 +1,4 @@
+use core::panic;
 use std::{rc::{self, Rc}};
 
 use jessie_ast::{Statement, IfStatement, ElseArm, WhileStatement, Block, Expr, VariableIndex, Declaration, VariableDeclaration, Pattern, Function};
@@ -32,9 +33,10 @@ pub fn eval_local_declaration(interpreter: &mut Interpreter, decl: &Declaration)
             for item in &**local {
                 eval_let(interpreter, item)?;
             }
+
         }
         Declaration::Function(func) => {
-            eval_function_declaration(interpreter, &func)?; 
+            // noop, functions are hoisted
         },
     }
 
@@ -44,13 +46,15 @@ pub fn eval_local_declaration(interpreter: &mut Interpreter, decl: &Declaration)
 pub fn initialize_pattern(interpreter: &mut Interpreter, pattern: &Pattern, initializer: Slot) -> Completion {
     match pattern {
         Pattern::Variable(var) => {
-            let variable = interpreter.fetch_variable(var.index.get())?;
+            let variable = interpreter.fetch_variable(var.index())?;
             /* 
             if variable.is_const() {
                 return Completion::Throw(interpreter.create_type_error("Cannot assign to const variable"));
             }
             */
-            *variable = initializer;
+            variable.set(initializer);
+
+            println!("Initialized variable {:?}", variable);
             Completion::Normal
         }
         _ => unimplemented!("initialize_pattern"),
@@ -68,12 +72,12 @@ pub fn eval_const(interpreter: &mut Interpreter, decl: &VariableDeclaration) -> 
 }
 
 pub fn eval_let(interpreter: &mut Interpreter, decl: &VariableDeclaration) -> Completion {
+
     let initializer = &decl.value;
     if initializer.is_none() {
         return Completion::Normal; // TODO
-    } 
+    }
     let initializer = eval_expr(interpreter, initializer.as_ref().unwrap())?;
-    
     initialize_pattern(interpreter, &decl.pattern, initializer)
 }
 
@@ -85,7 +89,7 @@ pub fn eval_function_declaration(interpreter: &mut Interpreter, func: &Function)
 }
 
 pub fn eval_block(interpreter: &mut Interpreter, block: &Block) -> Completion {
-    for statement in &block.statements {
+    for statement in block.statements.iter() {
         eval_statement(interpreter, statement)?;
     }
 

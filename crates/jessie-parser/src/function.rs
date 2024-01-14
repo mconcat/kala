@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use jessie_ast::*;
-use crate::{jessie_parser::{JessieParserState, repeated_elements}, Token, statement::block_raw, expression::{prop_name, expression}, common::use_variable, parser, pattern::{pattern, param}};
+use crate::{jessie_parser::{JessieParserState, repeated_elements}, Token, statement::{block_raw, self}, expression::{prop_name, expression}, common::use_variable, parser, pattern::{pattern, param}};
 
 type ParserState = JessieParserState;
 type ParserError = parser::ParserError<Option<Token>>;
@@ -29,36 +29,25 @@ pub fn function_expr(state: &mut ParserState) -> Result<Function, ParserError> {
 pub fn function_internal(state: &mut ParserState, name: FunctionName) -> Result<Function, ParserError> {
 
     println!("function_internal");
-    state.scope.enter_function();
-    
+    state.enter_block();
 
     let parameters = repeated_elements
-    (state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?;
+    (state, Some(Token::LeftParen), Token::RightParen, &param, true/*Check it*/)?.into_boxed_slice();
 
     println!("parameters {:?}", parameters);
-    println!("scope {:?}", state.scope);
-
-    state.scope.initialize_parameters(&parameters);
-
 
     // TODO: spread parameter can only come at the end
 
-    match state.lookahead_1() {
-        Some(Token::LeftBrace) => {
-            let statements = Block { statements: block_raw(state)? };
-            let (functions, locals, captures) = state.scope.exit_function();
-            let func = Function {
-                name,
-                functions,
-                locals,
-                statements,
-                captures,
-                parameters,
-            };
-            Ok(func)
-        },
-        c => state.err_expected(&"a function body", c),
-    }
+    let statements = block_raw(state)?;
+    let declarations = state.exit_block();
+    let statements = Block { declarations, statements };
+    let func = Function {
+        name: name,
+        parameters,
+        body: ExprOrBlock::Block(statements),
+        scope: None,
+    };
+    Ok(func)
 }
 
 pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
@@ -82,8 +71,7 @@ pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
             */
         },
         Some(Token::Comma) | Some(Token::RightBrace) => {
-            let var = state.scope.use_variable(prop_name.clone().dynamic_property);
-            Ok(PropParam::Shorthand(prop_name, Box::new(var)))
+            Ok(PropParam::Shorthand(prop_name.clone(), Box::new(Variable::new(prop_name.name))))
         },
         Some(Token::QuasiQuote) => {
             unimplemented!("quasiquote")
@@ -94,39 +82,37 @@ pub fn prop_param(state: &mut ParserState) -> Result<PropParam, ParserError> {
     }
 }
 
-pub fn arrow_function_body(state: &mut ParserState) -> Result<Vec<Statement>, ParserError> {
+pub fn arrow_function_body(state: &mut ParserState) -> Result<Box<[Statement]>, ParserError> {
     match state.lookahead_1() {
         Some(Token::LeftBrace) => {
-            state.proceed();
             block_raw(state)
         },
         _ => {
             let expr = expression(state)?;
-            Ok(vec![Statement::Return(Box::new(expr))])
+            Ok(Box::new([Statement::Return(Box::new(expr))]))
         }
     }
 }
 
 pub fn arrow_expr(state: &mut ParserState) -> Result<Expr, ParserError> { 
-    state.scope.enter_function();
-    let parameters = repeated_elements(state, Some(Token::ArrowLeftParen), Token::ArrowRightParen, &param, true)?;
+    let parameters = repeated_elements(state, Some(Token::ArrowLeftParen), Token::ArrowRightParen, &param, true)?.into_boxed_slice();
     if !state.try_proceed(Token::FatArrow) {
         let la = state.lookahead_1();
         return state.err_expected("=>", la)
     }
-    state.scope.initialize_parameters(&parameters);
 
-    let statements = Block { statements: arrow_function_body(state)? };
-    let (functions, locals, captures) = state.scope.exit_function();
+    state.enter_block();
+    let statements = arrow_function_body(state)?;
+    let declarations = state.exit_block();
+
+    let body = Block { statements, declarations };
 
     let function = Function {
         name: FunctionName::Arrow,
-        functions,
-        locals,
-        statements,
         parameters,
-        captures,
+        body: ExprOrBlock::Block(body),
+        scope: None,
     };
 
-    Ok(Expr::Function(Rc::new(function)))
+    Ok(Expr::Function(Box::new(function)))
 }

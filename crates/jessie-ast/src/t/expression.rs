@@ -1,329 +1,230 @@
-use utils::SharedString;
+use std::{rc::Rc, cell::OnceCell};
 
-use crate::{BinaryOp, CallExpr, CallPostOp};
-use std::ops::{Add, Sub, Mul, Div, Rem, Index, IndexMut, Neg, Not};
+use crate::{Expr, DataLiteral, Array, PropDef, Record, BinaryExpr, UnaryOp, UnaryExpr, CallPostOp, Assignment, LValue, Variable, Pattern, Block, Function};
 
-// Literals
-
-pub fn lit(lit: crate::DataLiteral) -> crate::Expr {
-    crate::Expr::DataLiteral(Box::new(lit))
+pub fn _null() -> Expr {
+    Expr::DataLiteral(Box::new(DataLiteral::Null))
 }
 
-pub fn bool(b: bool) -> crate::Expr {
-    if b {
-        crate::Expr::DataLiteral(Box::new(crate::DataLiteral::True))
-    } else {
-        crate::Expr::DataLiteral(Box::new(crate::DataLiteral::False))
-    }
+pub fn _undefined() -> Expr {
+    Expr::DataLiteral(Box::new(DataLiteral::Undefined))
 }
 
-pub fn null() -> crate::Expr {
-    crate::Expr::DataLiteral(Box::new(crate::DataLiteral::Null))
+pub fn _number(n: i64) -> Expr {
+    Expr::DataLiteral(Box::new(DataLiteral::Integer(n)))
 }
 
-pub fn undefined() -> crate::Expr {
-    crate::Expr::DataLiteral(Box::new(crate::DataLiteral::Undefined))
+pub fn _string(s: &str) -> Expr {
+    Expr::DataLiteral(Box::new(DataLiteral::String(Rc::from(s))))
 }
 
-pub fn number(n: i64) -> crate::Expr {
-    crate::Expr::DataLiteral(Box::new(crate::DataLiteral::Integer(n)))
+pub fn _false() -> Expr {
+    Expr::DataLiteral(Box::new(DataLiteral::False))
 }
 
-pub fn string(s: &str) -> crate::Expr {
-    crate::Expr::DataLiteral(Box::new(crate::DataLiteral::String(SharedString::from_str(s))))
+pub fn _true() -> Expr {
+    Expr::DataLiteral(Box::new(DataLiteral::True))
 }
 
-// Arrays
-#[macro_export]
-macro_rules! array {
-    (building, [$($elem:expr),*]) => {
-        crate::Expr::Array(Box::new(crate::Array(vec![$($elem)*])))
-    };
-
-    // element
-    (building, [$($elem:expr),*], $e:expr, $($rest:tt)+) => {
-        array!(building, [$($elem),*, $e], $($rest)+)
-    };
-
-    ($e:expr, $($rest:tt)+) => {
-        array!(building, [], $e, $($rest)+)
-    };
-
-    // spread
-    (building, [$($elem:expr),*], ...$e:expr, $($rest:tt)+) => {
-        array!(building, [$($elem),*, crate::Expr::Spread($e.into())], $($rest)+)
-    };
-
-    (...$e:expr, $($rest:tt)+) => {
-        array!(building, [], ...$e, $($rest)+)
-    };
+pub fn _array(elements: &[Expr]) -> Expr {
+    Expr::Array(Box::new(Array(Box::from(elements))))
 }
 
-// Records
-#[macro_export]
-macro_rules! record {
-    (building, [$($prop:expr),*]) => {
-        crate::Expr::Record(Box::new(crate::Record(vec![$($prop)*])))
-    };
-    // keyvalue
-    (building, [$($prop:expr),*], $k:ident => $v:expr, $($rest:tt)+) => {
-        record!(building, [$($prop),*, crate::PropDef::KeyValue(
-            Box::new(crate::Field::new_dynamic(stringify!($k))),
-            $v,
-        )], $($rest)+)
-    };
-
-    ($k:expr => $v:expr, $($rest:tt)+) => {
-        record!(building, [], $k => $v, $($rest)+)
-    }; 
-
-    // shorthand
-    (building, [$($prop:expr),*], $k:expr, $($rest:tt)+) => {
-        record!(building, [$($prop),*, crate::PropDef::Shorthand(
-            Box::new(crate::Field::new_dynamic(stringify!($k))),
-            Box::new(crate::VariableCell::uninitialized(SharedString::from_string(stringify!($k)))),
-        )], $($rest)+)
-    };
-
-    ($k:expr, $($rest:tt)+) => {
-        record!(building, [], $k, $($rest)+)
-    };
-
-    // spread
-    (building, [$($prop:expr),*], ...$e:expr, $($rest:tt)+) => {
-        record!(building, [$($prop),*, crate::PropDef::Spread($e.into())], $($rest)+)
-    };
-
-    (...$e:expr, $($rest:tt)+) => {
-        record!(building, [], ...$e, $($rest)+)
-    };
+pub fn _record(props: &[PropDef]) -> Expr {
+    Expr::Record(Box::new(Record(Box::from(props))))
 }
 
-// Assignment
-impl crate::LValue {
-    pub fn assign(self, rhs: crate::Expr) -> crate::Expr {
-        crate::Expr::Assignment(Box::new(crate::Assignment(crate::AssignOp::Assign, self, rhs)))
-    }
+fn _binary_expr(op: crate::BinaryOp, x: impl Into<Expr>, y: impl Into<Expr>) -> Expr {
+    Expr::BinaryExpr(Box::new(BinaryExpr(op, x.into(), y.into())))
 }
 
-// BinaryExpr
-pub fn bin(op: BinaryOp, l: crate::Expr, r: crate::Expr) -> crate::Expr {
-    crate::Expr::BinaryExpr(Box::new(crate::BinaryExpr(op, l, r)))
+pub fn _add(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::Add, left, right)
 }
 
-
-impl Add for crate::Expr {
-    type Output = crate::Expr;
-
-    fn add(self, other: Self) -> Self::Output {
-        bin(BinaryOp::Add, self, other)
-    }
+pub fn _sub(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::Sub, left, right)
 }
 
-impl Sub for crate::Expr {
-    type Output = crate::Expr;
-
-    fn sub(self, other: Self) -> Self::Output {
-        bin(BinaryOp::Sub, self, other)
-    }
+pub fn _mul(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::Mul, left, right)
 }
 
-impl Mul for crate::Expr {
-    type Output = crate::Expr;
-
-    fn mul(self, other: Self) -> Self::Output {
-        bin(BinaryOp::Mul, self, other)
-    }
+pub fn _div(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::Div, left, right)
 }
 
-impl Div for crate::Expr {
-    type Output = crate::Expr;
-
-    fn div(self, other: Self) -> Self::Output {
-        bin(BinaryOp::Div, self, other)
-    }
+pub fn _mod(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::Mod, left, right)
 }
 
-impl Rem for crate::Expr {
-    type Output = crate::Expr;
-
-    fn rem(self, other: Self) -> Self::Output {
-        bin(BinaryOp::Mod, self, other)
-    }
+pub fn _eq(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::StrictEqual, left, right)
 }
 
-impl crate::Expr {
-    pub fn and(self, other: crate::Expr) -> crate::Expr {
-        bin(BinaryOp::And, self, other)
-    }
-
-    pub fn or(self, other: crate::Expr) -> crate::Expr {
-        bin(BinaryOp::Or, self, other)
-    }
+pub fn _ne(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::StrictNotEqual, left, right)
 }
 
-// CondExpr
-
-impl crate::Expr {
-    pub fn cond(self, t: crate::Expr, f: crate::Expr) -> crate::Expr {
-        crate::Expr::CondExpr(Box::new(crate::CondExpr(self, t, f)))
-    }
+pub fn _lt(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::LessThan, left, right)
 }
 
-// UnaryExpr
+pub fn _le(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::LessThanEqual, left, right)
+}
 
-impl Not for crate::Expr {
-    type Output = crate::Expr;
+pub fn _gt(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::GreaterThan, left, right)
+}
 
-    fn not(mut self) -> Self::Output {
-        match self {
-            crate::Expr::UnaryExpr(ue) => {
-                let mut res = ue.clone();
-                res.op.push(crate::UnaryOp::Not);
-                crate::Expr::UnaryExpr(res)
-            }
-            _ => crate::Expr::UnaryExpr(Box::new(crate::UnaryExpr {
-                op: vec![crate::UnaryOp::Not],
-                expr: self,
+pub fn _ge(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::GreaterThanEqual, left, right)
+}
+
+pub fn _and(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::And, left, right)
+}
+
+pub fn _or(left: impl Into<Expr>, right: impl Into<Expr>) -> Expr {
+    _binary_expr(crate::BinaryOp::Or, left, right)
+}
+
+pub fn _cond(cond: impl Into<Expr>, then: impl Into<Expr>, else_: impl Into<Expr>) -> Expr {
+    Expr::CondExpr(Box::new(crate::CondExpr(cond.into(), then.into(), else_.into())))
+}
+
+fn _unary(op: UnaryOp, expr: impl Into<Expr>) -> Expr {
+    let expr = expr.into();
+
+    match expr {
+        Expr::UnaryExpr(unary) => {
+            let mut ops = Vec::from(unary.op);
+            ops.push(op);
+            Expr::UnaryExpr(Box::new(UnaryExpr{
+                op: ops.into_boxed_slice(),
+                expr: unary.expr,
             }))
-        }
-    }
-}
-
-impl Neg for crate::Expr {
-    type Output = crate::Expr;
-
-    fn neg(self) -> Self::Output {
-        match self {
-            crate::Expr::UnaryExpr(ue) => {
-                let mut res = ue.clone();
-                res.op.push(crate::UnaryOp::Neg);
-                crate::Expr::UnaryExpr(res)
-            }
-            _ => crate::Expr::UnaryExpr(Box::new(crate::UnaryExpr {
-                op: vec![crate::UnaryOp::Neg],
-                expr: self,
+        },
+        _ => {
+            Expr::UnaryExpr(Box::new(UnaryExpr{
+                op: Box::new([op]),
+                expr: expr,
             }))
-        }
+        },
     }
 }
 
-// CallExpr
+pub fn _typeof(expr: impl Into<Expr>) -> Expr {
+    _unary(UnaryOp::TypeOf, expr)
+}
 
-impl crate::Expr {
-    pub fn index(self, index: impl Into<Self>) -> Self {
-        match self {
-            crate::Expr::CallExpr(ce) => {
-                let mut result = ce.clone();
-                result.post_ops.push(crate::CallPostOp::Index(index.into()));
-                crate::Expr::CallExpr(result)
-            },
-            _ => crate::Expr::CallExpr(Box::new(crate::CallExpr {
-                expr: self,
-                post_ops: vec![crate::CallPostOp::Index(index.into())],
+pub fn _pos(expr: impl Into<Expr>) -> Expr {
+    _unary(UnaryOp::Pos, expr)
+}
+
+pub fn _neg(expr: impl Into<Expr>) -> Expr {
+    _unary(UnaryOp::Neg, expr)
+}
+
+pub fn _not(expr: impl Into<Expr>) -> Expr {
+    _unary(UnaryOp::Not, expr)
+}
+
+pub fn _bitnot(expr: impl Into<Expr>) -> Expr {
+    _unary(UnaryOp::BitNot, expr)
+}
+
+fn _callpost(op: CallPostOp, expr: impl Into<Expr>) -> Expr {
+    let expr = expr.into();
+
+    match expr {
+        Expr::CallExpr(call) => {
+            let mut ops = Vec::from(call.post_ops);
+            ops.push(op);
+            Expr::CallExpr(Box::new(crate::CallExpr{
+                expr: call.expr,
+                post_ops: ops.into_boxed_slice(),
             }))
-        }
-    }
-
-    pub fn prop(self, prop: &str) -> Self {
-        match self {
-            crate::Expr::CallExpr(ce) => {
-                let mut result = ce.clone();
-                result.post_ops.push(crate::CallPostOp::Member(SharedString::from_str(prop)));
-                crate::Expr::CallExpr(result)
-            },
-            _ => crate::Expr::CallExpr(Box::new(crate::CallExpr {
-                expr: self,
-                post_ops: vec![crate::CallPostOp::Member(SharedString::from_str(prop))],
+        },
+        _ => {
+            Expr::CallExpr(Box::new(crate::CallExpr{
+                expr: expr,
+                post_ops: Box::new([op]),
             }))
-        }
-    }
-
-    pub fn call(self, args: &[Self]) -> Self {
-        match self {
-            crate::Expr::CallExpr(ce) => {
-                let mut result = ce.clone();
-                result.post_ops.push(crate::CallPostOp::Call(args.to_vec()));
-                crate::Expr::CallExpr(result)
-            },
-            _ => crate::Expr::CallExpr(Box::new(crate::CallExpr {
-                expr: self,
-                post_ops: vec![crate::CallPostOp::Call(args.to_vec())],
-            }))
-        }
+        },
     }
 }
 
-impl crate::LValue {
-    pub fn index(self, index: impl Into<crate::Expr>) -> crate::LValue {
-        match self {
-            crate::LValue::CallLValue(mut clv) => {
-                clv.post_ops.push(crate::LValueCallPostOp::Index(index.into()));
-                crate::LValue::CallLValue(clv)
-            },
-            _ => crate::LValue::CallLValue(Box::new(crate::CallLValue {
-                expr: self.into(),
-                post_ops: vec![crate::LValueCallPostOp::Index(index.into())],
-            }))
-        }
-    }
-
-    pub fn prop(self, prop: &str) -> crate::LValue {
-        match self {
-            crate::LValue::CallLValue(mut clv) => {
-                clv.post_ops.push(crate::LValueCallPostOp::Member(SharedString::from_str(prop)));
-                crate::LValue::CallLValue(clv)
-            },
-            _ => crate::LValue::CallLValue(Box::new(crate::CallLValue {
-                expr: self.into(),
-                post_ops: vec![crate::LValueCallPostOp::Member(SharedString::from_str(prop))],
-            }))
-        }
-    }
+pub fn _index(expr: impl Into<Expr>, index: impl Into<Expr>) -> Expr {
+    _callpost(CallPostOp::Index(index.into()), expr)
 }
 
-// parened
-
-pub fn paren(e: crate::Expr) -> crate::Expr {
-    crate::Expr::ParenedExpr(Box::new(e))
+pub fn _member(expr: impl Into<Expr>, member: &str) -> Expr {
+    _callpost(CallPostOp::Member(Rc::from(member)), expr)
 }
 
-// Variable
+pub fn _call(expr: impl Into<Expr>, args: &[Expr]) -> Expr {
+    _callpost(CallPostOp::Call(Box::from(args)), expr)
+}
 
-pub struct Variable(pub SharedString);
-/*
-impl Into<crate::LValue> for Variable {
-    fn into(self) -> crate::LValue {
-        crate::LValue::Variable(Box::new(crate::VariableCell::uninitialized(self.0)))
+pub fn _assign(left: impl Into<LValue>, right: impl Into<Expr>) -> Expr {
+    Expr::Assignment(Box::new(Assignment(crate::AssignOp::Assign, left.into(), right.into())))
+}
+
+pub fn _add_assign(left: impl Into<LValue>, right: impl Into<Expr>) -> Expr {
+    Expr::Assignment(Box::new(Assignment(crate::AssignOp::AssignAdd, left.into(), right.into())))
+}
+
+pub fn _var(name: &str) -> Expr {
+    Expr::Variable(Box::new(Variable{
+        name: Rc::from(name),
+        pointer: Rc::new(OnceCell::new())
+    }))
+}
+
+pub fn _function_raw(name: &str,scope: Option<crate::FunctionScope>, params: &[Pattern], body: impl Into<Block>) -> Function {
+    crate::Function{
+        name: crate::FunctionName::Named(Rc::from(name)),
+        parameters: Box::from(params),
+        body: crate::ExprOrBlock::Block(body.into()),
+        scope: scope.map(Into::into),
     }
 }
 
-
-impl Into<crate::Pattern> for Variable {
-    fn into(self) -> crate::Pattern {
-        crate::Pattern::Variable(Box::new(crate::VariableCell::uninitialized(self.0)))
-    }
-}
-*/
-
-impl Into<crate::Expr> for Variable {
-    fn into(self) -> crate::Expr {
-        crate::Expr::Variable(Box::new(crate::VariableCell::uninitialized(self.0)))
-    }
+pub fn _function(name: &str,scope: Option<crate::FunctionScope>, params: &[Pattern], body: impl Into<Block>) -> Expr {
+    Expr::Function(Box::new(crate::Function{
+        name: crate::FunctionName::Named(Rc::from(name)),
+        parameters: Box::from(params),
+        body: crate::ExprOrBlock::Block(body.into()),
+        scope: scope.map(Into::into),
+    }))
 }
 
-
-impl Add for Variable {
-    type Output = crate::Expr;
-
-    fn add(self, other: Self) -> Self::Output {
-        bin(BinaryOp::Add, self.into(), other.into())
-    }
+pub fn _function_anonymous(params: &[Pattern], body: impl Into<Block>) -> Expr {
+    Expr::Function(Box::new(crate::Function{
+        name: crate::FunctionName::Anonymous,
+        parameters: Box::from(params),
+        body: crate::ExprOrBlock::Block(body.into()),
+        scope: None,
+    }))
 }
 
-#[macro_export]
-macro_rules! var {
-    ($name:ident) => {
-        Variable(SharedString::from_str(stringify!($name)))
-    };
+pub fn arrow_expr(params: &[Pattern], body: impl Into<Expr>) -> Expr {
+    Expr::Function(Box::new(crate::Function{
+        name: crate::FunctionName::Arrow,
+        parameters: Box::from(params),
+        body: crate::ExprOrBlock::Expr(body.into()),
+        scope: None,
+    }))
 }
+
+pub fn arrow_block(params: &[Pattern], body: impl Into<Block>) -> Expr {
+    Expr::Function(Box::new(crate::Function{
+        name: crate::FunctionName::Arrow,
+        parameters: Box::from(params),
+        body: crate::ExprOrBlock::Block(body.into()),
+        scope: None,
+    }))
+}
+

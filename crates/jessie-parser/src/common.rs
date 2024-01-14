@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use jessie_ast::*;
 use crate::jessie_parser::JessieParserState;
 use crate::parser;
@@ -5,7 +7,6 @@ use crate::{
     Token,
 };
 
-use utils::SharedString;
 ///////////////////////////
 // Basic components
 
@@ -13,7 +14,7 @@ type ParserState = JessieParserState;
 type ParserError = parser::ParserError<Option<Token>>;
 
 
-pub fn identifier(state: &mut ParserState) -> Result<SharedString, ParserError> {
+pub fn identifier(state: &mut ParserState) -> Result<Rc<str>, ParserError> {
     match state.lookahead_1() {
         Some(Token::Identifier(s)) => {
             state.proceed();
@@ -24,8 +25,21 @@ pub fn identifier(state: &mut ParserState) -> Result<SharedString, ParserError> 
 }
 
 pub fn use_variable(state: &mut ParserState) -> Result<Variable, ParserError> {
-    let ident = identifier(state)?;
-    Ok(state.scope.use_variable(ident))
+    match state.lookahead_1() {
+        Some(Token::Identifier(s)) => {
+            state.proceed();
+            Ok(Variable::new(s))
+        },
+        Some(Token::Get) => {
+            state.proceed();
+            Ok(Variable::new("get".into()))
+        },
+        Some(Token::Set) => {
+            state.proceed();
+            Ok(Variable::new("set".into()))
+        },
+        found => state.err_expected("variable identifier", found),
+    }
 }
 /* 
 pub fn use_variable_with_parsed(state: &mut ParserState, ident: String) -> UseVariable {

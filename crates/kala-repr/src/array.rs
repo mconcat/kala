@@ -1,5 +1,6 @@
 use super::slot::Slot;
 
+#[derive(Clone)]
 pub struct Array(pub Vec<Slot>);
 
 impl Array {

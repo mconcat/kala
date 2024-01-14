@@ -1,10 +1,8 @@
 // just wrap the parser state to accumulate the tokens
 
-use std::fmt::{Debug, Display};
+use std::{fmt::{Debug, Display}, rc::Rc};
 
 use crate::parser::ParserState;
-
-use utils::SharedString;
 
 pub struct Lexer {
     state: ParserState<char>,
@@ -196,8 +194,8 @@ pub enum Token {
     AsteriskSlash, // */
     // Literals
     Undefined,
-    Identifier(SharedString),
-    String(SharedString),
+    Identifier(Rc<str>),
+    String(Rc<str>),
     Integer(i64),
     Decimal(i64, u64),
     Bigint(bool, Box<[u64]>),
@@ -349,7 +347,7 @@ fn given_keyword_or_ident(lexer: &mut Lexer, keyword: &'static str, token: Token
         println!("keyword given_keyword_or_ident: {:?}", token);
         Ok(token)
     } else {
-        println!("ident given_keyword_or_ident: {:?}", Token::Identifier(SharedString::from_str(keyword)));
+        println!("ident given_keyword_or_ident: {:?}", Token::Identifier(keyword.into()));
         ident(lexer)
     }
 }
@@ -438,6 +436,7 @@ fn keyword_or_ident(lexer: &mut Lexer) -> Result<Token, String> {
         },
         Some('f') => {
             match lexer.lookahead_2() {
+                Some('a') => given_keyword_or_ident(lexer, &"false", Token::False),
                 Some('i') => given_keyword_or_ident(lexer, &"finally", Token::Finally),
                 Some('o') => given_keyword_or_ident(lexer, &"for", Token::For),
                 Some('u') => given_keyword_or_ident(lexer, &"function", Token::Function),
@@ -758,6 +757,10 @@ fn tokenize(lexer: &mut Lexer, result: &mut Vec<Token>) -> Result<Token, String>
                 } else {
                     return Err("== operator not supported".to_string());
                 }
+            } else if lexer.lookahead_2() == Some('>') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::FatArrow
             } else {
                 lexer.proceed_with(Token::Equal)
             }
@@ -897,7 +900,7 @@ fn ident(state: &mut Lexer) -> Result<Token, String> {
         _ => return Err(format!("Expected identifier, but got {:?}", state.lookahead_1())),
     }
 
-    Ok(Token::Identifier(SharedString::from_string(ident)))
+    Ok(Token::Identifier(ident.into()))
 }
 
 
@@ -1025,6 +1028,6 @@ fn parse_ident(state: &mut Lexer) -> Result<Token, String> {
             break;
         }
     }
-    Ok(Token::Identifier(SharedString::from_string(ident)))
+    Ok(Token::Identifier(ident.into()))
 }
 
