@@ -3,7 +3,6 @@ use std::{rc::Rc, cell::RefCell};
 use jessie_parser::{lexer::lex_jessie, JessieParserState};
 use kala_interpreter::eval_script;
 use kala_repr::{slot::Slot, completion::Completion, object::Property};
-use utils::{FxMap, SharedString, Map};
 
 pub(crate) fn run_script(code: String) -> Completion {
     let tokenstream = lex_jessie(code).unwrap();

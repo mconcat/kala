@@ -109,10 +109,9 @@ impl Interpreter {
     pub fn fetch_variable(&mut self, index: VariableIndex) -> Option<&mut Slot> {
         let var = match index {
             VariableIndex::Captured(index) => self.current_frame.get_capture(index as usize),
-            VariableIndex::Local(index) => self.current_frame.get_local(index as usize),
+            VariableIndex::Local(_, index) => self.current_frame.get_local(index as usize),
             VariableIndex::Parameter(index) => self.current_frame.get_argument(index as usize),
             VariableIndex::Static(index) => self.builtins.get_mut(index as usize).unwrap(),
-            VariableIndex::Unknown => unreachable!("Unknown variable index")
         };
 
         Some(var)

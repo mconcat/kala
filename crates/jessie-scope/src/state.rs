@@ -85,18 +85,22 @@ impl ScopeState {
     }
     
     pub fn declare_let_variable(&mut self, var: &mut Variable) -> Result<(), &'static str> {
-        self.current_function().unwrap().declare_variable(var)
+        let current_function = self.current_function().unwrap();
+        
+        current_function.declare_variable(var, VariableIndex::Local(false, current_function.locals.len() as u32))
     }
 
     pub fn declare_const_variable(&mut self, var: &mut Variable) -> Result<(), &'static str> {
-        self.declare_let_variable(var) // TODO
+        let current_function = self.current_function().unwrap();
+        
+        current_function.declare_variable(var, VariableIndex::Local(true, current_function.locals.len() as u32))
     }
 
     pub fn declare_parameter(&mut self, var: &mut Variable) -> Result<(), &'static str> {
         self.current_function().unwrap().declare_parameter(var)
     }
 
-    pub fn declare_pattern(&mut self, pattern: &mut Pattern, mut f: impl FnMut(&mut Self, &mut Variable) -> Result<(), &'static str>) -> Result<(), &'static str> {
+    pub fn declare_pattern(&mut self, pattern: &mut Pattern, f: &mut impl FnMut(&mut Self, &mut Variable) -> Result<(), &'static str>) -> Result<(), &'static str> {
         match pattern {
             Pattern::Variable(var) => f(self, var.as_mut()),
             Pattern::ArrayPattern(arr) => arr.0.iter_mut().try_for_each(|pat| self.declare_pattern(pat, f)),
@@ -121,6 +125,7 @@ impl ScopeState {
 
     pub fn enter_function(&mut self, func: &mut Function) -> Result<(), &'static str>{
         self.module_scope.function_scopes.push(FunctionScope{
+            parameters: Vec::with_capacity(func.parameters.len()),
             locals: Vec::new(),
             captures: Vec::new(),
             functions: Vec::new(),
@@ -129,7 +134,7 @@ impl ScopeState {
         });
 
         for param in func.parameters.iter_mut() {
-            self.declare_pattern(param, Self::declare_parameter)?;
+            self.declare_pattern(param, &mut Self::declare_parameter)?;
         }
 
         Ok(())
@@ -139,6 +144,7 @@ impl ScopeState {
         let scope = self.module_scope.function_scopes.pop().unwrap();
 
         jessie_ast::FunctionScope{
+            parameters: scope.parameters.into(),
             locals: scope.locals.into(),
             captures: scope.captures.into(),
             functions: scope.functions.into(),
@@ -155,12 +161,12 @@ impl ScopeState {
             match decl {
                 Declaration::Const(decls) => {
                     for decl in decls.iter_mut() {
-                        self.declare_pattern(&mut decl.pattern)?;
+                        self.declare_pattern(&mut decl.pattern, &mut Self::declare_const_variable)?;
                     }
                 }
                 Declaration::Let(decls) => {
                     for decl in decls.iter_mut() {
-                        self.declare_pattern(&mut decl.pattern)?;
+                        self.declare_pattern(&mut decl.pattern, &mut Self::declare_let_variable)?;
                     }
                 }
                 Declaration::Function(func) => {
@@ -187,10 +193,11 @@ pub struct ModuleScope {
 
 #[derive(Debug)]
 pub struct FunctionScope {
+    pub parameters: Vec<Variable>,
     pub locals: Vec<Variable>,
     pub captures: Vec<Variable>,
     pub functions: Vec<(Variable, Rc<RefCell<Function>>)>,
-    
+
     pub block_scopes: Vec<BlockScope>,
 }
 
@@ -203,6 +210,13 @@ impl FunctionScope {
         for block in self.block_scopes.iter_mut().rev() {
             if let Some(declared_var) = block.declared_variables.get_mut(&var.name) {
                 *var = declared_var.clone();
+                return Ok(());
+            }
+        }
+
+        for parameter in self.parameters.iter() {
+            if parameter.name == var.name {
+                *var = parameter.clone();
                 return Ok(());
             }
         }
@@ -220,7 +234,7 @@ impl FunctionScope {
     }
 
     fn declare_parameter(&mut self, var: &mut Variable) -> Result<(), &'static str> {
-        self.declare_variable(var, VariableIndex::Parameter(self.parameters.len().try_into))
+        self.declare_variable(var, VariableIndex::Parameter(self.parameters.len().try_into().unwrap()))
     }
 
     fn declare_variable(&mut self, var: &mut Variable, index: VariableIndex) -> Result<(), &'static str> {
@@ -239,7 +253,7 @@ impl FunctionScope {
         if self.current_block().declared_variables.contains_key(&name) {
             return Err("Function already declared");
         }
-        let var = Variable::declared(name.clone(), VariableIndex::Local(self.locals.len().try_into().unwrap()));
+        let var = Variable::declared(name.clone(), VariableIndex::Local(true, self.locals.len().try_into().unwrap()));
         self.locals.push(var.clone());
         self.current_block().declared_variables.insert(name, var.clone());
         self.functions.push((var, func.clone()));

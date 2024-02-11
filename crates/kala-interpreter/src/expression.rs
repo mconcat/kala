@@ -1,7 +1,7 @@
 use core::panic;
-use std::{mem::{replace, self}, rc::Rc};
+use std::{borrow::Borrow, mem::{replace, self}, rc::Rc};
 
-use jessie_ast::{Expr, DataLiteral, Array, Record, PropDef, AssignOp, CondExpr, BinaryExpr, BinaryOp, UnaryOp, CallExpr, CallPostOp, Function, LValue, UnaryExpr, Assignment,  LValueCallPostOp, Variable, CallLValue, VariableIndex};
+use jessie_ast::{Array, AssignOp, Assignment, BinaryExpr, BinaryOp, CallExpr, CallLValue, CallPostOp, CondExpr, DataLiteral, Expr, ExprOrBlock, Function, LValue, LValueCallPostOp, PropDef, Record, UnaryExpr, UnaryOp, Variable, VariableIndex};
 use kala_repr::{slot::Slot, object::Property, completion::Completion, function::Frame};
 
 use crate::{interpreter::Interpreter, operation::{strict_equal, strict_not_equal, less_than, less_than_or_equal, greater_than, greater_than_or_equal, add, sub, mul, div, modulo, pow}, statement::eval_block};
@@ -13,7 +13,7 @@ pub fn eval_expr(interpreter: &mut Interpreter, expr: &Expr) -> Completion {
         Expr::DataLiteral(lit) => eval_literal(lit),
         Expr::Array(array) => eval_array(interpreter, array),
         Expr::Record(obj) => eval_record(interpreter, obj),
-        Expr::Function(func) => eval_function(interpreter, func.clone()),
+        Expr::Function(func) => eval_function(interpreter, func),
         Expr::Assignment(assignment) => eval_assignment(interpreter, assignment),
         Expr::CondExpr(cond) => eval_cond(interpreter, cond),
         Expr::BinaryExpr(binary) => eval_binary(interpreter, binary),
@@ -73,11 +73,11 @@ fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Completion {
                     if prop.getter != Slot::UNINITIALIZED {
                         panic!("duplicate getter");
                     }
-                    prop.getter = eval_function(interpreter, func.clone().into())?;
+                    prop.getter = eval_function(interpreter, func)?;
                 } else {
                     props.push(Property::getter(
                         func.get_name().unwrap(),
-                        eval_function(interpreter, (*func).into())?,
+                        eval_function(interpreter, func)?,
                     ));
                 }
             }
@@ -87,11 +87,11 @@ fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Completion {
                     if prop.setter != Slot::UNINITIALIZED {
                         panic!("duplicate setter");
                     }
-                    prop.setter = eval_function(interpreter, func.clone())?; 
+                    prop.setter = eval_function(interpreter, func)?; 
                 } else {
                     props.push(Property::setter(
                         func.get_name().unwrap(),
-                        eval_function(interpreter, func.clone())?,
+                        eval_function(interpreter, func)?,
                     ));
                 }
             }
@@ -114,14 +114,14 @@ fn exit_function(interpreter: &mut Interpreter, arguments_len: usize, captures_l
 }
 */
 
-fn eval_function(interpreter: &mut Interpreter, func: Box<Function>) -> Completion {
+fn eval_function(interpreter: &mut Interpreter, func: &Function) -> Completion {
 
     //let mut local_initializers: Vec<Option<Box<dyn FnOnce(&mut Frame) -> Completion>>> = Vec::with_capacity(func.locals.len());
     let builtins = interpreter.builtins.clone();
 
-    let mut captures = Vec::with_capacity(func.scope.unwrap().captures.len());
+    let mut captures = Vec::with_capacity(func.scope.as_ref().unwrap().captures.len());
 
-    for capture in func.scope.unwrap().captures.iter() {
+    for capture in func.scope.as_ref().unwrap().captures.iter() {
         let variable = interpreter.fetch_variable(capture.index());
         if variable.is_none() {
             panic!("should have variable");
@@ -129,6 +129,7 @@ fn eval_function(interpreter: &mut Interpreter, func: Box<Function>) -> Completi
         captures.push(variable.unwrap().clone());
     }
 
+    let func = func.clone();
 
     let function = Slot::new_function(func.get_name(), Rc::new(move |frame: &mut Frame, arguments| {
         // NOTE: because of how local values are always initialized after the function declarations(because of the hoisting), we are capturing the variables when the function is called, not when it is declared.
@@ -161,8 +162,9 @@ fn eval_function(interpreter: &mut Interpreter, func: Box<Function>) -> Completi
         // hoist(pre-declare) function declarations
         for (function_var, local_function) in func.functions().iter() {
             // promote local variables to heap if it is captured by any of the local functions
-            for local_function_capture in local_function.captures() {
-                if let VariableIndex::Local(index) = local_function_capture.index.get() {
+            let function: &Function = &local_function.as_ref().try_borrow().unwrap();
+            for local_function_capture in function.captures() {
+                if let VariableIndex::Local(_, index) = local_function_capture.index() {
                     let captured_var = function_interpreter.current_frame.get_local(index as usize);
 
                     // promote local variable to heap
@@ -171,12 +173,14 @@ fn eval_function(interpreter: &mut Interpreter, func: Box<Function>) -> Completi
                 }
             }
 
-            let local_evaluated_function = eval_function(&mut function_interpreter, local_function)?;
+            let local_evaluated_function = eval_function(&mut function_interpreter, &local_function.as_ref().borrow())?;
             *function_interpreter.current_frame.get_local(function_var.index().unwrap_local() as usize) = local_evaluated_function;
         }
 
-        let result = eval_block(&mut function_interpreter, func.statements);
-
+        let result = match &func.body {
+            ExprOrBlock::Block(block) => eval_block(&mut function_interpreter, block),
+            ExprOrBlock::Expr(expr) => eval_expr(&mut function_interpreter, expr),
+        };
 
         let _ = replace(frame, function_interpreter.current_frame);
 
@@ -194,11 +198,10 @@ fn eval_function(interpreter: &mut Interpreter, func: Box<Function>) -> Completi
 fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Completion {
     if let LValue::Variable(var) = lhs {
         let lvalue = match var.index() {
-            VariableIndex::Local(index) => interpreter.current_frame.get_local(index as usize),
+            VariableIndex::Local(_, index) => interpreter.current_frame.get_local(index as usize),
             VariableIndex::Captured(index) => interpreter.current_frame.get_capture(index as usize),
             VariableIndex::Parameter(index) => interpreter.current_frame.get_argument(index as usize),
-            VariableIndex::Static(_) => todo!("static variable assignment"),
-            VariableIndex::Unknown => unreachable!("Unknown variable index")
+            VariableIndex::Static(_) => todo!("static variable assignment"), 
         };
         lvalue.set(rhs);
         return Completion::Value(lvalue.clone())

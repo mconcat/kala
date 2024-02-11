@@ -10,9 +10,7 @@ mod tests {
     use jessie_parser::parser::ParserState;
 
     use crate::scope_expression;
-    use crate::state::ScopeState;
-
-    
+    use crate::state::ScopeState;    
 
     #[test]
     fn test_scope() {
@@ -20,11 +18,12 @@ mod tests {
         ("function f(){const x=3;const y=4;}",
         _function("f", Some(FunctionScope::new(
             &[],
-            &[_local("x", 0), _local("y", 1)],
+            &[],
+            &[_const_var("x", 0), _const_var("y", 1)],
             &[],
         )), &[], &[
-            _const(_local("x", 0), 3),
-            _const(_local("y", 1), 4),
+            _const(_const_var("x", 0), 3),
+            _const(_const_var("y", 1), 4),
         ]),
         ),
 
@@ -32,23 +31,25 @@ mod tests {
 
         {
         let g = Rc::new(RefCell::new(_function_raw("g", Some(FunctionScope::new(
-            &[_local("x", 0)],
-            &[_local("y", 0)],
+            &[],
+            &[_const_var("x", 0)],
+            &[_const_var("y", 0)],
             &[],
         )),
         &[], &[
-            _const(_local("y", 0), 4),
-            _return_value(_add(_capture("x", 0), _local("y", 0))),
+            _const(_const_var("y", 0), 4),
+            _return_value(_add(_capture("x", 0), _const_var("y", 0))),
         ]
         )));
 
         _function("f", Some(FunctionScope::new(
             &[],
-            &[_local("x", 0), _local("g", 1)],
-            &[(_local("g", 1), g.clone())],
+            &[],
+            &[_const_var("x", 0), _const_var("g", 1)],
+            &[(_const_var("g", 1), g.clone())],
         )), &[], &[
-            _const(_local("x", 0), 3),
-            Statement::ExprStatement(Box::new(_local("x", 0).into())),
+            _const(_const_var("x", 0), 3),
+            Statement::ExprStatement(Box::new(_const_var("x", 0).into())),
             Statement::LocalDeclaration(Box::new(Declaration::Function(g))) 
         ]) 
         }

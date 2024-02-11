@@ -375,14 +375,16 @@ impl Function {
 
 #[derive(PartialEq, Clone)]
 pub struct FunctionScope {
+    pub parameters: Box<[Variable]>,
     pub captures: Box<[Variable]>, // evaluated in parent context
     pub locals: Box<[Variable]>, // evaluate in current context
     pub functions: Box<[(Variable, Rc<RefCell<Function>>)]>, // list of functions declared in this scope
 }
 
 impl FunctionScope {
-    pub fn new(captures: &[Variable], locals: &[Variable], functions: &[(Variable, Rc<RefCell<Function>>)]) -> Self {
+    pub fn new(parameters: &[Variable], captures: &[Variable], locals: &[Variable], functions: &[(Variable, Rc<RefCell<Function>>)]) -> Self {
         FunctionScope {
+            parameters: parameters.into(),
             captures: captures.into(),
             locals: locals.into(),
             functions: functions.into(),
@@ -396,6 +398,15 @@ pub enum VariableIndex {
     Local(/*is_const*/bool, u32),
     Parameter(u32),
     Static(u32),
+}
+
+impl VariableIndex {
+    pub fn unwrap_local(&self) -> u32 {
+        match self {
+            Self::Local(_, index) => *index,
+            _ => panic!("unwrap_local"),
+        }
+    }
 }
 
 #[derive(PartialEq, Clone)]
