@@ -1,32 +1,32 @@
 use std::rc::Rc;
 
 use jessie_ast::{*, module::{ ExportClause, Module, ModuleDeclaration, ModuleItem}};
-use utils::{MapPool, FxMap, Map};
+use utils::Map;
 
-use crate::{Token,  statement::{binding, function_decl, const_decl, statement}, parser,  common::identifier, function::function_internal, JessieParserState, expression};
+use crate::{parser, statement::{block, const_decl, function_decl, statement}, JessieParserState, Token};
 
 type ParserError = parser::ParserError<Option<Token>>;
 
-pub fn script<T: Clone>(mut state: JessieParserState, builtins: &mut FxMap<T>) -> Result<Script<T>, ParserError> {
+pub fn script(state: &mut JessieParserState) -> Result<Script, ParserError> {
+    state.enter_block();
+
     let mut statements = vec![];
     while state.lookahead_1() != Some(Token::EOF) {
-        statements.push(statement(&mut state)?);
+        statements.push(statement(state)?);
     }
 
-    // once we have fully walked through the entire script, we have to virtually 'exit' the implicit top level scope and settle the unresolved variables
-
-    let used_builtins = state.scope.exit_module(builtins);
-
     Ok(Script {
-        statements,
-        used_builtins,
+        statements: Block {
+            declarations: state.exit_block(),
+            statements: statements.into_boxed_slice(),
+        }
     })
 }
 
 ///////////////////////
 // Module
 
-pub fn module<T: Clone>(mut state: JessieParserState, builtins: &mut FxMap<T>) -> Result<Module<T>, ParserError> {
+pub fn module(mut state: JessieParserState) -> Result<Module, ParserError> {
     let mut body = vec![];
 
     while let Some(_) = state.lookahead_1() {
@@ -67,13 +67,13 @@ pub fn module<T: Clone>(mut state: JessieParserState, builtins: &mut FxMap<T>) -
     // the top-level variables are settled already with the implicit module-scope(basically the whole module is in a block scope)
     // but we still need to resolve for the builtin variables, such as 'console', 'Object', etc.
 
-    let used_builtins = state.scope.exit_module(builtins);
+    // let used_builtins = state.scope.exit_module(builtins);
 
     Ok(Module {
         body,
-        used_builtins,
     })
 }
+
 /* 
 pub fn import_declaration(state: &mut ParserState, proxy: MutableDeclarationPointer) -> Result<ImportDeclaration, ParserError> {
     unimplemented!("import declaration")

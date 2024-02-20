@@ -11,3 +11,4 @@ kala-repr = { version = "0.1.0", path = "../kala-repr" }
 jessie-ast = { version = "0.1.0", path = "../jessie-ast" }
 jessie-parser = { version = "0.1.0", path = "../jessie-parser" }
 utils = { version = "0.1.0", path = "../utils" }
+jessie-scope = { version = "0.1.0", path = "../jessie-scope"}

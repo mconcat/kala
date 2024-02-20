@@ -20,6 +20,14 @@ pub fn identifier(state: &mut ParserState) -> Result<Rc<str>, ParserError> {
             state.proceed();
             Ok(s)
         },
+        Some(Token::Get) => {
+            state.proceed();
+            Ok("get".into())
+        },
+        Some(Token::Set) => {
+            state.proceed();
+            Ok("set".into())
+        },
         c => state.err_expected("identifier", c),
     }
 }
@@ -38,7 +46,7 @@ pub fn use_variable(state: &mut ParserState) -> Result<Variable, ParserError> {
             state.proceed();
             Ok(Variable::new("set".into()))
         },
-        found => state.err_expected("variable identifier", found),
+        found => panic!("asdf"), // state.err_expected("variable identifier", found),
     }
 }
 /* 

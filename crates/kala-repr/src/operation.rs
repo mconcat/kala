@@ -11,7 +11,10 @@ impl Slot {
     }
 
     pub fn op_sub(&self, other: &Self) -> Slot {
-        unimplemented!("subtraction")
+        match self.op_sub_internal(other) {
+            Some(slot) => slot,
+            None => Slot::UNDEFINED, // TODO: error
+        }
     }
 
     pub fn op_mul(&self, other: &Self) -> Slot {
@@ -370,6 +373,70 @@ impl Slot {
             (SlotTag::Constant, SlotTag::Integer) => {
                 None
             }
+        }
+    }
+
+    fn op_sub_internal(&self, other: &Self) -> Option<Slot> {
+        match (self.get_tag(), other.get_tag()) {
+            (SlotTag::Pointer, _) => {
+                self.unwrap_pointer().op_sub_internal(other)
+            },
+            (_, SlotTag::Pointer) => {
+                other.unwrap_pointer().op_sub_internal(self)
+            },
+            (SlotTag::Constant, SlotTag::Constant) => {
+                self.unwrap_constant().op_sub_internal(&other.unwrap_constant()).map(Into::into)
+            }
+            (SlotTag::Integer, SlotTag::Integer) => {
+                self.unwrap_integer().op_sub_internal(&other.unwrap_integer()).map(Into::into)
+            }
+            (SlotTag::Reference, SlotTag::Reference) => {
+                match (self.unwrap_reference(), other.unwrap_reference()) {
+                    (Reference::Number(left), Reference::Number(right)) => {
+                        let result = left.op_sub_internal(right)?.into();
+                        Some(Slot{ reference: ManuallyDrop::new(SlotReference::new(result)) })
+                    }
+                    (Reference::Constant(left), Reference::Constant(right)) => {
+                        left.op_sub_internal(right).map(Into::into)
+                    }
+                    _ => None,
+                }
+            }
+
+            (SlotTag::Reference, SlotTag::Integer) => {
+                match self.unwrap_reference() {
+                    Reference::Number(number) => {
+                        let result = number.op_add_internal_integer(&other.unwrap_integer())?.into();
+                        Some(Slot{ reference: ManuallyDrop::new(SlotReference::new(result)) })
+                    }
+                    _ => None
+                }
+            }
+            (SlotTag::Integer, SlotTag::Reference) => {
+                match other.unwrap_reference() {
+                    Reference::Number(number) => unimplemented!("wrapped number object"),
+                    _ => None
+                }
+            }
+            (SlotTag::Reference, SlotTag::Constant) => {
+                match self.unwrap_reference() {
+                    Reference::Constant(constant) => constant.op_add_internal(&other.unwrap_constant()).map(Into::into),
+                    _ => None
+                }
+            }
+            (SlotTag::Constant, SlotTag::Reference) => {
+                match other.unwrap_reference() {
+                    Reference::Constant(constant) => self.unwrap_constant().op_add_internal(constant).map(Into::into),
+                    _ => None 
+                }
+            }
+
+            (SlotTag::Integer, SlotTag::Constant) => {
+                None 
+            }
+            (SlotTag::Constant, SlotTag::Integer) => {
+                None
+            } 
         }
     }
 

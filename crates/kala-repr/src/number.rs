@@ -130,6 +130,10 @@ impl Number {
         unimplemented!("op_add_internal")
     }
 
+    pub(crate) fn op_sub_internal(&self, other: &Self) -> Option<Self> {
+        unimplemented!("op_sub_internal")
+    }
+
     pub(crate) fn op_add_internal_integer(&self, other: &Integer) -> Option<Self> {
         unimplemented!("op_add_internal_integer")
     }

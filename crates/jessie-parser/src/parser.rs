@@ -2,7 +2,6 @@ use core::fmt::Debug;
 use std::rc::Rc;
 
 extern crate utils;
-use utils::{ MapPool,  Map, };
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError<C: Sized> {

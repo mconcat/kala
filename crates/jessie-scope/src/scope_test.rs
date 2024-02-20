@@ -19,7 +19,7 @@ mod tests {
         _function("f", Some(FunctionScope::new(
             &[],
             &[],
-            &[_const_var("x", 0), _const_var("y", 1)],
+            &[_const_var_local("x", 0), _const_var_local("y", 1)],
             &[],
         )), &[], &[
             _const(_const_var("x", 0), 3),
@@ -33,7 +33,7 @@ mod tests {
         let g = Rc::new(RefCell::new(_function_raw("g", Some(FunctionScope::new(
             &[],
             &[_const_var("x", 0)],
-            &[_const_var("y", 0)],
+            &[_const_var_local("y", 0)],
             &[],
         )),
         &[], &[
@@ -45,7 +45,7 @@ mod tests {
         _function("f", Some(FunctionScope::new(
             &[],
             &[],
-            &[_const_var("x", 0), _const_var("g", 1)],
+            &[_const_var_escaping("x", 0), _const_var_local("g", 1)],
             &[(_const_var("g", 1), g.clone())],
         )), &[], &[
             _const(_const_var("x", 0), 3),
@@ -57,7 +57,7 @@ mod tests {
     ];
 
         for (i, (code, scoped)) in cases.iter_mut().enumerate() {
-            let mut state = ScopeState::new();
+            let mut state: ScopeState<()> = ScopeState::empty();
             let mut parser_state = JessieParserState::new(lex_jessie(code.to_string()).unwrap());
             let mut ast = jessie_parser::expression(&mut parser_state).unwrap();
             println!("ast: {:?}", ast);

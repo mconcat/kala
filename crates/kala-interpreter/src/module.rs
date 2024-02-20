@@ -12,25 +12,27 @@ use crate::interpreter::Interpreter;
 use crate::statement::{eval_local_declaration, eval_statement};
 
 pub fn eval_script(
-    script: Script<Slot>,
+    builtins: Vec<Slot>,
+    script: Script,
 ) -> Completion {
-    let mut interpreter = Interpreter::new(script.used_builtins, Frame::empty());
+    let mut interpreter = Interpreter::new(builtins, Frame::empty());
 
     let mut result = Slot::new_undefined();
 
-    for statement in script.statements {
+    for statement in script.statements.statements.iter() {
         result = eval_statement(&mut interpreter, &statement)?;
     }
 
     Completion::Value(result)
 }
 
-pub fn eval_module( 
-    module: Module<Slot>,
+pub fn eval_module(
+    builtins: Vec<Slot>, 
+    module: Module,
 ) -> Completion {
     let mut export_default = OnceCell::new();
 
-    let mut interpreter = Interpreter::new(module.used_builtins, Frame::empty());
+    let mut interpreter = Interpreter::new(builtins, Frame::empty());
     for item in module.body {
         match item {
             ModuleItem::ImportDeclaration(_) => unimplemented!("import"),

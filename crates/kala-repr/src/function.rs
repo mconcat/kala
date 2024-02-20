@@ -67,12 +67,12 @@ impl Frame {
     }
 
     pub fn get_capture(&mut self, index: usize) -> &mut Slot {
-        &mut self.slots[self.fp + 1 + index]
+        &mut self.slots[self.fp + index]
     }
 
     pub fn get_local(&mut self, index: usize) -> &mut Slot {
         println!("getting local {:?} {}", self, index);
-        &mut self.slots[self.fp + 1 + self.captures + index]
+        &mut self.slots[self.fp + self.captures + index]
     }
 
     // destructs the current frame and returns the child frame
@@ -80,7 +80,7 @@ impl Frame {
         // constructing child frame
         println!("entering function frame: {:?} {:?} {}", self, captures, local_len);
         let fp = self.slots.len();
-        self.slots.extend(vec![Slot::UNINITIALIZED]); // reserved 0 index
+        //self.slots.extend(vec![Slot::UNINITIALIZED]); // reserved 0 index
         let captures_len = captures.len();
         self.slots.extend(captures);
         self.slots.extend(vec![Slot::UNINITIALIZED; local_len]);

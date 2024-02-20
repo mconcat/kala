@@ -107,7 +107,7 @@ impl Debug for Slot {
                 SlotTag::Integer => self.integer.0.fmt(f),
                 SlotTag::Constant => self.constant.0.fmt(f),
                 SlotTag::Pointer => {
-                    write!(f, "&");
+                    write!(f, "*")?;
                     self.unwrap_pointer().fmt(f)
                 }
             }

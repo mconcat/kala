@@ -1,6 +1,6 @@
-use std::{rc::Rc, thread::Scope, cell::RefCell};
+use std::{cell::RefCell, rc::Rc, thread::{current, Scope}};
 
-use jessie_ast::{Variable, Declaration, Function, Module, Block, Pattern, PropParam, OptionalPattern, LValueOptional, VariableIndex};
+use jessie_ast::{Block, Declaration, Function, LValueOptional, LocalVariable, Module, OptionalPattern, Pattern, PropParam, Variable, VariableIndex};
 use utils::{Map, MapPool};
 
 use crate::scope_expression;
@@ -11,16 +11,71 @@ type VariableMap = Map<Variable>;
 //type VariablePointerMapPool<'a> = MapPool<&'a mut Variable>;
 type VariablePointersMap<'a> = Map<Vec<&'a mut Variable>>;
 
+#[derive(Debug, Clone)]
+pub struct BuiltinMap<T> {
+    builtins: Map<T>,
+    used: Vec<T>,
+    variables: Map<Variable>,
+}
+
+impl<T> BuiltinMap<T> {
+    pub fn new() -> Self {
+        Self {
+            builtins: Map::default(),
+            used: Vec::new(),
+            variables: Map::default(),
+        }
+    }
+}
+
+impl<T: Clone> BuiltinMap<T> {
+    fn get(&mut self, name: &str) -> Option<Variable> {
+        if self.variables.contains_key(name) {
+            return self.variables.get(name).cloned();
+        }
+        let res = self.builtins.get(name);
+        if res.is_none() {
+            return None;
+        }
+        let slot = res.unwrap();
+        let index = self.used.len();
+        self.used.push(slot.clone());
+        let var = Variable::declared(name.into(), VariableIndex::Static(index.try_into().unwrap()));
+        self.variables.insert(name.into(), var.clone());
+        Some(var)
+    }
+}
+
 #[derive(Debug)]
-pub struct ScopeState {
-    builtins: VariableMap,
+pub struct ScopeState<T> {
+    builtins: BuiltinMap<T>,
     module_scope: ModuleScope,
 }
 
-impl ScopeState {
-    pub fn new() -> Self {
+impl<T: Clone> ScopeState<T> {
+    pub fn used_builtins(&self) -> Vec<T> {
+        self.builtins.used.clone()
+    }
+
+    pub fn empty() -> Self {
         Self {
-            builtins: VariableMap::default(),
+            builtins: BuiltinMap::new(),
+            module_scope: ModuleScope {
+                global_scope: BlockScope {
+                    declared_variables: VariableMap::default(),
+                },
+                function_scopes: Vec::new(),
+            }
+        }
+    }
+
+    pub fn new(builtins: Map<T>) -> Self {
+        Self {
+            builtins: BuiltinMap {
+                builtins,
+                used: Vec::new(),
+                variables: Map::default(),
+            },
             module_scope: ModuleScope {
                 global_scope: BlockScope {
                     declared_variables: VariableMap::default(),
@@ -68,8 +123,33 @@ impl ScopeState {
                 }
             }
             Some(func_index) => {
-                let mut parent = declared_var.clone();
+                if func_index == self.module_scope.function_scopes.len() - 1 {
+                    // the variable is declared in the current function, no need to capture
+                    *var = declared_var;
+                    return Ok(());
+                }
+
                 let current_function = self.module_scope.function_scopes.len();
+
+                // add to the escapings of the function where the variable is declared
+                let function_where_declared = self.module_scope.function_scopes.as_mut_slice().get_mut(func_index).unwrap();
+                match declared_var.index() {
+                    VariableIndex::Parameter(index) => {
+                        let var_decl = &mut function_where_declared.parameters.as_mut_slice()[index as usize];
+                        var_decl.is_escaping = true;
+                    },
+                    VariableIndex::Local(_, index) => {
+                        let var_decl = &mut function_where_declared.locals.as_mut_slice()[index as usize];
+                        var_decl.is_escaping = true;
+                    },
+                    // Static variables are always heap allocated
+                    VariableIndex::Static(_) => {},
+                    // Captured variables does not need to be declared as escaping
+                    VariableIndex::Captured(_) => {},
+                }
+
+                // recursively declare the variable as a capture for each function between the current function and the function where the variable has been declared
+                let mut parent = declared_var.clone();
                 for func in self.module_scope.function_scopes.as_mut_slice()[func_index+1..current_function].iter_mut() {
                     parent = func.declare_capture(parent)?;
                 }
@@ -97,7 +177,13 @@ impl ScopeState {
     }
 
     pub fn declare_parameter(&mut self, var: &mut Variable) -> Result<(), &'static str> {
-        self.current_function().unwrap().declare_parameter(var)
+        let current_function = self.current_function().unwrap();
+
+        current_function.declare_variable(var, VariableIndex::Parameter(current_function.parameters.len() as u32))?;
+
+        current_function.parameters.push(LocalVariable::new(var.clone()));
+
+        Ok(())
     }
 
     pub fn declare_pattern(&mut self, pattern: &mut Pattern, f: &mut impl FnMut(&mut Self, &mut Variable) -> Result<(), &'static str>) -> Result<(), &'static str> {
@@ -121,6 +207,38 @@ impl ScopeState {
             }
             Pattern::Rest(pattern) => self.declare_pattern(pattern, f),
         }
+    }
+
+    // using function as a wrapper for the script
+    // hacky, TODO fix
+    pub fn enter_script(&mut self) -> Result<(), &'static str> {
+        if self.module_scope.function_scopes.len() > 0 {
+            return Err("Script already entered");
+        }
+
+        self.module_scope.function_scopes.push(FunctionScope{
+            parameters: Vec::new(), 
+            locals: Vec::new(),
+            captures: Vec::new(),
+            functions: Vec::new(),
+
+            block_scopes: vec![BlockScope{declared_variables: VariableMap::default()}],
+        });
+
+        Ok(())
+    }
+
+    pub fn exit_script(&mut self) -> Result<Box<[LocalVariable]>, &'static str> {
+        let scope = self.module_scope.function_scopes.pop().unwrap(); 
+
+        if scope.parameters.len() > 0 {
+            panic!("script should not have parameters");
+        }
+        if scope.captures.len() > 0 {
+            return Err("script should not have captures, some variables are not scoped and not in the builtins");
+        }
+
+        Ok(scope.locals.into()) // should we also return the functions? for hoisting? TODO
     }
 
     pub fn enter_function(&mut self, func: &mut Function) -> Result<(), &'static str>{
@@ -193,8 +311,8 @@ pub struct ModuleScope {
 
 #[derive(Debug)]
 pub struct FunctionScope {
-    pub parameters: Vec<Variable>,
-    pub locals: Vec<Variable>,
+    pub parameters: Vec<LocalVariable>,
+    pub locals: Vec<LocalVariable>,
     pub captures: Vec<Variable>,
     pub functions: Vec<(Variable, Rc<RefCell<Function>>)>,
 
@@ -215,8 +333,8 @@ impl FunctionScope {
         }
 
         for parameter in self.parameters.iter() {
-            if parameter.name == var.name {
-                *var = parameter.clone();
+            if parameter.var.name == var.name {
+                *var = parameter.var.clone();
                 return Ok(());
             }
         }
@@ -224,25 +342,13 @@ impl FunctionScope {
         Err("Variable not declared")
     }
 
-    fn declare_let_variable(&mut self, var: &mut Variable) -> Result<(), &'static str> {
-        self.declare_variable(var, VariableIndex::Local(false, self.locals.len().try_into().unwrap()))
-    }
-
-
-    fn declare_const_variable(&mut self, var: &mut Variable) -> Result<(), &'static str> {
-        self.declare_variable(var, VariableIndex::Local(true, self.locals.len().try_into().unwrap()))
-    }
-
-    fn declare_parameter(&mut self, var: &mut Variable) -> Result<(), &'static str> {
-        self.declare_variable(var, VariableIndex::Parameter(self.parameters.len().try_into().unwrap()))
-    }
 
     fn declare_variable(&mut self, var: &mut Variable, index: VariableIndex) -> Result<(), &'static str> {
         if self.current_block().declared_variables.contains_key(&var.name) {
             return Err("Variable already declared");
         }
         var.pointer.set(index);
-        self.locals.push(var.clone());
+        self.locals.push(LocalVariable::new(var.clone()));
         self.current_block().declared_variables.insert(var.name.clone(), var.clone());
         Ok(())
     }
@@ -254,7 +360,7 @@ impl FunctionScope {
             return Err("Function already declared");
         }
         let var = Variable::declared(name.clone(), VariableIndex::Local(true, self.locals.len().try_into().unwrap()));
-        self.locals.push(var.clone());
+        self.locals.push(LocalVariable::new(var.clone()));
         self.current_block().declared_variables.insert(name, var.clone());
         self.functions.push((var, func.clone()));
         Ok(())

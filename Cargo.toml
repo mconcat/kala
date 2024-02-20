@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/jessie-ast",
+    "crates/jessie-parser",
+    "crates/jessie-scope",
+
+    "crates/kala-repr",
+    "crates/kala-interpreter",
+    "crates/kala-suite",
+]
+
+[workspace.package]
+authors = [""]
+edition = "2021"
+homepage = "https://kala.dev"
+keywords = ["javascript", "interpreter"]
+readme = "README.md"
+repository = "https://github.com/mconcat/kala"
+version = "0.1.0"

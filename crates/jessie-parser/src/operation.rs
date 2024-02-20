@@ -33,9 +33,20 @@ pub fn cond_expr_with_leftmost_no_power(state: &mut ParserState, left: Expr) -> 
 
 fn or_else_expr_internal(state: &mut ParserState, mut result: Expr) -> Result<Expr, ParserError> {
     println!("or_else_expr_internal");
-    while state.try_proceed(Token::BarBar) {
-        let and_then_expr2 = and_then_expr(state)?;
-        result = Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Or, result, and_then_expr2)))
+    while let Some(la) = state.lookahead_1() {
+        match la {
+            Token::BarBar => {
+                state.proceed();
+                let and_then_expr2 = and_then_expr(state)?;
+                result = Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Or, result, and_then_expr2)))
+            },
+            Token::QuestionQuestion => {
+                state.proceed();
+                let and_then_expr2 = and_then_expr(state)?;
+                result = Expr::BinaryExpr(Box::new(BinaryExpr(BinaryOp::Coalesce, result, and_then_expr2)))
+            },
+            _ => break
+        }
     }
     Ok(result)
 }

@@ -1,16 +1,14 @@
 use std::rc::Rc;
 
-use crate::{Declaration, Statement};
+use crate::{Block, Declaration, Statement};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Script<T>{
-    pub used_builtins: Vec<T>,
-    pub statements: Vec<Statement>,
+pub struct Script{
+    pub statements: Block,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Module<T>{
-    pub used_builtins: Vec<T>,
+pub struct Module{
     pub body: Vec<ModuleItem>,
 }
 

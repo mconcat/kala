@@ -27,7 +27,16 @@ pub enum Reference {
 impl Debug for Reference {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Reference::Object(object) => write!(f, "[Object]"),
+            Reference::Object(object) => {
+                /* 
+                write!(f, "{{")?;
+                for prop in &object.properties {
+                    write!(f, "{:?}, ", prop)?;
+                }
+                write!(f, "}}")  
+                */
+                write!(f, "[Object]")
+            }
             Reference::Number(number) => write!(f, "Number({:?})", number),
             Reference::Constant(constant) => write!(f, "Constant({:?})", constant),
             Reference::String(string) => write!(f, "String({:?})", string),

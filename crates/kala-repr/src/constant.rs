@@ -58,6 +58,19 @@ impl Constant {
             (Constant::True, Constant::True) => None,
         }
     }
+
+    pub fn op_sub_internal(&self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (Constant::Undefined, _) => None,
+            (_, Constant::Undefined) => None,
+            (Constant::Null, _) => None,
+            (_, Constant::Null) => None,
+            (Constant::False, Constant::True) => None,
+            (Constant::True, Constant::False) => None,
+            (Constant::False, Constant::False) => None,
+            (Constant::True, Constant::True) => None,
+        }
+    }
 }
 
 impl ToString for Constant {

@@ -1,7 +1,7 @@
 use crate::{state::ScopeState, scope_variable, scope_function};
 use jessie_ast::{Expr, LValue, CallPostOp, LValueCallPostOp, PropDef};
 
-pub fn scope_expression(state: &mut ScopeState, expr: &mut Expr) -> Result<(), &'static str> {
+pub fn scope_expression<T: Clone>(state: &mut ScopeState<T>, expr: &mut Expr) -> Result<(), &'static str> {
     match expr {
         Expr::DataLiteral(_) => Ok(()),
         Expr::Array(arr) => {
@@ -11,7 +11,7 @@ pub fn scope_expression(state: &mut ScopeState, expr: &mut Expr) -> Result<(), &
             Ok(())
         },
         Expr::Record(rec) => {
-            for prop in rec.as_mut().0.iter_mut() {
+            for prop in rec.0.iter_mut() {
                 match prop {
                     PropDef::KeyValue(_, expr) => scope_expression(state, expr)?,
                     PropDef::Shorthand(_, var) => scope_variable(state, var.as_mut())?,

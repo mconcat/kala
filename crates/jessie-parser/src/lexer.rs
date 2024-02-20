@@ -622,7 +622,15 @@ fn tokenize(lexer: &mut Lexer, result: &mut Vec<Token>) -> Result<Token, String>
         },
         Some(':') => lexer.proceed_with(Token::Colon),
         Some(';') => lexer.proceed_with(Token::Semicolon),
-        Some('?') => lexer.proceed_with(Token::Question),
+        Some('?') => {
+            if lexer.lookahead_2() == Some('?') {
+                lexer.proceed();
+                lexer.proceed();
+                Token::QuestionQuestion
+            } else {
+                lexer.proceed_with(Token::Question)
+            }
+        }
         Some('`') => lexer.proceed_with(Token::QuasiQuote),
         Some('$') => lexer.proceed_with(Token::Dollar),
         Some('/') => {

@@ -70,7 +70,7 @@ pub fn const_decl(state: &mut ParserState) -> Result<Declaration, ParserError> {
 }
 
 fn let_decl(state: &mut ParserState) -> Result<Declaration, ParserError> {
-    let bindings = repeated_elements(state, Some(Token::Const), Token::Semicolon, &binding, false)?.into_iter().map(|(pattern, value)| VariableDeclaration{pattern, value}).collect();
+    let bindings = repeated_elements(state, Some(Token::Let), Token::Semicolon, &binding, false)?.into_iter().map(|(pattern, value)| VariableDeclaration{pattern, value}).collect();
 
     //state.scope.declare_let(bindings).ok_or(ParserError::DuplicateDeclaration)
     let decl = Declaration::Let(bindings);

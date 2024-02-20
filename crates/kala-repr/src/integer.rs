@@ -87,6 +87,17 @@ impl Integer {
         }
     }
 
+    pub fn op_sub_internal(&self, other: &Self) -> Option<Self> {
+        let (x, overflow) = self.0.overflowing_sub(other.0);
+        if overflow {
+            None
+        } else {
+            let mut res = Integer(x);
+            res.tag();
+            Some(res)
+        }
+    }
+
     pub(crate) fn op_neg(&self) -> Self {
         let mut res = Integer(-self.0);
         res.tag();

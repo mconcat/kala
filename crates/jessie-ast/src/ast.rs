@@ -91,8 +91,6 @@ pub enum ExprDiscriminant {
     ParenedExpr = 11,
     Variable = 12,
     Spread = 13,
-
-    Arrow = 14,
 }
 
 #[derive(PartialEq, Clone)]
@@ -237,6 +235,7 @@ assert_eq_align!(LValueCallPostOp, CallPostOp);
 impl From<LValue> for Expr {
     fn from(lv: LValue) -> Self {
         // Super unsafe, add bunch of test cases later
+        // we are "widening" the enum, so it's relatively safe
         unsafe { mem::transmute(lv) }
     }
 }
@@ -246,6 +245,8 @@ impl From<Expr> for LValue {
 
          // must be called only when the expr is transmutable to LValue
          // Super super unsafe
+         // we are "narrowing" the enum, so it's unsafe
+         // maybe we should not use From trait for this
         unsafe { mem::transmute(value) }
     }
 }
@@ -358,7 +359,7 @@ impl Function {
         }
     }
 
-    pub fn locals(&self) -> &[Variable] {
+    pub fn locals(&self) -> &[LocalVariable] {
         match &self.scope {
             Some(scope) => &scope.locals,
             None => panic!("Function::locals() called on function without scope"),
@@ -374,15 +375,37 @@ impl Function {
 }
 
 #[derive(PartialEq, Clone)]
+pub struct LocalVariable {
+    pub var: Variable,
+    pub is_escaping: bool,
+}
+
+impl LocalVariable {
+    pub fn new(var: Variable) -> Self {
+        LocalVariable {
+            var,
+            is_escaping: false,
+        }
+    }
+
+    pub fn escaping(var: Variable) -> Self {
+        LocalVariable {
+            var,
+            is_escaping: true,
+        }
+    }
+}
+
+#[derive(PartialEq, Clone)]
 pub struct FunctionScope {
-    pub parameters: Box<[Variable]>,
+    pub parameters: Box<[LocalVariable]>,
     pub captures: Box<[Variable]>, // evaluated in parent context
-    pub locals: Box<[Variable]>, // evaluate in current context
+    pub locals: Box<[LocalVariable]>, // evaluate in current context
     pub functions: Box<[(Variable, Rc<RefCell<Function>>)]>, // list of functions declared in this scope
 }
 
 impl FunctionScope {
-    pub fn new(parameters: &[Variable], captures: &[Variable], locals: &[Variable], functions: &[(Variable, Rc<RefCell<Function>>)]) -> Self {
+    pub fn new(parameters: &[LocalVariable], captures: &[Variable], locals: &[LocalVariable], functions: &[(Variable, Rc<RefCell<Function>>)]) -> Self {
         FunctionScope {
             parameters: parameters.into(),
             captures: captures.into(),
@@ -445,7 +468,7 @@ impl Variable {
     pub fn index_local(&self) -> u32 {
         match self.index() {
             VariableIndex::Local(is_const, index) => index,
-            _ => panic!("variable index not local"),
+            _ => panic!("variable index not local: {:?}", self),
         }
     }
 }
@@ -870,6 +893,12 @@ impl Debug for Function {
             ExprOrBlock::Block(ref block) => write!(f, " {:?}", block),
             ExprOrBlock::Expr(ref expr) => write!(f, " {:?}", expr),
         }
+    }
+}
+
+impl Debug for LocalVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}{}", self.var, if self.is_escaping { "!" } else { "" })
     }
 }
 

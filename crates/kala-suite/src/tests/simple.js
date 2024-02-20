@@ -1,4 +1,3 @@
-
 //0
 3+4;
 7;
@@ -12,7 +11,6 @@
     }
 })();
 3;
-
 //2
 (function() {
     let x = 3;
@@ -24,17 +22,16 @@
 (function(arg) {
     let x = 3;
     return x+arg;
-})(4);
-7;
+})(10);
+13;
 
-//4
 (function(arg1, arg2) {
-    let local1 = 3;
-    const local2 = 4;
+    let local1 = 2;
+    const local2 = 200;
     return local1+local2+arg1+arg2;
-})(5, 6);
-18;
-
+})(20000, 2000000);
+2020202;
+//4
 //5
 ((function(arg1){
     return function(arg2) {
@@ -42,7 +39,6 @@
     };
 })(3))(4);
 7;
-
 
 //6
 (function(obj) {

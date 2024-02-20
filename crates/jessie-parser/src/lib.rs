@@ -11,7 +11,7 @@ pub mod expression;
 pub mod function;
 pub mod statement;
 pub mod pattern;
-//pub mod module;
+pub mod module;
 pub mod object;
 pub mod operation;
 pub mod scope;
@@ -23,7 +23,7 @@ pub mod jessie_parser;
 pub use jessie_parser::JessieParserState;
 pub use lexer::{Lexer, Token};
 pub use expression::expression;
-//pub use module::*;
+pub use module::*;
 
 ///////
 

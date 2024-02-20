@@ -98,6 +98,7 @@ fn eval_record(interpreter: &mut Interpreter, obj: &Record) -> Completion {
             PropDef::Spread(spread) => unimplemented!("spread in record literal")
         }
     }
+    
     Completion::Value(Slot::new_object(props))
 }
 /* 
@@ -159,10 +160,21 @@ fn eval_function(interpreter: &mut Interpreter, func: &Function) -> Completion {
             current_frame: frame_value, 
         };
 
+        // promote local variables to heap if escaping
+        for (index, local) in func.locals().iter().enumerate() {
+            if local.is_escaping {
+                let local_slot = function_interpreter.current_frame.get_local(index);
+                *local_slot = Slot::new_variable_slot();
+                println!("promoted local variable to heap: {:?}@{:?}", local_slot, index)
+            }
+        }
+
+
         // hoist(pre-declare) function declarations
         for (function_var, local_function) in func.functions().iter() {
-            // promote local variables to heap if it is captured by any of the local functions
-            let function: &Function = &local_function.as_ref().try_borrow().unwrap();
+            //let function: &Function = &local_function.as_ref().try_borrow().unwrap();
+            // local variable promotion is done above, legacy, commented out for record
+            /* 
             for local_function_capture in function.captures() {
                 if let VariableIndex::Local(_, index) = local_function_capture.index() {
                     let captured_var = function_interpreter.current_frame.get_local(index as usize);
@@ -172,6 +184,7 @@ fn eval_function(interpreter: &mut Interpreter, func: &Function) -> Completion {
                     println!("promoted local variable to heap: {:?}@{:?}", captured_var, index)
                 }
             }
+            */
 
             let local_evaluated_function = eval_function(&mut function_interpreter, &local_function.as_ref().borrow())?;
             *function_interpreter.current_frame.get_local(function_var.index().unwrap_local() as usize) = local_evaluated_function;
@@ -266,11 +279,27 @@ fn assign(interpreter: &mut Interpreter, lhs: &LValue, rhs: Slot) -> Completion 
     }
 }
 
+fn eval_lvalue(interpreter: &mut Interpreter, lvalue: &LValue) -> Completion {
+    // we are "widening" the type of lvalue to be an expr. this is safe under the current AST design. TODO: make this more safe
+    let lhs_expr: &Expr = unsafe{mem::transmute(lvalue)};
+    eval_expr(interpreter, lhs_expr)
+}
+
 fn eval_assignment(interpreter: &mut Interpreter, assignment: &Assignment) -> Completion {
     let rhs = eval_expr(interpreter, &assignment.2)?;
 
     match assignment.0 {
         AssignOp::Assign => assign(interpreter, &assignment.1, rhs),
+        AssignOp::AssignAdd => {
+            let lhs = eval_lvalue(interpreter, &assignment.1)?; 
+            let result = lhs.op_add(&rhs);
+            assign(interpreter, &assignment.1, result)
+        },
+        AssignOp::AssignSub => {
+            let lhs = eval_lvalue(interpreter, &assignment.1)?;
+            let result = lhs.op_sub(&rhs);
+            assign(interpreter, &assignment.1, result)
+        }
         _ => unimplemented!("assignment with operator")
     }
 }

@@ -1,4 +1,3 @@
-/*
 ((state) => {
     return state.get('value') ?? 0;
 })(state);
@@ -13,4 +12,3 @@ undefined;
     return state.get('value') ?? 0;
 })(state);
 1;
-*/

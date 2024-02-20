@@ -246,6 +246,7 @@ pub fn primary_expr(state: &mut ParserState) -> Result<Expr, ParserError> {
         _ => use_variable(state).map(|x| Expr::Variable(Box::new(x))),
     }
 }
+
 pub fn array(state: &mut ParserState) -> Result<Array, ParserError> {
     let elements = repeated_elements(state, Some(Token::LeftBracket), Token::RightBracket, &mut element, true)?.into_boxed_slice();
     Ok(Array(elements))
